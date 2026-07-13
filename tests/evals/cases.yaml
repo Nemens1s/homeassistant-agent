@@ -1,0 +1,47 @@
+# Each case: one prompt, the tool the model MUST call first, and params that
+# must match exactly (subset — unlisted params are not checked).
+- id: entity_state_direct
+  prompt: "What is the state of light.kitchen?"
+  expect_tool: get_entity_state
+  expect_params:
+    entity_id: light.kitchen
+
+- id: list_domain
+  prompt: "Which lights do I have?"
+  expect_tool: list_entities
+  expect_params:
+    domain: light
+
+- id: list_area
+  prompt: "What entities are in the Living room?"
+  expect_tool: list_entities
+  expect_params:
+    area: Living room
+
+- id: history_needs_timestamps
+  prompt: "Show me the temperature history of sensor.living_room_temperature for the last 24 hours."
+  expect_tool: get_history
+  expect_params:
+    entity_id: sensor.living_room_temperature
+
+- id: logbook_recent
+  prompt: "What happened in the house in the last hour?"
+  expect_tool: get_logbook
+
+- id: error_log
+  prompt: "Is Home Assistant showing any errors?"
+  expect_tool: get_error_log
+
+- id: topology
+  prompt: "What devices are in the bedroom?"
+  expect_tool: get_areas_and_devices
+
+- id: automations_list
+  prompt: "List my automations and when they last ran."
+  expect_tool: get_automations
+
+- id: skill_loading
+  prompt: "My automation automation.night_lights didn't fire last night, figure out why."
+  expect_tool: load_skill
+  expect_params:
+    name: diagnosing_automations
