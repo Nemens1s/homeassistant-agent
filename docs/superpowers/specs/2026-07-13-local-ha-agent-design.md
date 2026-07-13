@@ -216,7 +216,7 @@ response (streaming deferred to iteration 3).
 token in dev); `await ws.request(type, **payload)` with auto-incrementing
 ids and futures for correlation; reconnect with backoff. Used for
 `config/area_registry/list`, `config/device_registry/list`,
-`config/entity_registry/list`, automation config/traces. Registry responses
+`config/entity_registry/list`, automation config/traces (iteration 1 ships automation config via REST; traces deferred to iteration 2). Registry responses
 cached with ~60 s TTL. Event subscriptions are out of scope but the design
 does not preclude them.
 

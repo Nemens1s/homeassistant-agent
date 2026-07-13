@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+httpx
+langchain>=1.3,<2
+langchain-core
+langchain-ollama
+langchain-litellm
+langgraph
+pydantic
+pydantic-settings
+python-dotenv
+websockets
+pyyaml

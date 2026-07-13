@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>HA Local Agent</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; }
+  #log { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; height: 60vh; overflow-y: auto; }
+  .msg { margin: 0.5rem 0; white-space: pre-wrap; }
+  .user { font-weight: bold; }
+  .bot { color: #222; }
+  #row { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  #input { flex: 1; padding: 0.5rem; font-size: 1rem; }
+  button { padding: 0.5rem 1rem; }
+</style>
+</head>
+<body>
+  <h2>Home Assistant Agent <small>(read-only)</small></h2>
+  <div id="log"></div>
+  <div id="row">
+    <input id="input" placeholder="Ask about your home..." autofocus />
+    <button id="send">Send</button>
+  </div>
+
+<script>
+const log = document.getElementById('log');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+
+function addMsg(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = (role === 'user' ? 'You: ' : 'Agent: ') + text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+async function sendMessage() {
+  const text = input.value.trim();
+  if (!text) return;
+  addMsg('user', text);
+  input.value = '';
+  const pending = addMsg('bot', '…');
+
+  try {
+    // Relative path (no leading slash) — required to work correctly
+    // behind Home Assistant's ingress path prefix.
+    const res = await fetch('api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    });
+    const data = await res.json();
+    pending.textContent = 'Agent: ' + data.reply;
+  } catch (err) {
+    pending.textContent = 'Agent: (error) ' + err;
+  }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+</script>
+</body>
+</html>
