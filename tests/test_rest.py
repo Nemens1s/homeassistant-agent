@@ -52,6 +52,29 @@ async def test_error_log_returns_text():
     await client.aclose()
 
 
+async def test_list_states():
+    def handler(request):
+        assert request.url.path == "/api/states"
+        return httpx.Response(200, json=[{"entity_id": "light.kitchen", "state": "on"}])
+
+    client = _client(handler)
+    data = await client.list_states()
+    assert data == [{"entity_id": "light.kitchen", "state": "on"}]
+    await client.aclose()
+
+
+async def test_get_logbook_without_end_time_omits_param():
+    def handler(request):
+        assert request.url.path == "/api/logbook/2026-07-12T00:00:00"
+        assert "end_time" not in request.url.params
+        return httpx.Response(200, json=[{"when": "2026-07-12T01:00:00+00:00"}])
+
+    client = _client(handler)
+    data = await client.get_logbook("2026-07-12T00:00:00")
+    assert data == [{"when": "2026-07-12T01:00:00+00:00"}]
+    await client.aclose()
+
+
 def test_no_write_methods_exist():
     banned = ("post", "call_service", "set_state", "turn_on", "turn_off")
     for name in banned:
