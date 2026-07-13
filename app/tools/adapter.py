@@ -56,6 +56,7 @@ def to_structured_tool(
     defn: ToolDefinition, ctx: ToolContext, guard: LoopGuard
 ) -> StructuredTool:
     async def _run(**kwargs) -> str:
+        started = time.monotonic()
         args_json = json.dumps(kwargs, sort_keys=True, default=str)
         if guard.is_repeat(defn.name, args_json):
             result = ToolResult.error(
@@ -63,39 +64,36 @@ def to_structured_tool(
                 "You already called this tool with identical arguments. "
                 "Use the previous result or try a different approach.",
             )
-            log.info("tool=%s status=error duration_ms=0 args=%s", defn.name, args_json)
-            return result.to_json()
-
-        started = time.monotonic()
-        try:
-            params = defn.params_model(**kwargs)
-            result = await defn.handler(params, ctx)
-        except ValidationError as exc:
-            result = ToolResult.error("invalid_params", _validation_message(exc))
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                entity_id = str(kwargs.get("entity_id", ""))
-                data = (
-                    {"did_you_mean": await _did_you_mean(ctx, entity_id)}
-                    if entity_id
-                    else None
-                )
+        else:
+            try:
+                params = defn.params_model(**kwargs)
+                result = await defn.handler(params, ctx)
+            except ValidationError as exc:
+                result = ToolResult.error("invalid_params", _validation_message(exc))
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    entity_id = str(kwargs.get("entity_id", ""))
+                    data = (
+                        {"did_you_mean": await _did_you_mean(ctx, entity_id)}
+                        if entity_id
+                        else None
+                    )
+                    result = ToolResult.error(
+                        "entity_not_found", f"No entity {entity_id!r}.", data=data
+                    )
+                else:
+                    result = ToolResult.error(
+                        "ha_unreachable",
+                        f"Home Assistant returned HTTP {exc.response.status_code}.",
+                    )
+            except (httpx.HTTPError, ConnectionError) as exc:
                 result = ToolResult.error(
-                    "entity_not_found", f"No entity {entity_id!r}.", data=data
+                    "ha_unreachable", f"Could not reach Home Assistant: {exc}."
                 )
-            else:
+            except TimeoutError:
                 result = ToolResult.error(
-                    "ha_unreachable",
-                    f"Home Assistant returned HTTP {exc.response.status_code}.",
+                    "ha_timeout", "Home Assistant did not answer in time."
                 )
-        except (httpx.HTTPError, ConnectionError) as exc:
-            result = ToolResult.error(
-                "ha_unreachable", f"Could not reach Home Assistant: {exc}."
-            )
-        except TimeoutError:
-            result = ToolResult.error(
-                "ha_timeout", "Home Assistant did not answer in time."
-            )
         duration_ms = round((time.monotonic() - started) * 1000)
         log.info(
             "tool=%s status=%s duration_ms=%s args=%s",

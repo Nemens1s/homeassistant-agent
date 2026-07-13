@@ -1,7 +1,6 @@
 import json
 
 import httpx
-import pytest
 from pydantic import BaseModel, Field
 
 from app.config import Settings
