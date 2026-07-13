@@ -38,6 +38,17 @@ def test_read_skill_missing(skills_dir):
     assert read_skill(skills_dir, "nope") is None
 
 
+def test_frontmatter_survives_horizontal_rule_in_body(tmp_path):
+    (tmp_path / "hr.md").write_text(
+        "---\nname: hr_skill\ndescription: has a rule\n---\n# Top\n\n---\n\nBelow the rule.\n"
+    )
+    metas = list_skills(tmp_path)
+    assert metas[0].name == "hr_skill"
+    assert metas[0].description == "has a rule"
+    body = read_skill(tmp_path, "hr_skill")
+    assert "Below the rule." in body
+
+
 def test_seed_skill_is_valid():
     real_dir = Path("app/skills")
     metas = list_skills(real_dir)

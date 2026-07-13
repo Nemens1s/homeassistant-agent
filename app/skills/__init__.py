@@ -18,11 +18,16 @@ class SkillMeta:
 
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    if text.startswith("---"):
-        parts = text.split("---", 2)
-        if len(parts) == 3:
-            return yaml.safe_load(parts[1]) or {}, parts[2].strip()
-    return {}, text.strip()
+    if not text.startswith("---"):
+        return {}, text.strip()
+    lines = text.split("\n")
+    try:
+        close = lines.index("---", 1)  # first closing fence after line 0
+    except ValueError:
+        return {}, text.strip()
+    meta = yaml.safe_load("\n".join(lines[1:close])) or {}
+    body = "\n".join(lines[close + 1:]).strip()
+    return meta, body
 
 
 def list_skills(skills_dir: Path) -> list[SkillMeta]:
@@ -39,7 +44,7 @@ def list_skills(skills_dir: Path) -> list[SkillMeta]:
 
 
 def read_skill(skills_dir: Path, name: str) -> str | None:
-    for path in skills_dir.glob("*.md"):
+    for path in sorted(skills_dir.glob("*.md")):
         meta, body = _parse_frontmatter(path.read_text())
         if meta.get("name", path.stem) == name:
             return body
