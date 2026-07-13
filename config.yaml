@@ -1,7 +1,7 @@
 name: "Local HA Agent (Ollama)"
-version: "0.1.0"
+version: "0.2.0"
 slug: local_ha_agent
-description: "Read-only chat agent over Home Assistant state, powered by a local Ollama server"
+description: "Chat agent over Home Assistant state, powered by a local Ollama server (cloud models optional via LiteLLM)"
 url: "https://github.com/yourname/homeassistant-ollama-agent"
 arch:
   - amd64
@@ -12,14 +12,38 @@ ingress: true
 ingress_port: 8099
 panel_icon: mdi:robot-outline
 panel_title: "HA Agent"
+watchdog: "http://[HOST]:[PORT:8099]/api/health"
 options:
+  llm_provider: "ollama"
   ollama_url: "http://192.168.1.50:11434"
-  ollama_model: "qwen2.5:7b"
+  llm_model: "qwen2.5:7b"
+  api_key: ""
   system_prompt: >-
-    You are a read-only assistant for this Home Assistant instance.
-    You can only look up state, history, and logbook entries — you have
-    no ability to control any devices, even if asked to. Be concise and factual.
+    You are an assistant for this Home Assistant instance.
+    Answer questions about the home using the available tools.
+    Always look up real data with tools instead of guessing.
+    Be concise and factual.
+  max_tier: 1
+  temperature: 0.0
+  seed: 42
+  reasoning: false
+  num_predict: 2048
+  num_ctx: 8192
+  keep_alive: -1
+  recursion_limit: 15
+  max_rows: 50
 schema:
+  llm_provider: "str"
   ollama_url: "url"
-  ollama_model: "str"
+  llm_model: "str"
+  api_key: "password"
   system_prompt: "str"
+  max_tier: "int(1,2)"
+  temperature: "float(0,2)"
+  seed: "int"
+  reasoning: "bool"
+  num_predict: "int(128,32768)"
+  num_ctx: "int(1024,131072)"
+  keep_alive: "int"
+  recursion_limit: "int(2,50)"
+  max_rows: "int(5,500)"
