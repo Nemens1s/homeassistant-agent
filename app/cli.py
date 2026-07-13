@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from langchain_core.messages import AIMessageChunk
+from langgraph.errors import GraphRecursionError
 
 from app.agent.factory import build_agent
 from app.config import load_settings
@@ -44,13 +45,16 @@ async def main() -> None:
             if not user_input:
                 continue
             print("Agent: ", end="", flush=True)
-            async for token, _meta in agent.astream(
-                {"messages": [{"role": "user", "content": user_input}]},
-                config=config,
-                stream_mode="messages",
-            ):
-                if isinstance(token, AIMessageChunk) and isinstance(token.content, str):
-                    print(token.content, end="", flush=True)
+            try:
+                async for token, _meta in agent.astream(
+                    {"messages": [{"role": "user", "content": user_input}]},
+                    config=config,
+                    stream_mode="messages",
+                ):
+                    if isinstance(token, AIMessageChunk) and isinstance(token.content, str):
+                        print(token.content, end="", flush=True)
+            except GraphRecursionError:
+                print(f"\n[stopped: hit the {settings.recursion_limit}-step limit without finishing]", end="")
             print("\n")
     finally:
         await rest.aclose()

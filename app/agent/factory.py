@@ -18,7 +18,7 @@ from app.agent.llm import build_llm
 from app.config import Settings
 from app.skills import list_skills
 from app.tools import registry
-from app.tools.adapter import build_tools
+from app.tools.adapter import LoopGuard, build_tools
 from app.tools.context import ToolContext
 
 # Reserve room for the model's own output and for tool schemas + prompt.
@@ -57,6 +57,22 @@ def trim_history(messages: list, max_tokens: int) -> list:
     return trimmed or messages[-1:]
 
 
+class LoopGuardResetMiddleware(AgentMiddleware):
+    """The guard dedupes within one run; a fresh run must start clean."""
+
+    def __init__(self, guard: LoopGuard):
+        super().__init__()
+        self._guard = guard
+
+    def before_agent(self, state, runtime) -> dict | None:
+        self._guard.reset()
+        return None
+
+    async def abefore_agent(self, state, runtime) -> dict | None:
+        self._guard.reset()
+        return None
+
+
 class ContextWindowMiddleware(AgentMiddleware):
     """Non-destructive per-call trimming (the checkpointed history is left
     intact) + fresh timestamp in the system prompt."""
@@ -85,13 +101,15 @@ def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None):
     if not registry.tools_for_tier(2):  # nothing registered yet
         registry.load_all()
     llm = build_llm(settings)
-    tools = build_tools(ctx, settings.max_tier)
+    guard = LoopGuard()
+    tools = build_tools(ctx, settings.max_tier, guard=guard)
     base_prompt = build_system_prompt(settings, ctx.skills_dir)
     budget = max(1024, settings.num_ctx - settings.num_predict - _RESPONSE_AND_SCHEMA_MARGIN)
-    middleware = ContextWindowMiddleware(base_prompt, budget)
+    context_window_middleware = ContextWindowMiddleware(base_prompt, budget)
+    loop_guard_reset_middleware = LoopGuardResetMiddleware(guard)
     return create_agent(
         model=llm,
         tools=tools,
-        middleware=[middleware],
+        middleware=[context_window_middleware, loop_guard_reset_middleware],
         checkpointer=checkpointer or MemorySaver(),
     )

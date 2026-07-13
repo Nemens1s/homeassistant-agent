@@ -3,11 +3,13 @@ from datetime import datetime
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.agent.factory import (
+    LoopGuardResetMiddleware,
     build_agent,
     build_system_prompt,
     timestamped_system,
     trim_history,
 )
+from app.tools.adapter import LoopGuard
 from app.config import Settings
 from app.tools import registry
 from app.tools.context import ToolContext
@@ -50,6 +52,14 @@ def test_trim_history_never_returns_empty():
     huge = [HumanMessage("z" * 100000)]
     trimmed = trim_history(huge, max_tokens=10)
     assert trimmed == huge[-1:]
+
+
+def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
+    guard = LoopGuard()
+    guard._last = ("some_tool", "{}")
+    middleware = LoopGuardResetMiddleware(guard)
+    middleware.before_agent(None, None)
+    assert guard._last is None
 
 
 def test_build_agent_compiles_with_read_tools():

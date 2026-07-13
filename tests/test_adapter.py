@@ -96,6 +96,44 @@ async def test_audit_log_line(caplog):
     assert "tool=demo" in line and "status=ok" in line and "duration_ms=" in line
 
 
+async def test_runtime_error_maps_to_ha_error():
+    async def handler(params, ctx):
+        raise RuntimeError("unknown command")
+
+    tool = _make_tool(handler)
+    out = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}))
+    assert out["status"] == "error"
+    assert out["error"]["code"] == "ha_error"
+
+
+async def test_unexpected_exception_maps_to_internal_error():
+    async def handler(params, ctx):
+        raise KeyError("entity_id")
+
+    tool = _make_tool(handler)
+    out = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}))
+    assert out["status"] == "error"
+    assert out["error"]["code"] == "internal_error"
+
+
+async def test_loop_guard_reset_clears_repeated_call_block():
+    async def handler(params, ctx):
+        return ToolResult.ok("fine")
+
+    guard = LoopGuard()
+    defn = ToolDefinition(
+        name="demo", description="demo tool", params_model=_Params,
+        tier=Tier.READ, handler=handler,
+    )
+    tool = to_structured_tool(defn, _ctx(), guard)
+    await tool.ainvoke({"entity_id": "light.kitchen"})
+    second = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}))
+    assert second["error"]["code"] == "repeated_call"
+    guard.reset()
+    after_reset = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}))
+    assert after_reset["status"] == "ok"
+
+
 def test_build_tools_filters_by_tier():
     registry._reset_for_tests()
 

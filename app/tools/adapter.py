@@ -28,6 +28,9 @@ class LoopGuard:
     def __init__(self) -> None:
         self._last: tuple[str, str] | None = None
 
+    def reset(self) -> None:
+        self._last = None
+
     def is_repeat(self, name: str, args_json: str) -> bool:
         key = (name, args_json)
         if key == self._last:
@@ -94,6 +97,13 @@ def to_structured_tool(
                 result = ToolResult.error(
                     "ha_timeout", "Home Assistant did not answer in time."
                 )
+            except RuntimeError as exc:
+                result = ToolResult.error(
+                    "ha_error", f"Home Assistant rejected the request: {exc}."
+                )
+            except Exception as exc:  # terminal guard: nothing may escape into the agent loop
+                log.exception("tool=%s unexpected error", defn.name)
+                result = ToolResult.error("internal_error", f"Unexpected error: {exc}.")
         duration_ms = round((time.monotonic() - started) * 1000)
         log.info(
             "tool=%s status=%s duration_ms=%s args=%s",
@@ -112,6 +122,6 @@ def to_structured_tool(
     )
 
 
-def build_tools(ctx: ToolContext, max_tier: int) -> list[StructuredTool]:
-    guard = LoopGuard()
+def build_tools(ctx: ToolContext, max_tier: int, guard: LoopGuard | None = None) -> list[StructuredTool]:
+    guard = guard or LoopGuard()
     return [to_structured_tool(d, ctx, guard) for d in registry.tools_for_tier(max_tier)]

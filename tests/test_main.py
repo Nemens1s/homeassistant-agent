@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
+from langgraph.errors import GraphRecursionError
 
 from app.config import Settings
 from app.main import create_app
@@ -21,6 +22,11 @@ class FakeAgent:
         return {"messages": [AIMessage(content="hi there")]}
 
 
+class FakeAgentRecursion:
+    async def ainvoke(self, payload, config=None):
+        raise GraphRecursionError("Recursion limit reached")
+
+
 def test_health_degraded_without_backends():
     app = create_app(_settings())
     with TestClient(app) as client:
@@ -40,6 +46,15 @@ def test_chat_returns_agent_reply():
         resp = client.post("/api/chat", json={"message": "hello"})
     assert resp.status_code == 200
     assert resp.json() == {"reply": "hi there"}
+
+
+def test_chat_returns_graceful_reply_on_recursion_limit():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        client.app.state.agent = FakeAgentRecursion()
+        resp = client.post("/api/chat", json={"message": "hello"})
+    assert resp.status_code == 200
+    assert "stopped after" in resp.json()["reply"]
 
 
 def test_frontend_served_at_root():

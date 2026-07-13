@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from langgraph.errors import GraphRecursionError
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -58,14 +59,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(req: ChatRequest) -> ChatResponse:
-        result = await app.state.agent.ainvoke(
-            {"messages": [{"role": "user", "content": req.message}]},
-            config={
-                "configurable": {"thread_id": req.thread_id},
-                "recursion_limit": app.state.settings.recursion_limit,
-            },
-        )
-        return ChatResponse(reply=result["messages"][-1].content)
+        try:
+            result = await app.state.agent.ainvoke(
+                {"messages": [{"role": "user", "content": req.message}]},
+                config={
+                    "configurable": {"thread_id": req.thread_id},
+                    "recursion_limit": app.state.settings.recursion_limit,
+                },
+            )
+            return ChatResponse(reply=result["messages"][-1].content)
+        except GraphRecursionError:
+            return ChatResponse(
+                reply=f"I stopped after {app.state.settings.recursion_limit} tool steps without reaching an answer. Try a more specific question."
+            )
 
     @app.get("/api/health")
     async def health() -> dict:
