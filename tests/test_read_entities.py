@@ -1,4 +1,5 @@
 import pytest
+import httpx
 
 from app.config import Settings
 from app.tools import registry
@@ -63,6 +64,8 @@ async def test_get_entity_state():
     assert result.status == "ok"
     assert result.data["state"] == "on"
     assert result.data["attributes"]["brightness"] == 200
+    assert result.data["entity_id"] == "light.kitchen"
+    assert result.data["last_changed"] == "2026-07-13T10:00:00+00:00"
 
 
 async def test_list_entities_domain_filter():
@@ -95,3 +98,33 @@ async def test_list_entities_area_without_ws():
     result = await defn.handler(defn.params_model(area="Kitchen"), _ctx(ws=None))
     assert result.status == "error"
     assert result.error_code == "ws_unavailable"
+
+
+async def test_list_entities_area_override():
+    """Entity-level area assignment overrides device's area."""
+    ws = FakeWS()
+    ws.registries["config/area_registry/list"].append({"area_id": "other", "name": "Other"})
+    ws.registries["config/entity_registry/list"] = [
+        {"entity_id": "light.bedroom", "area_id": "kitchen", "device_id": None},
+        {"entity_id": "light.kitchen", "area_id": "other", "device_id": "dev1"},
+    ]
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(area="Kitchen"), _ctx(ws=ws))
+    assert result.status == "ok"
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert ids == ["light.bedroom"]
+
+
+async def test_get_entity_state_propagates_http_error():
+    """404 from REST client is not caught and propagates."""
+    class Raising404Rest:
+        async def get_state(self, entity_id):
+            raise httpx.HTTPStatusError(
+                "404", request=httpx.Request("GET", "http://x"),
+                response=httpx.Response(404),
+            )
+
+    defn = registry.get("get_entity_state")
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=Raising404Rest(), ws=None)
+    with pytest.raises(httpx.HTTPStatusError):
+        await defn.handler(defn.params_model(entity_id="light.nope"), ctx)
