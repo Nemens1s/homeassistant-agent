@@ -67,19 +67,12 @@ class ContextWindowMiddleware(AgentMiddleware):
         self._max_tokens = max_tokens
 
     def _prepare(self, request):
+        messages = trim_history(list(request.messages), self._max_tokens)
+        system = timestamped_system(self._base_prompt)
         try:
-            return replace(
-                request,
-                messages=trim_history(list(request.messages), self._max_tokens),
-                system_message=timestamped_system(self._base_prompt),
-            )
-        except TypeError:
-            # ModelRequest provides its own .override() method instead of
-            # being a plain dataclass — use the native API.
-            return request.override(
-                messages=trim_history(list(request.messages), self._max_tokens),
-                system_message=timestamped_system(self._base_prompt),
-            )
+            return replace(request, messages=messages, system_message=system)
+        except TypeError:  # pragma: no cover — future langchain versions may swap the dataclass for .override()
+            return request.override(messages=messages, system_message=system)
 
     def wrap_model_call(self, request, handler):
         return handler(self._prepare(request))

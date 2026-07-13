@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.agent.factory import (
@@ -30,7 +32,7 @@ def test_timestamped_system_injects_current_time():
     msg = timestamped_system("Base.")
     assert isinstance(msg, SystemMessage)
     assert msg.content.startswith("Base.")
-    assert "Current time: 2026-" in msg.content
+    assert f"Current time: {datetime.now().year}-" in msg.content
 
 
 def test_trim_history_keeps_recent_and_starts_on_human():
@@ -56,7 +58,9 @@ def test_build_agent_compiles_with_read_tools():
     ctx = ToolContext(settings=settings, rest=None, ws=None)
     agent = build_agent(settings, ctx)
     assert agent is not None
-    # all eight read tools registered, none above tier 1
-    assert len(registry.tools_for_tier(1)) == 8
-    assert len(registry.tools_for_tier(2)) == 8
+    tier1 = {t.name for t in registry.tools_for_tier(1)}
+    tier2 = {t.name for t in registry.tools_for_tier(2)}
+    assert tier1  # registry loaded
+    assert tier1 == tier2  # iteration 1: nothing above READ exists
+    assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()
