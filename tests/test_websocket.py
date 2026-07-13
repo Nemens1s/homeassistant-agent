@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 import pytest
 import websockets
@@ -77,3 +78,15 @@ async def test_request_cached_hits_cache(server_url):
     # ids increment only once: second call served from cache
     assert client._next_id == 2
     await client.stop()
+
+
+async def test_clean_stop_no_warnings(server_url, caplog):
+    client = WebSocketClient(server_url, "secret")
+    await client.start(connect_timeout=5)
+    with caplog.at_level(logging.WARNING, logger="agent.ws"):
+        await client.stop()
+    warnings = [
+        r for r in caplog.records
+        if r.name == "agent.ws" and r.levelno >= logging.WARNING
+    ]
+    assert warnings == []

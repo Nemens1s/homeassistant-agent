@@ -9,6 +9,7 @@ are out of scope but nothing here precludes them.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -47,9 +48,12 @@ class WebSocketClient:
 
     async def stop(self) -> None:
         self._closing = True
-        if self._runner is not None:
-            self._runner.cancel()
-            self._runner = None
+        runner = self._runner
+        self._runner = None
+        if runner is not None:
+            runner.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await runner
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
@@ -58,11 +62,18 @@ class WebSocketClient:
 
     async def request(self, msg_type: str, **payload: Any) -> Any:
         await asyncio.wait_for(self._connected.wait(), timeout=self._timeout)
+        conn = self._conn
+        if conn is None:
+            raise ConnectionError("websocket disconnected")
         msg_id = self._next_id
         self._next_id += 1
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[msg_id] = fut
-        await self._conn.send(json.dumps({"id": msg_id, "type": msg_type, **payload}))
+        try:
+            await conn.send(json.dumps({"id": msg_id, "type": msg_type, **payload}))
+        except Exception as exc:
+            self._pending.pop(msg_id, None)
+            raise ConnectionError(f"websocket send failed: {exc}") from exc
         return await asyncio.wait_for(fut, timeout=self._timeout)
 
     async def request_cached(self, msg_type: str, ttl: float = 60.0) -> Any:
