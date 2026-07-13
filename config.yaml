@@ -1,0 +1,25 @@
+name: "Local HA Agent (Ollama)"
+version: "0.1.0"
+slug: local_ha_agent
+description: "Read-only chat agent over Home Assistant state, powered by a local Ollama server"
+url: "https://github.com/yourname/homeassistant-ollama-agent"
+arch:
+  - amd64
+  - aarch64
+init: false
+homeassistant_api: true
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:robot-outline
+panel_title: "HA Agent"
+options:
+  ollama_url: "http://192.168.1.50:11434"
+  ollama_model: "qwen2.5:7b"
+  system_prompt: >-
+    You are a read-only assistant for this Home Assistant instance.
+    You can only look up state, history, and logbook entries — you have
+    no ability to control any devices, even if asked to. Be concise and factual.
+schema:
+  ollama_url: "url"
+  ollama_model: "str"
+  system_prompt: "str"
