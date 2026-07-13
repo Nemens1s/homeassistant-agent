@@ -38,19 +38,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rest = RestClient(cfg.ha_base_url, cfg.ha_token)
         ws: WebSocketClient | None = WebSocketClient(cfg.ws_url, cfg.ha_token)
         try:
-            await ws.start(connect_timeout=cfg.ws_connect_timeout)
-        except Exception as exc:
-            log.warning("websocket unavailable (%s) — area/automation tools degraded", exc)
-            ws = None
-        ctx = ToolContext(settings=cfg, rest=rest, ws=ws)
-        app.state.settings = cfg
-        app.state.rest = rest
-        app.state.ws = ws
-        app.state.agent = build_agent(cfg, ctx)
-        yield
-        await rest.aclose()
-        if ws is not None:
-            await ws.stop()
+            try:
+                await ws.start(connect_timeout=cfg.ws_connect_timeout)
+            except Exception as exc:
+                log.warning("websocket unavailable (%s) — area/automation tools degraded", exc)
+                ws = None
+            ctx = ToolContext(settings=cfg, rest=rest, ws=ws)
+            app.state.settings = cfg
+            app.state.rest = rest
+            app.state.ws = ws
+            app.state.agent = build_agent(cfg, ctx)
+            yield
+        finally:
+            await rest.aclose()
+            if ws is not None:
+                await ws.stop()
 
     app = FastAPI(lifespan=lifespan)
 
