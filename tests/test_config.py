@@ -1,6 +1,14 @@
 import json
 
+import pytest
+
 from app.config import Settings, load_settings
+
+
+@pytest.fixture(autouse=True)
+def _clean_token_env(monkeypatch):
+    monkeypatch.delenv("HA_TOKEN", raising=False)
+    monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
 
 
 def test_defaults():
