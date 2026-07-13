@@ -71,3 +71,35 @@ async def test_get_error_log_tails_50_lines():
     assert len(result.data["lines"]) == 50
     assert result.data["lines"][-1] == "line 100"
     assert result.data["total_lines"] == 100
+
+
+async def test_get_history_empty_data_returns_empty_rows():
+    class EmptyRest:
+        async def get_history(self, entity_id, start_time, end_time=None):
+            return []
+
+    defn = registry.get("get_history")
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=EmptyRest(), ws=None)
+    result = await defn.handler(
+        defn.params_model(entity_id="light.kitchen", start_time="2026-07-12T00:00:00"), ctx
+    )
+    assert result.status == "ok"
+    assert result.data["rows"] == []
+    assert result.data["total"] == 0
+
+
+async def test_get_history_normalizes_empty_end_time_to_none():
+    captured = {}
+
+    class CapturingRest:
+        async def get_history(self, entity_id, start_time, end_time=None):
+            captured["end_time"] = end_time
+            return []
+
+    defn = registry.get("get_history")
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=CapturingRest(), ws=None)
+    await defn.handler(
+        defn.params_model(entity_id="light.kitchen", start_time="2026-07-12T00:00:00", end_time=""),
+        ctx,
+    )
+    assert captured["end_time"] is None
