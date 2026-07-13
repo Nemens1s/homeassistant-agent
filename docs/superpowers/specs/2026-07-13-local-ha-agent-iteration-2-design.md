@@ -85,14 +85,43 @@ the factory.
 - README + config.yaml documentation note: removing `automation` from the
   allowlist prevents the agent from disabling automations (e.g. security
   ones) — the user tunes their own blast radius.
+- New Settings field `audit_db_path: str` (default `""` = disabled; the
+  addon's `run.sh`/options default it to `/data/audit.db`). Not surfaced
+  as a user-editable option beyond on/off via empty string.
 
 ## Audit emphasis
 
 - The adapter's audit line gains a `tier=<n>` field (all tools, one format).
+  Stdout lines remain the live debugging view for everything.
 - Tier-2 calls additionally log at `INFO` on logger `agent.actions` with
   the resolved domain/service/entity and the result status — a dedicated
-  channel the user can filter in the addon log to answer "what did the
-  agent do to my house."
+  channel the user can filter in the addon log.
+
+### Persistent action audit (SQLite `AuditSink`)
+
+Addon logs rotate and die with restarts; "what did the agent do to my
+house last Tuesday" needs durable storage. **Actions only** — tier-1 reads
+are harmless and stay stdout-only, keeping the DB tiny and meaningful.
+
+- `app/audit.py`: `AuditSink` with `record(entry)` and a fake-able
+  interface; carried on `ToolContext` and invoked from the adapter's single
+  log tail for `tier >= 2` results (both ok and error outcomes — refused
+  attempts are audit-worthy).
+- Storage: SQLite (WAL mode) at `/data/audit.db` in the container,
+  settings-configurable path for dev (`audit_db_path`, empty = disabled,
+  which is also the dev-CLI default). One table:
+  `actions(id, ts, thread_id, tool, entity_id, domain, service,
+  params_json, status, error_code, duration_ms)`.
+- Deliberately not postgres (a server process for a few rows per
+  conversation) and not a document store (append-only rows with time-range
+  queries are exactly relational); SQLite matches iteration 3's
+  checkpointer pattern on the same `/data` volume.
+- Failure posture: audit-write errors are logged but never fail the tool
+  call (the action already happened; the envelope must still reach the
+  model). Alternative rejected: HA logbook events as the audit trail —
+  couples auditing to a write call and HA's recorder purges by default.
+- Future (not this iteration): a `get_recent_actions` read tool over the
+  same table, letting the agent answer "what did you do today."
 
 ## Evals
 
@@ -156,16 +185,21 @@ their allowlist bounds (kept short — the tool schemas carry the details).
   wrong-domain trigger_automation, post-call state confirmation.
 - `call_service` tests via `httpx.MockTransport`: POST path/body, refusal
   of non-allowlisted domain, empty-allowlist client cannot write.
-- Adapter untouched (action tools flow through the same seam; the existing
-  error-mapping tests cover them).
+- Adapter: existing error-mapping tests cover the action tools; new tests
+  assert the `AuditSink` is invoked for tier-2 results only (ok, error,
+  and refused), never for tier-1, and that a failing sink does not break
+  the tool call.
+- `AuditSink`: unit tests against a tmp-path SQLite file (row shape,
+  WAL mode, disabled-when-empty-path).
 - Evals require live Ollama; the negative case is the interesting datapoint
   for small models.
 
 ## Definition of done
 
 - `max_tier=2` with default allowlist: agent can toggle a real light from
-  the CLI REPL, the action appears in `agent.actions` log, and the reply
-  reflects the post-call state.
+  the CLI REPL, the action appears in the `agent.actions` log **and as a
+  row in `audit.db`** (when a path is configured), and the reply reflects
+  the post-call state.
 - `max_tier=1` build behaves byte-identically to iteration 1 (regression:
   tier-1 tool list unchanged — the factory test's `tier1 == tier2`
   invariant is updated to assert the two action tools are the only delta).
