@@ -94,7 +94,13 @@ class ContextWindowMiddleware(AgentMiddleware):
         return handler(self._prepare(request))
 
     async def awrap_model_call(self, request, handler):
-        return await handler(self._prepare(request))
+        prepared = self._prepare(request)
+        try:
+            return await handler(prepared)
+        except Exception as exc:
+            if "XML syntax error" not in str(exc):
+                raise
+            return await handler(prepared)
 
 
 def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None):

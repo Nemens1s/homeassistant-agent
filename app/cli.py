@@ -4,6 +4,7 @@ Ollama server (see .env)."""
 
 import asyncio
 import logging
+import time
 
 from langchain_core.messages import AIMessageChunk
 from langgraph.errors import GraphRecursionError
@@ -45,6 +46,7 @@ async def main() -> None:
             if not user_input:
                 continue
             print("Agent: ", end="", flush=True)
+            t0 = time.monotonic()
             try:
                 async for token, _meta in agent.astream(
                     {"messages": [{"role": "user", "content": user_input}]},
@@ -55,7 +57,10 @@ async def main() -> None:
                         print(token.content, end="", flush=True)
             except GraphRecursionError:
                 print(f"\n[stopped: hit the {settings.recursion_limit}-step limit without finishing]", end="")
-            print("\n")
+            except Exception as exc:
+                print(f"\n[error: {exc}]", end="")
+            elapsed = time.monotonic() - t0
+            print(f"\n[{elapsed:.1f}s]\n")
     finally:
         await rest.aclose()
         if ws is not None:

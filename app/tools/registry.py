@@ -21,8 +21,12 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.get_history",
     "app.tools.read.get_logbook",
     "app.tools.read.get_error_log",
+    "app.tools.read.get_areas",
     "app.tools.read.get_areas_and_devices",
+    "app.tools.read.get_battery_status",
+    "app.tools.read.get_area_devices",
     "app.tools.read.get_automations",
+    "app.tools.read.get_weather",
     "app.tools.read.load_skill",
 )
 

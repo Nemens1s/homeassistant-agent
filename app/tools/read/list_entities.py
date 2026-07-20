@@ -11,6 +11,9 @@ class Params(BaseModel):
     area: str = Field(
         default="", description="Optional area name filter, e.g. 'Living room'."
     )
+    device_class: str = Field(
+        default="", description="Optional device class filter, e.g. 'battery', 'motion', 'temperature', 'humidity'."
+    )
 
 
 async def _entity_ids_in_area(ctx, area_name: str) -> set[str] | None:
@@ -51,6 +54,8 @@ async def handler(params: Params, ctx) -> ToolResult:
                 data={"available_areas": [a["name"] for a in areas]},
             )
         states = [s for s in states if s["entity_id"] in entity_ids]
+    if params.device_class:
+        states = [s for s in states if s.get("attributes", {}).get("device_class") == params.device_class]
     rows = [
         {
             "entity_id": s["entity_id"],
@@ -65,7 +70,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="list_entities",
-        description="List entities with current state and friendly name. Filter by domain (e.g. 'light') and/or area name (e.g. 'Living room'). Unfiltered lists are truncated.",
+        description="List entities with current state and friendly name. Filter by domain (e.g. 'light'), area name (e.g. 'Living room'), and/or device_class (e.g. 'motion', 'temperature'). Unfiltered lists are truncated.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
