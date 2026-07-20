@@ -40,6 +40,9 @@ async def main() -> None:
         while True:
             try:
                 user_input = input("You: ").strip()
+                if user_input == "Bye":
+                    print("Shutting down")
+                    break
             except (KeyboardInterrupt, EOFError):
                 print("\nBye.")
                 break
@@ -62,8 +65,10 @@ async def main() -> None:
             elapsed = time.monotonic() - t0
             print(f"\n[{elapsed:.1f}s]\n")
     finally:
+        print("Closing rest client")
         await rest.aclose()
         if ws is not None:
+            print("Closing ws client")
             await ws.stop()
 
 
