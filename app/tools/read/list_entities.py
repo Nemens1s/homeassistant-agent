@@ -70,7 +70,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="list_entities",
-        description="List entities with current state and friendly name. Filter by domain (e.g. 'light'), area name (e.g. 'Living room'), and/or device_class (e.g. 'motion', 'temperature'). Unfiltered lists are truncated.",
+        description="List entities with current state and friendly name. Filter by domain (e.g. 'light', 'switch', 'vacuum', 'sensor', 'media_player', 'climate'), area name (e.g. 'Living room'), and/or device_class (e.g. 'motion', 'temperature'). Unfiltered lists are truncated.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

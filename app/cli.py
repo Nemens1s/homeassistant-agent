@@ -56,7 +56,13 @@ async def main() -> None:
                     config=config,
                     stream_mode="messages",
                 ):
-                    if isinstance(token, AIMessageChunk) and isinstance(token.content, str):
+                    if not isinstance(token, AIMessageChunk):
+                        continue
+                    if settings.show_thinking:
+                        thinking = token.additional_kwargs.get("reasoning_content", "")
+                        if thinking:
+                            print(f"\033[2m{thinking}\033[0m", end="", flush=True)
+                    if isinstance(token.content, str):
                         print(token.content, end="", flush=True)
             except GraphRecursionError:
                 print(f"\n[stopped: hit the {settings.recursion_limit}-step limit without finishing]", end="")

@@ -41,7 +41,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_areas_and_devices",
-        description="Get the full home topology: every area mapped to its devices and entity_ids, plus unassigned ones. Use to find which room a device is in, or to survey all devices across all rooms at once. For a single room use get_area_devices; to list room names only use get_areas.",
+        description="Get the full home topology: every area mapped to its devices and entity_ids, plus unassigned ones. Use to find which room a device is in or to discover its entity_id, then call list_entities or get_entity_state for current state. For a single room use get_area_devices.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

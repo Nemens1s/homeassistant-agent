@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     num_ctx: int = 8192
     keep_alive: int = -1
 
+    show_thinking: bool = False  # stream <think> content to stdout in the CLI
+
     # Agent behavior
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     max_tier: int = 1
