@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     seed: int = 42
     reasoning: bool = False
     num_predict: int = 2048
+    num_gpu: int = 16
     num_ctx: int = 8192
     keep_alive: int = -1
 

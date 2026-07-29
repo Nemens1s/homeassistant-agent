@@ -4,13 +4,14 @@ into the system prompt on every call)."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import SystemMessage, trim_messages
+from langchain_core.messages import AIMessage, SystemMessage, trim_messages
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -20,6 +21,8 @@ from app.skills import list_skills
 from app.tools import registry
 from app.tools.adapter import LoopGuard, build_tools
 from app.tools.context import ToolContext
+
+log = logging.getLogger("agent.factory")
 
 # Reserve room for the model's own output and for tool schemas + prompt.
 _RESPONSE_AND_SCHEMA_MARGIN = 2048
@@ -100,7 +103,11 @@ class ContextWindowMiddleware(AgentMiddleware):
         except Exception as exc:
             if "XML syntax error" not in str(exc):
                 raise
-            return await handler(prepared)
+            log.warning("LLM produced malformed XML tool call — skipping retry: %s", exc)
+            return AIMessage(
+                content="Your previous tool call contained malformed XML and could not be parsed. "
+                "Please retry with well-formed XML."
+            )
 
 
 def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None):
