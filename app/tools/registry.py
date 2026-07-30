@@ -26,7 +26,9 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.get_battery_status",
     "app.tools.read.get_area_devices",
     "app.tools.read.get_automations",
+    "app.tools.read.get_vacuum_state",
     "app.tools.read.get_weather",
+    "app.tools.read.search_entities",
     "app.tools.read.load_skill",
 )
 

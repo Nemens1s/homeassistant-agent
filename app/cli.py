@@ -8,6 +8,7 @@ import time
 
 from langchain_core.messages import AIMessageChunk
 from langgraph.errors import GraphRecursionError
+from litellm.proxy.guardrails.guardrail_hooks.custom_code.primitives import lower
 
 from app.agent.factory import build_agent
 from app.config import load_settings
@@ -40,7 +41,7 @@ async def main() -> None:
         while True:
             try:
                 user_input = input("You: ").strip()
-                if user_input == "Bye":
+                if user_input == lower("Bye"):
                     print("Shutting down")
                     break
             except (KeyboardInterrupt, EOFError):

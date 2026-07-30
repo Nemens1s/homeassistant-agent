@@ -34,8 +34,9 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     if metas:
         lines = "\n".join(f"- {m.name}: {m.description}" for m in metas)
         prompt += (
-            "\n\nAvailable skills (playbooks). Call load_skill(name) before "
-            "starting a task one of them covers:\n" + lines
+            "\n\nSKILL PLAYBOOKS — you MUST check this list before selecting any tool. "
+            "If your task matches a skill, your FIRST tool call MUST be load_skill(name). "
+            "Only proceed with other tools after loading the relevant skill:\n" + lines
         )
     return prompt
 
