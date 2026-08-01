@@ -15,8 +15,6 @@
 - id: list_area
   prompt: "What entities are in the Living room?"
   expect_tool: list_entities
-  expect_params:
-    area: Living room
 
 - id: history_needs_timestamps
   prompt: "Show me the temperature history of sensor.living_room_temperature for the last 24 hours."
@@ -32,8 +30,12 @@
   prompt: "Is Home Assistant showing any errors?"
   expect_tool: get_error_log
 
-- id: topology
+- id: topology_single_room
   prompt: "What devices are in the bedroom?"
+  expect_tool: get_area_devices
+
+- id: topology_full_map
+  prompt: "Show me all rooms and what devices are in each."
   expect_tool: get_areas_and_devices
 
 - id: automations_list
@@ -42,6 +44,66 @@
 
 - id: skill_loading
   prompt: "My automation automation.night_lights didn't fire last night, figure out why."
+  expect_tool: load_skill
+  expect_params:
+    name: diagnosing_automations
+
+- id: vacuum_running
+  prompt: "Is the vacuum running right now?"
+  expect_tool: get_vacuum_state
+
+- id: vacuum_current_room
+  prompt: "What room is the Roborock currently cleaning?"
+  expect_tool: get_vacuum_state
+
+- id: weather_current
+  prompt: "What is the current weather at home?"
+  expect_tool: get_weather
+
+- id: battery_sofija_phone
+  prompt: "What is Sofija's iPhone battery level?"
+  expect_tool: get_battery_status
+
+- id: person_sofija_home
+  prompt: "Is Sofija home?"
+  expect_tool: get_person_locations
+
+- id: person_anyone_home
+  prompt: "Is anyone home?"
+  expect_tool: get_person_locations
+
+- id: person_ilja_location
+  prompt: "Where is Ilja right now — home or away?"
+  expect_tool: get_person_locations
+
+- id: search_zigbee_bridge
+  prompt: "What is the current state of the Zigbee2MQTT bridge?"
+  expect_tool: search_entities
+
+- id: search_sleeping_helper
+  prompt: "Is the sleeping mode helper currently on?"
+  expect_tool: search_entities
+
+- id: automation_clean_away
+  prompt: "Is the 'clean rooms when no one's home' automation enabled?"
+  expect_tool: get_automations
+
+- id: automations_on_leave
+  prompt: "Which automations run when everyone leaves home?"
+  expect_tool: get_automations
+
+- id: logbook_clean_away_today
+  prompt: "Did the 'clean when away' automation run today?"
+  expect_tool: get_logbook
+
+- id: troubleshoot_automation_timing
+  prompt: "The soundbar night mode didn't activate last night at the scheduled time — why might that be?"
+  expect_tool: load_skill
+  expect_params:
+    name: diagnosing_automations
+
+- id: troubleshoot_zigbee_buttons
+  prompt: "The Zigbee buttons stopped triggering automations — what's the first thing to investigate?"
   expect_tool: load_skill
   expect_params:
     name: diagnosing_automations

@@ -52,8 +52,9 @@ register(
     ToolDefinition(
         name="search_entities",
         description=(
-            "Search entities by name or entity_id keyword. Returns state, friendly name, and area for each match. "
-            "Use instead of get_areas_and_devices when looking for a specific device by name (e.g. 'roborock', 'thermostat')."
+            "Search entities by name or entity_id keyword when the exact entity_id is unknown. Returns state and area for each match. "
+            "Use when the user names a specific device but you don't know its entity_id (e.g. 'zigbee bridge', 'sleeping helper', 'tapo'). "
+            "Not for automation queries (use get_automations) or battery questions (use get_battery_status)."
         ),
         params_model=Params,
         tier=Tier.READ,

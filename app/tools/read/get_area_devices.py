@@ -39,7 +39,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_area_devices",
-        description="Get all devices and entity_ids in one specific area/room by name. Use for 'what devices are in the kitchen?' style questions.",
+        description="Get device names in one specific area/room by name. Use for 'what devices are in the kitchen?' style questions. Returns device names only — for entity states in a room, use list_entities with area= instead.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

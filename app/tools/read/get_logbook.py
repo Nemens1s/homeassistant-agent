@@ -29,7 +29,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_logbook",
-        description="Get logbook entries (state changes, triggered automations, events) between two ISO8601 timestamps.",
+        description="Get a time-range log of all events, state changes, and triggered automations across all entities. Use for 'what happened in the house?', 'did automation X run today?', 'when did Y last occur?'. For state history of one specific entity only, use get_history instead.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

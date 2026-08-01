@@ -55,7 +55,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_automations",
-        description="List all automations (state, last_triggered) or, given an automation entity_id, fetch its full config (triggers, conditions, actions).",
+        description="List all automations with enabled/disabled state, or fetch a specific automation's full config (triggers, conditions, actions). Use for 'is automation X enabled?', 'what triggers X?', 'which automations run when X?'. For troubleshooting why something failed, use load_skill. For 'did X run recently?' use get_logbook.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
