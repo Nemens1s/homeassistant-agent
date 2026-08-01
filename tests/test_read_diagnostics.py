@@ -103,3 +103,17 @@ async def test_get_history_normalizes_empty_end_time_to_none():
         ctx,
     )
     assert captured["end_time"] is None
+
+
+async def test_get_logbook_normalizes_empty_end_time_to_none():
+    captured = {}
+
+    class CapturingRest:
+        async def get_logbook(self, start_time, end_time=None):
+            captured["end_time"] = end_time
+            return []
+
+    defn = registry.get("get_logbook")
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=CapturingRest(), ws=None)
+    await defn.handler(defn.params_model(start_time="2026-07-12T00:00:00", end_time=""), ctx)
+    assert captured["end_time"] is None

@@ -22,8 +22,8 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
         return {}, text.strip()
     lines = text.split("\n")
     try:
-        close = lines.index("---", 1)  # first closing fence after line 0
-    except ValueError:
+        close = next(i for i, l in enumerate(lines[1:], 1) if l.strip() == "---")
+    except StopIteration:
         return {}, text.strip()
     meta = yaml.safe_load("\n".join(lines[1:close])) or {}
     body = "\n".join(lines[close + 1:]).strip()

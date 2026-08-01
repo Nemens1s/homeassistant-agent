@@ -145,3 +145,10 @@ async def test_get_entity_state_propagates_http_error():
     ctx = ToolContext(settings=Settings(_env_file=None), rest=Raising404Rest(), ws=None)
     with pytest.raises(httpx.HTTPStatusError):
         await defn.handler(defn.params_model(entity_id="light.nope"), ctx)
+
+
+async def test_list_entities_domain_and_area_combined():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(domain="light", area="Kitchen"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    assert [r["entity_id"] for r in result.data["rows"]] == ["light.kitchen"]
