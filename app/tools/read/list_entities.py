@@ -75,7 +75,9 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="list_entities",
-        description="List entities filtered by domain (e.g. domain='light' for all lights, 'switch', 'sensor', 'input_boolean'), area, device_class, or state. Use to browse all entities of a type. Do NOT use when a full entity_id like 'light.kitchen' is already given (use get_entity_state) or when searching by device name (use search_entities).",
+        description="List entities filtered by domain (e.g. domain='light' for all lights, 'switch', 'sensor', 'input_boolean'), area, device_class, or state. Use to browse all entities of a type."
+                    " Do NOT use when a full entity_id like 'light.kitchen' is already given (use get_entity_state) or when searching by device name (use search_entities)."
+                    " When asked for specific state e.g 'on' use state query parameter",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
