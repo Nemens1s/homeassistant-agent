@@ -1,8 +1,9 @@
-"""GET-only client for the Home Assistant REST API.
+"""REST client for the Home Assistant REST API.
 
-Iteration 1 is read-only by construction: there is deliberately no
-call_service / POST method in this class. Iteration 2 adds exactly one,
-guarded by the domain allowlist.
+Iteration 1 was read-only by construction. Iteration 2 adds exactly one
+write method — call_service — guarded by a domain allowlist supplied at
+construction time. An empty allowlist (the default) keeps the client
+effectively read-only.
 """
 
 from __future__ import annotations
@@ -17,7 +18,9 @@ class RestClient:
         token: str,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        allowed_write_domains: tuple[str, ...] = (),
     ):
+        self._allowed_write_domains = allowed_write_domains
         self._client = httpx.AsyncClient(
             base_url=base_url,
             headers={
@@ -68,3 +71,15 @@ class RestClient:
 
     async def get_automation_config(self, automation_id: str) -> dict:
         return await self._get_json(f"/api/config/automation/config/{automation_id}")
+
+    async def call_service(self, domain: str, service: str, entity_id: str) -> list:
+        """The ONLY write method. Refuses domains outside the allowlist the
+        client was constructed with — defense in depth beneath the handler
+        check; an empty allowlist (the default) makes this client read-only."""
+        if domain not in self._allowed_write_domains:
+            raise PermissionError(f"write domain not allowed: {domain!r}")
+        resp = await self._client.post(
+            f"/api/services/{domain}/{service}", json={"entity_id": entity_id}
+        )
+        resp.raise_for_status()
+        return resp.json()
