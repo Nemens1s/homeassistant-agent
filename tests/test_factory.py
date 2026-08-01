@@ -71,6 +71,6 @@ def test_build_agent_compiles_with_read_tools():
     tier1 = {t.name for t in registry.tools_for_tier(1)}
     tier2 = {t.name for t in registry.tools_for_tier(2)}
     assert tier1  # registry loaded
-    assert tier1 == tier2  # iteration 1: nothing above READ exists
+    assert tier2 - tier1 == {"control_entity", "trigger_automation"}
     assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()
