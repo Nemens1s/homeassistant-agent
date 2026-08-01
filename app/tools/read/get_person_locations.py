@@ -8,17 +8,26 @@ class Params(BaseModel):
     pass
 
 
+_NAME_MAP = {
+    "ilniko": "Ilja",
+    "megakrasotka2002": "Sofija",
+    "Sonja": "Sofija",
+    "Sonya": "Sofija",
+}
+_EXCLUDE = {"ipad"}
+
+
 async def handler(params: Params, ctx) -> ToolResult:
     states = await ctx.rest.list_states()
-    rows = [
-        {
-            "entity_id": s["entity_id"],
-            "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]),
-            "state": s["state"],
-        }
-        for s in states
-        if s["entity_id"].startswith("person.")
-    ]
+    rows = []
+    for s in states:
+        if not s["entity_id"].startswith("person."):
+            continue
+        name = s.get("attributes", {}).get("friendly_name", s["entity_id"])
+        name = _NAME_MAP.get(name, name)
+        if name.lower() in _EXCLUDE:
+            continue
+        rows.append({"entity_id": s["entity_id"], "name": name, "state": s["state"]})
     return ToolResult.ok({"rows": rows})
 
 
