@@ -21,6 +21,7 @@ from app.tools.base import ToolDefinition, ToolResult
 from app.tools.context import ToolContext
 
 log = logging.getLogger("agent.tools")
+log_actions = logging.getLogger("agent.actions")
 
 
 class LoopGuard:
@@ -112,9 +113,24 @@ def to_structured_tool(
                 result = ToolResult.error("internal_error", f"Unexpected error: {exc}.")
         duration_ms = round((time.monotonic() - started) * 1000)
         log.info(
-            "tool=%s status=%s duration_ms=%s args=%s",
-            defn.name, result.status, duration_ms, args_json,
+            "tool=%s tier=%s status=%s duration_ms=%s args=%s",
+            defn.name, int(defn.tier), result.status, duration_ms, args_json,
         )
+        if defn.tier >= 2:
+            entity_id = str(kwargs.get("entity_id", ""))
+            domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+            service = str(kwargs.get("action", "")) or defn.name
+            log_actions.info(
+                "action tool=%s domain=%s service=%s entity=%s status=%s",
+                defn.name, domain, service, entity_id, result.status,
+            )
+            if ctx.audit is not None:
+                await ctx.audit.record(
+                    thread_id=thread_id, tool=defn.name, entity_id=entity_id,
+                    domain=domain, service=service, params_json=args_json,
+                    status=result.status, error_code=result.error_code,
+                    duration_ms=duration_ms,
+                )
         return result.to_json()
 
     return StructuredTool(

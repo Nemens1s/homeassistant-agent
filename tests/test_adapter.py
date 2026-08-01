@@ -175,3 +175,74 @@ def test_build_tools_filters_by_tier():
     tools = build_tools(_ctx(), max_tier=1)
     assert [t.name for t in tools] == ["read_one"]
     registry._reset_for_tests()
+
+
+class RecordingSink:
+    def __init__(self):
+        self.rows = []
+
+    async def record(self, **fields):
+        self.rows.append(fields)
+
+
+def _action_tool(handler, sink, name="act_demo"):
+    from app.config import Settings
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=_FakeRest(), ws=None)
+    ctx.audit = sink
+    defn = ToolDefinition(name=name, description="d", params_model=_Params,
+                          tier=Tier.ACTION, handler=handler)
+    return to_structured_tool(defn, ctx, LoopGuard())
+
+
+async def test_audit_line_contains_tier(caplog):
+    async def handler(params, ctx):
+        return ToolResult.ok("x")
+
+    tool = _make_tool(handler, name="tiered")
+    with caplog.at_level("INFO", logger="agent.tools"):
+        await tool.ainvoke({"entity_id": "light.kitchen"})
+    assert "tier=1" in caplog.records[-1].getMessage()
+
+
+async def test_tier2_records_to_sink_and_actions_logger(caplog):
+    async def handler(params, ctx):
+        return ToolResult.ok("done")
+
+    sink = RecordingSink()
+    tool = _action_tool(handler, sink)
+    with caplog.at_level("INFO", logger="agent.actions"):
+        await tool.ainvoke({"entity_id": "light.kitchen"},
+                           config={"configurable": {"thread_id": "t9"}})
+    assert len(sink.rows) == 1
+    row = sink.rows[0]
+    assert row["thread_id"] == "t9"
+    assert row["entity_id"] == "light.kitchen"
+    assert row["domain"] == "light"
+    assert row["status"] == "ok"
+    assert any(r.name == "agent.actions" for r in caplog.records)
+
+
+async def test_tier1_never_touches_sink():
+    async def handler(params, ctx):
+        return ToolResult.ok("x")
+
+    sink = RecordingSink()
+    from app.config import Settings
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=_FakeRest(), ws=None)
+    ctx.audit = sink
+    defn = ToolDefinition(name="read_demo", description="d", params_model=_Params,
+                          tier=Tier.READ, handler=handler)
+    tool = to_structured_tool(defn, ctx, LoopGuard())
+    await tool.ainvoke({"entity_id": "light.kitchen"})
+    assert sink.rows == []
+
+
+async def test_tier2_refused_outcome_is_audited():
+    async def handler(params, ctx):
+        return ToolResult.error("domain_not_allowed", "nope")
+
+    sink = RecordingSink()
+    tool = _action_tool(handler, sink)
+    await tool.ainvoke({"entity_id": "lock.front"})
+    assert sink.rows[0]["status"] == "error"
+    assert sink.rows[0]["error_code"] == "domain_not_allowed"
