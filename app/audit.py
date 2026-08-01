@@ -54,6 +54,7 @@ class AuditSink:
             log.exception("audit write failed (tool=%s)", tool)
 
     def _write(self, row: tuple) -> None:
+        # Single-writer assumed: addon is single-user, tool calls are sequential per turn.
         self._conn.execute(
             "INSERT INTO actions (ts, thread_id, tool, entity_id, domain, service,"
             " params_json, status, error_code, duration_ms)"
