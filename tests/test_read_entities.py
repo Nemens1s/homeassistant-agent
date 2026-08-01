@@ -115,6 +115,23 @@ async def test_list_entities_area_override():
     assert ids == ["light.bedroom"]
 
 
+async def test_list_entities_state_filter():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(state="on"), _ctx())
+    assert result.status == "ok"
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert ids == ["light.kitchen"]
+    assert "light.bedroom" not in ids
+
+
+async def test_list_entities_state_and_domain_filter():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(domain="light", state="off"), _ctx())
+    assert result.status == "ok"
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert ids == ["light.bedroom"]
+
+
 async def test_get_entity_state_propagates_http_error():
     """404 from REST client is not caught and propagates."""
     class Raising404Rest:
