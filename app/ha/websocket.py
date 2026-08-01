@@ -9,7 +9,6 @@ are out of scope but nothing here precludes them.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import time
@@ -18,6 +17,16 @@ from typing import Any
 import websockets
 
 log = logging.getLogger("agent.ws")
+
+# Message types this client may send. The WS API can mutate HA
+# (call_service etc.); restricting types makes the client's read-only
+# property structural, like the REST client's GET-only surface.
+READ_ONLY_COMMANDS: tuple[str, ...] = (
+    "config/area_registry/list",
+    "config/device_registry/list",
+    "config/entity_registry/list",
+    "ping",
+)
 
 
 class WebSocketClient:
@@ -52,8 +61,13 @@ class WebSocketClient:
         self._runner = None
         if runner is not None:
             runner.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
+            try:
                 await runner
+            except asyncio.CancelledError:
+                if not runner.cancelled():  # cancellation was ours, not the runner's
+                    raise
+            except Exception:
+                pass
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
@@ -61,7 +75,21 @@ class WebSocketClient:
         self._fail_pending(ConnectionError("websocket client stopped"))
 
     async def request(self, msg_type: str, **payload: Any) -> Any:
-        await asyncio.wait_for(self._connected.wait(), timeout=self._timeout)
+        """Send one command and await its correlated result.
+
+        Raises:
+            PermissionError: msg_type is not in READ_ONLY_COMMANDS.
+            TimeoutError: no connection or no response within request_timeout
+                (one total budget across both waits).
+            ConnectionError: connection dropped before/while sending.
+            RuntimeError: HA answered with success=False.
+        """
+        if msg_type not in READ_ONLY_COMMANDS:
+            raise PermissionError(f"websocket command not allowed: {msg_type!r}")
+        deadline = time.monotonic() + self._timeout
+        await asyncio.wait_for(
+            self._connected.wait(), timeout=max(0.0, deadline - time.monotonic())
+        )
         conn = self._conn
         if conn is None:
             raise ConnectionError("websocket disconnected")
@@ -71,10 +99,15 @@ class WebSocketClient:
         self._pending[msg_id] = fut
         try:
             await conn.send(json.dumps({"id": msg_id, "type": msg_type, **payload}))
+            return await asyncio.wait_for(
+                fut, timeout=max(0.0, deadline - time.monotonic())
+            )
         except Exception as exc:
-            self._pending.pop(msg_id, None)
+            if isinstance(exc, (TimeoutError, RuntimeError)):
+                raise
             raise ConnectionError(f"websocket send failed: {exc}") from exc
-        return await asyncio.wait_for(fut, timeout=self._timeout)
+        finally:
+            self._pending.pop(msg_id, None)
 
     async def request_cached(self, msg_type: str, ttl: float = 60.0) -> Any:
         hit = self._cache.get(msg_type)
@@ -100,11 +133,15 @@ class WebSocketClient:
                 return
             except Exception as exc:
                 log.warning("websocket dropped: %s — reconnecting in %ss", exc, backoff)
-            self._connected.clear()
-            self._conn = None
-            self._fail_pending(ConnectionError("websocket disconnected"))
+            self._handle_disconnect(ConnectionError("websocket disconnected"))
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
+
+    def _handle_disconnect(self, exc: Exception) -> None:
+        self._connected.clear()
+        self._conn = None
+        self._cache.clear()
+        self._fail_pending(exc)
 
     async def _auth(self, conn: Any) -> None:
         msg = json.loads(await conn.recv())

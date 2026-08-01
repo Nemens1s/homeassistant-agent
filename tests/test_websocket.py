@@ -25,6 +25,9 @@ async def _fake_ha(ws):
                     {"id": msg["id"], "type": "result", "success": True, "result": AREAS}
                 )
             )
+        elif msg["type"] == "config/entity_registry/list":
+            # no reply — simulates a hung command
+            pass
         else:
             await ws.send(
                 json.dumps(
@@ -65,7 +68,7 @@ async def test_error_response_raises(server_url):
     client = WebSocketClient(server_url, "secret")
     await client.start(connect_timeout=5)
     with pytest.raises(RuntimeError):
-        await client.request("no/such/command")
+        await client.request("config/device_registry/list")
     await client.stop()
 
 
@@ -90,3 +93,42 @@ async def test_clean_stop_no_warnings(server_url, caplog):
         if r.name == "agent.ws" and r.levelno >= logging.WARNING
     ]
     assert warnings == []
+
+
+async def test_request_rejects_non_readonly_command(server_url):
+    client = WebSocketClient(server_url, "secret")
+    await client.start(connect_timeout=5)
+    with pytest.raises(PermissionError):
+        await client.request("call_service", domain="light", service="turn_on")
+    # no message id was consumed and no pending future leaked
+    assert client._next_id == 1
+    assert client._pending == {}
+    await client.stop()
+
+
+async def test_request_total_deadline_single_budget(server_url):
+    import time as _time
+
+    client = WebSocketClient(server_url, "secret", request_timeout=1.0)
+    await client.start(connect_timeout=5)
+    started = _time.monotonic()
+    with pytest.raises(TimeoutError):
+        # fake server answers unknown commands with an error; use a command
+        # it silently ignores instead: add "config/entity_registry/list"
+        # handling to _fake_ha that never replies (see Step 3 note below)
+        await client.request("config/entity_registry/list")
+    elapsed = _time.monotonic() - started
+    assert elapsed < 1.5  # one budget, not connect-wait + response-wait
+    assert client._pending == {}  # entry popped in finally
+    await client.stop()
+
+
+async def test_disconnect_clears_cache(server_url):
+    client = WebSocketClient(server_url, "secret")
+    await client.start(connect_timeout=5)
+    await client.request_cached("config/area_registry/list")
+    assert client._cache
+    client._handle_disconnect(ConnectionError("test"))
+    assert client._cache == {}
+    assert not client.connected
+    await client.stop()
