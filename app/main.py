@@ -14,12 +14,25 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.factory import build_agent
+from app.audit import AuditSink
 from app.config import Settings, load_settings
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
 from app.tools.context import ToolContext
 
 log = logging.getLogger("agent")
+
+
+async def _teardown(rest, ws, audit=None) -> None:
+    try:
+        await rest.aclose()
+    finally:
+        try:
+            if ws is not None:
+                await ws.stop()
+        finally:
+            if audit is not None:
+                audit.close()
 
 
 class ChatRequest(BaseModel):
@@ -36,7 +49,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        rest = RestClient(cfg.ha_base_url, cfg.ha_token)
+        write_domains = (
+            tuple(cfg.allowed_domains) if cfg.max_tier >= 2 else ()
+        )
+        rest = RestClient(cfg.ha_base_url, cfg.ha_token,
+                          allowed_write_domains=write_domains)
+        audit = AuditSink(cfg.audit_db_path)
         ws: WebSocketClient | None = WebSocketClient(cfg.ws_url, cfg.ha_token)
         try:
             try:
@@ -44,16 +62,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception as exc:
                 log.warning("websocket unavailable (%s) — area/automation tools degraded", exc)
                 ws = None
-            ctx = ToolContext(settings=cfg, rest=rest, ws=ws)
+            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
             app.state.settings = cfg
             app.state.rest = rest
             app.state.ws = ws
             app.state.agent = build_agent(cfg, ctx)
             yield
         finally:
-            await rest.aclose()
-            if ws is not None:
-                await ws.stop()
+            await _teardown(rest, ws, audit=audit)
 
     app = FastAPI(lifespan=lifespan)
 

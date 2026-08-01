@@ -38,6 +38,13 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
             "If your task matches a skill, your FIRST tool call MUST be load_skill(name). "
             "Only proceed with other tools after loading the relevant skill:\n" + lines
         )
+    if settings.max_tier >= 2:
+        domains = ", ".join(settings.allowed_domains)
+        prompt += (
+            "\n\nYou can also turn entities on or off, toggle them, and trigger "
+            f"automations — but only in these domains: {domains}. "
+            "Refuse control requests outside them."
+        )
     return prompt
 
 

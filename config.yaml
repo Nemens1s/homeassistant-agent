@@ -1,5 +1,5 @@
 name: "Local HA Agent (Ollama)"
-version: "0.2.0"
+version: "0.3.0"
 slug: local_ha_agent
 description: "Chat agent over Home Assistant state, powered by a local Ollama server (cloud models optional via LiteLLM)"
 url: "https://github.com/yourname/homeassistant-ollama-agent"
@@ -24,6 +24,10 @@ options:
     Always look up real data with tools instead of guessing.
     Be concise and factual.
   max_tier: 1
+  allowed_domains:
+    - light
+    - switch
+    - automation
   temperature: 0.0
   seed: 42
   reasoning: false
@@ -39,6 +43,7 @@ schema:
   api_key: "password"
   system_prompt: "str"
   max_tier: "int(1,2)"
+  allowed_domains: ["str"]
   temperature: "float(0,2)"
   seed: "int"
   reasoning: "bool"

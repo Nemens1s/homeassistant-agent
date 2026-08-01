@@ -56,10 +56,19 @@ def test_trim_history_never_returns_empty():
 
 def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
     guard = LoopGuard()
-    guard._last = ("some_tool", "{}")
+    guard._last = {"a": ("some_tool", "{}")}
     middleware = LoopGuardResetMiddleware(guard)
     middleware.before_agent(None, None)
-    assert guard._last is None
+    assert guard._last == {}
+
+
+def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
+    s1 = Settings(_env_file=None, system_prompt="Base.", max_tier=1)
+    s2 = Settings(_env_file=None, system_prompt="Base.", max_tier=2)
+    assert "control" not in build_system_prompt(s1, tmp_path).lower()
+    p2 = build_system_prompt(s2, tmp_path)
+    assert "turn entities on or off" in p2
+    assert "light, switch, automation" in p2
 
 
 def test_build_agent_compiles_with_read_tools():
@@ -71,6 +80,6 @@ def test_build_agent_compiles_with_read_tools():
     tier1 = {t.name for t in registry.tools_for_tier(1)}
     tier2 = {t.name for t in registry.tools_for_tier(2)}
     assert tier1  # registry loaded
-    assert tier1 == tier2  # iteration 1: nothing above READ exists
+    assert tier2 - tier1 == {"control_entity", "trigger_automation"}
     assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()

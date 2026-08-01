@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     allowed_domains: list[str] = ["light", "switch", "automation"]
     recursion_limit: int = 15
     max_rows: int = 50
+    audit_db_path: str = ""
 
     @property
     def ws_url(self) -> str:

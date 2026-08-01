@@ -72,9 +72,12 @@ starting points; older models (llama2, plain command-r) are less reliable.
 | `llm_model` | `qwen2.5:7b` | Model tag |
 | `api_key` | `` | Cloud provider key (stored as password) |
 | `max_tier` | `1` | `1` = read-only; `2` = control tools (iteration 2) |
+| `allowed_domains` | `["light","switch","automation"]` | Domains the agent may control when `max_tier=2` |
 | `temperature` | `0.0` | |
 | `recursion_limit` | `15` | Max agent steps per request |
 | `max_rows` | `50` | Max entity rows returned per tool call |
+
+Setting `max_tier: 2` unlocks the `control_entity` and `trigger_automation` tools, letting the agent turn lights on/off, toggle switches, and fire automations. The `allowed_domains` list is the hard boundary — the REST client refuses writes to any domain not in it, so removing `automation` from the list disables that capability entirely. All tier-2 actions are logged to `/data/audit.db` (SQLite, append-only) so you have a durable record of what the agent changed.
 
 ## Iteration Roadmap
 

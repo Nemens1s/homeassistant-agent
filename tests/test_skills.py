@@ -50,7 +50,7 @@ def test_frontmatter_survives_horizontal_rule_in_body(tmp_path):
 
 
 def test_seed_skill_is_valid():
-    real_dir = Path("app/skills")
+    real_dir = Path(__file__).resolve().parent.parent / "app" / "skills"
     metas = list_skills(real_dir)
     names = [m.name for m in metas]
     assert "diagnosing_automations" in names
@@ -72,3 +72,17 @@ async def test_load_skill_tool(skills_dir):
     assert missing.error_code == "skill_not_found"
     assert missing.data["available"] == ["test_skill"]
     registry._reset_for_tests()
+
+
+def test_no_frontmatter_falls_back_to_stem(tmp_path):
+    (tmp_path / "bare.md").write_text("# Just a body\n")
+    metas = list_skills(tmp_path)
+    assert metas[0].name == "bare"
+    assert metas[0].description == ""
+    assert read_skill(tmp_path, "bare").startswith("# Just a body")
+
+
+def test_seed_dir_resolved_relative_to_repo():
+    # replaces the cwd-dependent Path("app/skills") in test_seed_skill_is_valid
+    real_dir = Path(__file__).resolve().parent.parent / "app" / "skills"
+    assert list_skills(real_dir)

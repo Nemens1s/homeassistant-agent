@@ -31,6 +31,8 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.get_weather",
     "app.tools.read.search_entities",
     "app.tools.read.load_skill",
+    "app.tools.action.control_entity",
+    "app.tools.action.trigger_automation",
 )
 
 

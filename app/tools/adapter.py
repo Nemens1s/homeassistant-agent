@@ -12,6 +12,7 @@ import logging
 import time
 
 import httpx
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
 
@@ -20,23 +21,26 @@ from app.tools.base import ToolDefinition, ToolResult
 from app.tools.context import ToolContext
 
 log = logging.getLogger("agent.tools")
+log_actions = logging.getLogger("agent.actions")
 
 
 class LoopGuard:
-    """Shared across one agent's tools: flags an identical consecutive call."""
+    """Per-thread dedupe of identical consecutive calls. reset() clears all
+    threads — called by the per-run reset middleware; cross-thread resets are
+    accepted (false negatives are harmless, dedupe is best-effort)."""
 
     def __init__(self) -> None:
-        self._last: tuple[str, str] | None = None
+        self._last: dict[str, tuple[str, str]] = {}
+
+    def is_repeat(self, thread_id: str, name: str, args_json: str) -> bool:
+        key = (name, args_json)
+        if self._last.get(thread_id) == key:
+            return True
+        self._last[thread_id] = key
+        return False
 
     def reset(self) -> None:
-        self._last = None
-
-    def is_repeat(self, name: str, args_json: str) -> bool:
-        key = (name, args_json)
-        if key == self._last:
-            return True
-        self._last = key
-        return False
+        self._last.clear()
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -58,10 +62,11 @@ async def _did_you_mean(ctx: ToolContext, entity_id: str) -> list[str]:
 def to_structured_tool(
     defn: ToolDefinition, ctx: ToolContext, guard: LoopGuard
 ) -> StructuredTool:
-    async def _run(**kwargs) -> str:
+    async def _run(config: RunnableConfig = None, **kwargs) -> str:
         started = time.monotonic()
+        thread_id = ((config or {}).get("configurable") or {}).get("thread_id", "default")
         args_json = json.dumps(kwargs, sort_keys=True, default=str)
-        if guard.is_repeat(defn.name, args_json):
+        if guard.is_repeat(thread_id, defn.name, args_json):
             result = ToolResult.error(
                 "repeated_call",
                 "You already called this tool with identical arguments. "
@@ -97,18 +102,35 @@ def to_structured_tool(
                 result = ToolResult.error(
                     "ha_timeout", "Home Assistant did not answer in time."
                 )
+            except PermissionError as exc:
+                result = ToolResult.error("domain_not_allowed", str(exc))
             except RuntimeError as exc:
                 result = ToolResult.error(
-                    "ha_error", f"Home Assistant rejected the request: {exc}."
+                    "ha_error", f"Command failed: {exc}."
                 )
             except Exception as exc:  # terminal guard: nothing may escape into the agent loop
                 log.exception("tool=%s unexpected error", defn.name)
                 result = ToolResult.error("internal_error", f"Unexpected error: {exc}.")
         duration_ms = round((time.monotonic() - started) * 1000)
         log.info(
-            "tool=%s status=%s duration_ms=%s args=%s",
-            defn.name, result.status, duration_ms, args_json,
+            "tool=%s tier=%s status=%s duration_ms=%s args=%s",
+            defn.name, int(defn.tier), result.status, duration_ms, args_json,
         )
+        if defn.tier >= 2:
+            entity_id = str(kwargs.get("entity_id", ""))
+            domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+            service = str(kwargs.get("action", "")) or defn.name
+            log_actions.info(
+                "action tool=%s domain=%s service=%s entity=%s status=%s",
+                defn.name, domain, service, entity_id, result.status,
+            )
+            if ctx.audit is not None:
+                await ctx.audit.record(
+                    thread_id=thread_id, tool=defn.name, entity_id=entity_id,
+                    domain=domain, service=service, params_json=args_json,
+                    status=result.status, error_code=result.error_code,
+                    duration_ms=duration_ms,
+                )
         return result.to_json()
 
     return StructuredTool(

@@ -70,6 +70,7 @@ async def test_topology_groups_by_area():
     bedroom = result.data["areas"]["Bedroom"]
     assert bedroom["entities"] == ["light.bedroom_lamp"]
     assert result.data["unassigned"]["entities"] == ["sensor.odd"]
+    assert result.data["unassigned"]["devices"] == ["Odd Sensor"]
 
 
 async def test_topology_without_ws():
