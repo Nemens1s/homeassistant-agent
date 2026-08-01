@@ -66,6 +66,29 @@ def test_frontend_served_at_root():
     assert "html" in resp.headers["content-type"]
 
 
+def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_build_agent(settings, ctx, checkpointer=None):
+        captured["audit"] = ctx.audit
+        captured["rest"] = ctx.rest
+        class A:
+            async def ainvoke(self, *a, **k):
+                return {"messages": []}
+        return A()
+
+    from app import main as main_mod
+    monkeypatch.setattr(main_mod, "build_agent", fake_build_agent)
+    settings = _settings()
+    settings.max_tier = 2
+    settings.audit_db_path = str(tmp_path / "a.db")
+    app = create_app(settings)
+    with TestClient(app):
+        pass
+    assert captured["audit"] is not None
+    assert captured["rest"]._allowed_write_domains == ("light", "switch", "automation")
+
+
 async def test_lifespan_teardown_survives_rest_close_failure():
     # ws.stop must run even if rest.aclose raises
     from app import main as main_mod

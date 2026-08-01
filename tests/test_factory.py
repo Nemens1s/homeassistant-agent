@@ -62,6 +62,15 @@ def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
     assert guard._last == {}
 
 
+def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
+    s1 = Settings(_env_file=None, system_prompt="Base.", max_tier=1)
+    s2 = Settings(_env_file=None, system_prompt="Base.", max_tier=2)
+    assert "control" not in build_system_prompt(s1, tmp_path).lower()
+    p2 = build_system_prompt(s2, tmp_path)
+    assert "turn entities on or off" in p2
+    assert "light, switch, automation" in p2
+
+
 def test_build_agent_compiles_with_read_tools():
     registry._reset_for_tests()
     settings = Settings(_env_file=None, max_tier=1)

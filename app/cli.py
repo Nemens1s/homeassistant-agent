@@ -11,6 +11,7 @@ from langgraph.errors import GraphRecursionError
 from litellm.proxy.guardrails.guardrail_hooks.custom_code.primitives import lower
 
 from app.agent.factory import build_agent
+from app.audit import AuditSink
 from app.config import load_settings
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
@@ -21,7 +22,12 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s %(message)s")
     settings = load_settings()
 
-    rest = RestClient(settings.ha_base_url, settings.ha_token)
+    write_domains = (
+        tuple(settings.allowed_domains) if settings.max_tier >= 2 else ()
+    )
+    rest = RestClient(settings.ha_base_url, settings.ha_token,
+                      allowed_write_domains=write_domains)
+    audit = AuditSink(settings.audit_db_path)
     ws: WebSocketClient | None = WebSocketClient(settings.ws_url, settings.ha_token)
     try:
         await ws.start(connect_timeout=settings.ws_connect_timeout)
@@ -29,7 +35,7 @@ async def main() -> None:
         print(f"warning: websocket unavailable ({exc}) — area/automation tools degraded")
         ws = None
 
-    ctx = ToolContext(settings=settings, rest=rest, ws=ws)
+    ctx = ToolContext(settings=settings, rest=rest, ws=ws, audit=audit)
     agent = build_agent(settings, ctx)
     config = {
         "configurable": {"thread_id": "cli"},
@@ -77,6 +83,7 @@ async def main() -> None:
         if ws is not None:
             print("Closing ws client")
             await ws.stop()
+        audit.close()
 
 
 if __name__ == "__main__":
