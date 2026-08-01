@@ -42,4 +42,5 @@ def build_llm(settings: Settings) -> BaseChatModel:
         model=f"{settings.llm_provider}/{settings.llm_model}",
         temperature=settings.temperature,
         api_key=settings.api_key or None,
+        model_kwargs={"seed": settings.seed},
     )

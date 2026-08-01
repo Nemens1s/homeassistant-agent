@@ -28,8 +28,9 @@ def test_litellm_provider_builds_chat_litellm():
     s = Settings(
         _env_file=None,
         llm_provider="anthropic", llm_model="claude-haiku-4-5-20251001",
-        api_key="sk-test",
+        api_key="sk-test", seed=7,
     )
     llm = build_llm(s)
     assert isinstance(llm, ChatLiteLLM)
     assert llm.model == "anthropic/claude-haiku-4-5-20251001"
+    assert llm.model_kwargs == {"seed": 7}
