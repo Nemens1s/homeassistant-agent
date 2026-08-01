@@ -19,7 +19,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_error_log",
-        description="Get the last lines of Home Assistant's error log. Useful for 'why is X broken' questions.",
+        description="Get the tail of Home Assistant's error log. Use for 'are there any HA errors?', 'is HA healthy?', 'is Home Assistant showing any errors?'. Not for automation events or state history.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

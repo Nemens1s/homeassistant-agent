@@ -22,7 +22,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="load_skill",
-        description="Load the full text of a skill playbook by name. Call this before starting a task that a listed skill covers.",
+        description="Load a skill playbook by name. Call this FIRST for any diagnosis or troubleshooting request. Available skill names are listed in the system prompt — pass the exact name from that list.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

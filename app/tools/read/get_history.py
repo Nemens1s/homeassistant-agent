@@ -25,7 +25,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_history",
-        description="Get historical state changes for one entity between two ISO8601 timestamps. Use the current time from the system prompt to compute ranges like 'yesterday'.",
+        description="Get state change history for ONE specific entity between two ISO8601 timestamps. Use only when an entity_id is known and the user asks for a timeseries (e.g. 'temperature history'). NOT for 'what happened in the house?' — use get_logbook for that.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
