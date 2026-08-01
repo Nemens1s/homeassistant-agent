@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from langgraph.errors import GraphRecursionError
@@ -63,3 +64,26 @@ def test_frontend_served_at_root():
         resp = client.get("/")
     assert resp.status_code == 200
     assert "html" in resp.headers["content-type"]
+
+
+async def test_lifespan_teardown_survives_rest_close_failure():
+    # ws.stop must run even if rest.aclose raises
+    from app import main as main_mod
+
+    calls = []
+
+    class BadRest:
+        async def aclose(self):
+            calls.append("rest")
+            raise RuntimeError("boom")
+
+    class GoodWS:
+        connected = False
+
+        async def stop(self):
+            calls.append("ws")
+
+    # exercise the teardown helper directly
+    with pytest.raises(RuntimeError):
+        await main_mod._teardown(BadRest(), GoodWS())
+    assert calls == ["rest", "ws"]

@@ -56,10 +56,10 @@ def test_trim_history_never_returns_empty():
 
 def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
     guard = LoopGuard()
-    guard._last = ("some_tool", "{}")
+    guard._last = {"a": ("some_tool", "{}")}
     middleware = LoopGuardResetMiddleware(guard)
     middleware.before_agent(None, None)
-    assert guard._last is None
+    assert guard._last == {}
 
 
 def test_build_agent_compiles_with_read_tools():

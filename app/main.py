@@ -22,6 +22,14 @@ from app.tools.context import ToolContext
 log = logging.getLogger("agent")
 
 
+async def _teardown(rest, ws) -> None:
+    try:
+        await rest.aclose()
+    finally:
+        if ws is not None:
+            await ws.stop()
+
+
 class ChatRequest(BaseModel):
     message: str
     thread_id: str = "default"
@@ -51,9 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.agent = build_agent(cfg, ctx)
             yield
         finally:
-            await rest.aclose()
-            if ws is not None:
-                await ws.stop()
+            await _teardown(rest, ws)
 
     app = FastAPI(lifespan=lifespan)
 

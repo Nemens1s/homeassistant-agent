@@ -134,6 +134,36 @@ async def test_loop_guard_reset_clears_repeated_call_block():
     assert after_reset["status"] == "ok"
 
 
+async def test_loop_guard_is_per_thread():
+    async def handler(params, ctx):
+        return ToolResult.ok("fine")
+
+    guard = LoopGuard()
+    defn = ToolDefinition(
+        name="demo2", description="d", params_model=_Params,
+        tier=Tier.READ, handler=handler,
+    )
+    tool = to_structured_tool(defn, _ctx(), guard)
+    cfg_a = {"configurable": {"thread_id": "a"}}
+    cfg_b = {"configurable": {"thread_id": "b"}}
+    first = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}, config=cfg_a))
+    # identical call on a DIFFERENT thread must not be flagged
+    other = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}, config=cfg_b))
+    repeat = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}, config=cfg_a))
+    assert first["status"] == "ok"
+    assert other["status"] == "ok"
+    assert repeat["error"]["code"] == "repeated_call"
+
+
+async def test_permission_error_maps_to_domain_not_allowed():
+    async def handler(params, ctx):
+        raise PermissionError("write domain not allowed: 'lock'")
+
+    tool = _make_tool(handler, name="demo3")
+    out = json.loads(await tool.ainvoke({"entity_id": "lock.front"}))
+    assert out["error"]["code"] == "domain_not_allowed"
+
+
 def test_build_tools_filters_by_tier():
     registry._reset_for_tests()
 

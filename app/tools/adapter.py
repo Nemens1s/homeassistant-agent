@@ -12,6 +12,7 @@ import logging
 import time
 
 import httpx
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
 
@@ -23,20 +24,22 @@ log = logging.getLogger("agent.tools")
 
 
 class LoopGuard:
-    """Shared across one agent's tools: flags an identical consecutive call."""
+    """Per-thread dedupe of identical consecutive calls. reset() clears all
+    threads — called by the per-run reset middleware; cross-thread resets are
+    accepted (false negatives are harmless, dedupe is best-effort)."""
 
     def __init__(self) -> None:
-        self._last: tuple[str, str] | None = None
+        self._last: dict[str, tuple[str, str]] = {}
+
+    def is_repeat(self, thread_id: str, name: str, args_json: str) -> bool:
+        key = (name, args_json)
+        if self._last.get(thread_id) == key:
+            return True
+        self._last[thread_id] = key
+        return False
 
     def reset(self) -> None:
-        self._last = None
-
-    def is_repeat(self, name: str, args_json: str) -> bool:
-        key = (name, args_json)
-        if key == self._last:
-            return True
-        self._last = key
-        return False
+        self._last.clear()
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -58,10 +61,11 @@ async def _did_you_mean(ctx: ToolContext, entity_id: str) -> list[str]:
 def to_structured_tool(
     defn: ToolDefinition, ctx: ToolContext, guard: LoopGuard
 ) -> StructuredTool:
-    async def _run(**kwargs) -> str:
+    async def _run(config: RunnableConfig = None, **kwargs) -> str:
         started = time.monotonic()
+        thread_id = ((config or {}).get("configurable") or {}).get("thread_id", "default")
         args_json = json.dumps(kwargs, sort_keys=True, default=str)
-        if guard.is_repeat(defn.name, args_json):
+        if guard.is_repeat(thread_id, defn.name, args_json):
             result = ToolResult.error(
                 "repeated_call",
                 "You already called this tool with identical arguments. "
@@ -97,9 +101,11 @@ def to_structured_tool(
                 result = ToolResult.error(
                     "ha_timeout", "Home Assistant did not answer in time."
                 )
+            except PermissionError as exc:
+                result = ToolResult.error("domain_not_allowed", str(exc))
             except RuntimeError as exc:
                 result = ToolResult.error(
-                    "ha_error", f"Home Assistant rejected the request: {exc}."
+                    "ha_error", f"Command failed: {exc}."
                 )
             except Exception as exc:  # terminal guard: nothing may escape into the agent loop
                 log.exception("tool=%s unexpected error", defn.name)
