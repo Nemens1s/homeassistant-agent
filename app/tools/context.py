@@ -18,3 +18,4 @@ class ToolContext:
     rest: Any  # RestClient; typed loosely so tests can pass fakes
     ws: Any = None  # WebSocketClient | None
     skills_dir: Path = field(default=_DEFAULT_SKILLS_DIR)
+    audit: Any = None
