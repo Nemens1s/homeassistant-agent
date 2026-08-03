@@ -91,6 +91,9 @@ async def main(save_conversations: bool = False) -> None:
                     if not isinstance(token, AIMessageChunk):
                         if content_buf and not has_tool_calls:
                             print("".join(content_buf), end="", flush=True)
+                        if conv_file and think_buf:
+                            conv_file.write(f"{_ts()} <think> {''.join(think_buf)} </think>\n")
+                            conv_file.flush()
                         content_buf = []
                         think_buf = []
                         has_tool_calls = False
