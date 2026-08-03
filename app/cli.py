@@ -2,9 +2,13 @@
 agent.tools audit log lines (INFO). Requires HA_BASE_URL, HA_TOKEN and an
 Ollama server (see .env)."""
 
+import argparse
 import asyncio
 import logging
 import time
+from datetime import datetime
+from pathlib import Path
+from typing import IO
 
 from langchain_core.messages import AIMessageChunk
 from langgraph.errors import GraphRecursionError
@@ -18,7 +22,17 @@ from app.ha.websocket import WebSocketClient
 from app.tools.context import ToolContext
 
 
-async def main() -> None:
+def _ts() -> str:
+    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+
+
+def _open_conv_file(base_dir: Path) -> IO[str]:
+    base_dir.mkdir(parents=True, exist_ok=True)
+    name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S.txt")
+    return open(base_dir / name, "w", encoding="utf-8")
+
+
+async def main(save_conversations: bool = False) -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s %(message)s")
     settings = load_settings()
 
@@ -42,6 +56,9 @@ async def main() -> None:
         "recursion_limit": settings.recursion_limit,
     }
 
+    conv_file: IO[str] | None = (
+        _open_conv_file(Path(".conversations")) if save_conversations else None
+    )
     print(f"\nAgent ready ({settings.llm_model} via {settings.llm_provider}). Ctrl+C to quit.\n")
     try:
         while True:
@@ -97,7 +114,16 @@ async def main() -> None:
             print("Closing ws client")
             await ws.stop()
         audit.close()
+        if conv_file is not None:
+            conv_file.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _parser = argparse.ArgumentParser(description="HA agent CLI")
+    _parser.add_argument(
+        "--save-conversations",
+        action="store_true",
+        help="Write a transcript of this session to .conversations/",
+    )
+    _args = _parser.parse_args()
+    asyncio.run(main(save_conversations=_args.save_conversations))
