@@ -58,19 +58,32 @@ async def main() -> None:
             print("Agent: ", end="", flush=True)
             t0 = time.monotonic()
             try:
+                content_buf: list[str] = []
+                has_tool_calls = False
                 async for token, _meta in agent.astream(
                     {"messages": [{"role": "user", "content": user_input}]},
                     config=config,
                     stream_mode="messages",
                 ):
                     if not isinstance(token, AIMessageChunk):
+                        # End of one AI turn — discard buffered content if that
+                        # turn also had tool calls (intermediate, not the final reply).
+                        if content_buf and not has_tool_calls:
+                            print("".join(content_buf), end="", flush=True)
+                        content_buf = []
+                        has_tool_calls = False
                         continue
                     if settings.show_thinking:
                         thinking = token.additional_kwargs.get("reasoning_content", "")
                         if thinking:
                             print(f"\033[2m{thinking}\033[0m", end="", flush=True)
-                    if isinstance(token.content, str):
-                        print(token.content, end="", flush=True)
+                    if token.tool_call_chunks:
+                        has_tool_calls = True
+                    if isinstance(token.content, str) and token.content:
+                        content_buf.append(token.content)
+                # Flush the final turn (no non-AIMessageChunk follows it).
+                if content_buf and not has_tool_calls:
+                    print("".join(content_buf), end="", flush=True)
             except GraphRecursionError:
                 print(f"\n[stopped: hit the {settings.recursion_limit}-step limit without finishing]", end="")
             except Exception as exc:

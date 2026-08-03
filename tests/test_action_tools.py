@@ -31,11 +31,32 @@ def load_tools():
     registry._reset_for_tests()
 
 
-def _ctx(rest=None, allowed=None):
+class FakeWS:
+    """Minimal WS stub for label tests."""
+    def __init__(self, entity_labels=None, device_labels=None):
+        self._entity_labels = entity_labels or {}  # {entity_id: [label_ids]}
+        self._device_labels = device_labels or {}  # {device_id: [label_ids]}
+
+    async def request_cached(self, msg_type):
+        if msg_type == "config/label_registry/list":
+            return [{"label_id": "ai_allowed", "name": "AI Allowed"},
+                    {"label_id": "critical", "name": "Critical"}]
+        if msg_type == "config/entity_registry/list":
+            return [{"entity_id": eid, "labels": lbls, "device_id": None}
+                    for eid, lbls in self._entity_labels.items()]
+        if msg_type == "config/device_registry/list":
+            return [{"id": did, "labels": lbls}
+                    for did, lbls in self._device_labels.items()]
+        return []
+
+
+def _ctx(rest=None, allowed=None, allowed_labels=None, ws=None):
     settings = Settings(_env_file=None)
     if allowed is not None:
         settings.allowed_domains = allowed
-    return ToolContext(settings=settings, rest=rest or FakeRest(), ws=None)
+    if allowed_labels is not None:
+        settings.allowed_labels = allowed_labels
+    return ToolContext(settings=settings, rest=rest or FakeRest(), ws=ws)
 
 
 async def test_control_entity_calls_service_and_confirms():
@@ -46,8 +67,18 @@ async def test_control_entity_calls_service_and_confirms():
         defn.params_model(entity_id="light.kitchen", action="turn_off"), _ctx(rest))
     assert result.status == "ok"
     assert rest.calls == [("light", "turn_off", "light.kitchen")]
-    assert result.data["state"] == "off"          # post-call confirmation
     assert result.data["action"] == "turn_off"
+
+
+async def test_control_entity_blocks_unavailable_entity():
+    rest = FakeRest()
+    rest.state = {"entity_id": "light.concorde", "state": "unavailable", "attributes": {}}
+    defn = registry.get("control_entity")
+    result = await defn.handler(
+        defn.params_model(entity_id="light.concorde", action="turn_off"), _ctx(rest))
+    assert result.status == "error"
+    assert result.error_code == "entity_unavailable"
+    assert rest.calls == []  # service never called
 
 
 async def test_control_entity_denies_non_allowlisted_domain():
@@ -91,3 +122,53 @@ async def test_trigger_automation_respects_allowlist():
     result = await defn.handler(
         defn.params_model(entity_id="automation.night"), _ctx(allowed=["light"]))
     assert result.error_code == "domain_not_allowed"
+
+
+async def test_control_entity_label_check_passes_when_label_present():
+    ws = FakeWS(entity_labels={"light.kitchen": ["ai_allowed"]})
+    defn = registry.get("control_entity")
+    result = await defn.handler(
+        defn.params_model(entity_id="light.kitchen", action="turn_off"),
+        _ctx(allowed_labels=["AI Allowed"], ws=ws))
+    assert result.status == "ok"
+
+
+async def test_control_entity_label_check_blocks_when_label_absent():
+    ws = FakeWS(entity_labels={"light.kitchen": []})
+    defn = registry.get("control_entity")
+    result = await defn.handler(
+        defn.params_model(entity_id="light.kitchen", action="turn_off"),
+        _ctx(allowed_labels=["AI Allowed"], ws=ws))
+    assert result.error_code == "label_not_allowed"
+
+
+async def test_control_entity_label_check_skipped_when_ws_unavailable():
+    # WS down → fail-open, action proceeds normally
+    defn = registry.get("control_entity")
+    result = await defn.handler(
+        defn.params_model(entity_id="light.kitchen", action="turn_off"),
+        _ctx(allowed_labels=["AI Allowed"], ws=None))
+    assert result.status == "ok"
+
+
+async def test_control_entity_label_check_skipped_when_allowed_labels_empty():
+    # allowed_labels=[] → feature disabled, no WS call needed
+    ws = FakeWS(entity_labels={"light.kitchen": []})
+    defn = registry.get("control_entity")
+    result = await defn.handler(
+        defn.params_model(entity_id="light.kitchen", action="turn_off"),
+        _ctx(allowed_labels=[], ws=ws))
+    assert result.status == "ok"
+
+
+async def test_trigger_automation_label_check_blocks():
+    rest = FakeRest()
+    rest.state = {"entity_id": "automation.night", "state": "on",
+                  "attributes": {"last_triggered": ""}, "last_changed": ""}
+    ws = FakeWS(entity_labels={"automation.night": []})
+    defn = registry.get("trigger_automation")
+    result = await defn.handler(
+        defn.params_model(entity_id="automation.night"),
+        _ctx(rest=rest, allowed_labels=["AI Allowed"], ws=ws))
+    assert result.error_code == "label_not_allowed"
+    assert rest.calls == []

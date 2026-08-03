@@ -1,9 +1,9 @@
 """Tool catalogue. Tool modules call register() at import time; load_all()
 imports them. Adding a tool = one new module + one line in _DEFAULT_MODULES.
 
-tools_for_tier() is the read-only enforcement point: with max_tier=1 the
-agent is never handed anything above Tier.READ — the tool does not exist
-for the model.
+tools_for_tier() is the permission gate: the agent only sees tools at or
+below max_tier. At max_tier=1 that means READ-only; at max_tier=2 action
+tools (control_entity, trigger_automation) are also included.
 """
 
 from __future__ import annotations

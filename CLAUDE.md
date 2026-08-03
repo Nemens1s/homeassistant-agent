@@ -66,7 +66,7 @@ class in `app/config.py`; in the addon container it reads
 - langchain v1 API only (`create_agent`, `langchain.agents.middleware`);
   verify API details against the installed venv (`inspect`), don't trust
   training data — this has bitten before.
-- Commit trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
+- Use regular branches. DO not use worktrees
 
 ## Where things live
 

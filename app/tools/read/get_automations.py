@@ -16,6 +16,7 @@ class Params(BaseModel):
 async def handler(params: Params, ctx) -> ToolResult:
     states = await ctx.rest.list_states()
     autos = [s for s in states if s["entity_id"].startswith("automation.")]
+    print(f"Automations {autos}")
 
     if not params.entity_id:
         rows = [

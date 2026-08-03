@@ -28,6 +28,7 @@ options:
     - light
     - switch
     - automation
+  allowed_labels: []
   temperature: 0.0
   seed: 42
   reasoning: false
@@ -44,6 +45,7 @@ schema:
   system_prompt: "str"
   max_tier: "int(1,2)"
   allowed_domains: ["str"]
+  allowed_labels: ["str"]
   temperature: "float(0,2)"
   seed: "int"
   reasoning: "bool"

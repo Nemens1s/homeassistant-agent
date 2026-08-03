@@ -58,6 +58,11 @@ class ToolDefinition:
     handler: Callable[[BaseModel, Any], Awaitable[ToolResult]]
 
 
+def entity_domain(entity_id: str) -> str:
+    """Return the domain portion of an entity_id ('light.kitchen' → 'light')."""
+    return entity_id.split(".", 1)[0]
+
+
 def bound_rows(
     rows: list, *, max_rows: int, hint: str = "Narrow with filters to see the rest."
 ) -> dict[str, Any]:

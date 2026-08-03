@@ -25,6 +25,7 @@ READ_ONLY_COMMANDS: tuple[str, ...] = (
     "config/area_registry/list",
     "config/device_registry/list",
     "config/entity_registry/list",
+    "config/label_registry/list",
     "ping",
 )
 

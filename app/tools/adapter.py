@@ -17,7 +17,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
 
 from app.tools import registry
-from app.tools.base import ToolDefinition, ToolResult
+from app.tools.base import ToolDefinition, ToolResult, entity_domain
 from app.tools.context import ToolContext
 
 log = logging.getLogger("agent.tools")
@@ -118,7 +118,7 @@ def to_structured_tool(
         )
         if defn.tier >= 2:
             entity_id = str(kwargs.get("entity_id", ""))
-            domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+            domain = entity_domain(entity_id) if "." in entity_id else ""
             service = str(kwargs.get("action", "")) or defn.name
             log_actions.info(
                 "action tool=%s domain=%s service=%s entity=%s status=%s",

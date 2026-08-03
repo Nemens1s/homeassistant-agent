@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
+from app.tools.labels import check_entity_labels
 from app.tools.registry import register
 
 
@@ -12,6 +13,12 @@ async def handler(params: Params, ctx) -> ToolResult:
     if not params.entity_id.startswith("automation."):
         return ToolResult.error(
             "invalid_params", "entity_id must start with 'automation.'"
+        )
+    label_ok = await check_entity_labels(params.entity_id, ctx.settings.allowed_labels, ctx)
+    if label_ok is False:
+        return ToolResult.error(
+            "label_not_allowed",
+            f"{params.entity_id!r} does not have any of the required labels: {ctx.settings.allowed_labels}.",
         )
     if "automation" not in ctx.settings.allowed_domains:
         return ToolResult.error(
