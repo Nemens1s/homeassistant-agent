@@ -4,13 +4,14 @@ Ollama server (see .env)."""
 
 import argparse
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, ToolMessage
 from langgraph.errors import GraphRecursionError
 from litellm.proxy.guardrails.guardrail_hooks.custom_code.primitives import lower
 
@@ -72,10 +73,15 @@ async def main(save_conversations: bool = False) -> None:
                 break
             if not user_input:
                 continue
+            if conv_file:
+                conv_file.write(f"{_ts()} You: {user_input}\n")
+                conv_file.flush()
             print("Agent: ", end="", flush=True)
             t0 = time.monotonic()
             try:
                 content_buf: list[str] = []
+                think_buf: list[str] = []
+                pending_tool_calls: dict[int, dict] = {}  # index → {name, args, id}
                 has_tool_calls = False
                 async for token, _meta in agent.astream(
                     {"messages": [{"role": "user", "content": user_input}]},
@@ -83,28 +89,61 @@ async def main(save_conversations: bool = False) -> None:
                     stream_mode="messages",
                 ):
                     if not isinstance(token, AIMessageChunk):
-                        # End of one AI turn — discard buffered content if that
-                        # turn also had tool calls (intermediate, not the final reply).
                         if content_buf and not has_tool_calls:
                             print("".join(content_buf), end="", flush=True)
                         content_buf = []
+                        think_buf = []
                         has_tool_calls = False
+                        if conv_file and isinstance(token, ToolMessage):
+                            raw = token.content
+                            result = raw if isinstance(raw, str) else json.dumps(raw)
+                            for call in pending_tool_calls.values():
+                                if call.get("id") == token.tool_call_id:
+                                    conv_file.write(
+                                        f"{_ts()} Tool: {call['name']}({call['args']}) → {result}\n"
+                                    )
+                                    conv_file.flush()
+                                    break
                         continue
                     if settings.show_thinking:
                         thinking = token.additional_kwargs.get("reasoning_content", "")
                         if thinking:
                             print(f"\033[2m{thinking}\033[0m", end="", flush=True)
+                            if conv_file:
+                                think_buf.append(thinking)
                     if token.tool_call_chunks:
                         has_tool_calls = True
+                        if conv_file:
+                            for chunk in token.tool_call_chunks:
+                                idx = chunk.get("index") or 0
+                                if idx not in pending_tool_calls:
+                                    pending_tool_calls[idx] = {"name": "", "args": "", "id": ""}
+                                if chunk.get("name"):
+                                    pending_tool_calls[idx]["name"] = chunk["name"]
+                                if chunk.get("id"):
+                                    pending_tool_calls[idx]["id"] = chunk["id"]
+                                pending_tool_calls[idx]["args"] += chunk.get("args") or ""
                     if isinstance(token.content, str) and token.content:
                         content_buf.append(token.content)
                 # Flush the final turn (no non-AIMessageChunk follows it).
                 if content_buf and not has_tool_calls:
                     print("".join(content_buf), end="", flush=True)
+                    if conv_file:
+                        if think_buf:
+                            conv_file.write(f"{_ts()} <think> {''.join(think_buf)} </think>\n")
+                        conv_file.write(f"{_ts()} Agent: {''.join(content_buf)}\n")
+                        conv_file.flush()
             except GraphRecursionError:
-                print(f"\n[stopped: hit the {settings.recursion_limit}-step limit without finishing]", end="")
+                msg = f"[stopped: hit the {settings.recursion_limit}-step limit without finishing]"
+                print(f"\n{msg}", end="")
+                if conv_file:
+                    conv_file.write(f"{_ts()} {msg}\n")
+                    conv_file.flush()
             except Exception as exc:
                 print(f"\n[error: {exc}]", end="")
+                if conv_file:
+                    conv_file.write(f"{_ts()} [error: {exc}]\n")
+                    conv_file.flush()
             elapsed = time.monotonic() - t0
             print(f"\n[{elapsed:.1f}s]\n")
     finally:
