@@ -7,11 +7,15 @@ the right params on the first turn? Usage:
 
 import argparse
 import asyncio
+import json
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 from langchain_core.messages import HumanMessage
+from langsmith.integrations import otel
 
 from app.agent.factory import build_system_prompt, timestamped_system
 from app.agent.llm import build_llm
@@ -47,14 +51,22 @@ def check(case: dict, tool_calls: list) -> tuple[bool, str]:
             return False, f"param {key}={actual!r}, expected {expected!r}"
     return True, ""
 
+def _write_to_file(output: dict) -> None:
+    title = f"{datetime.now().isoformat(timespec='seconds')} {output['model']} {output['provider']}"
+    out_dir = Path(__file__).parent.parent.parent / ".evals"
+    out_dir.mkdir(exist_ok=True)
+    filename = title.replace(":", "-").replace(" ", "_") + ".json"
+    (out_dir / filename).write_text(json.dumps(output, indent=2))
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-tier", type=int, default=None)
+    parser.add_argument("--save-results", action="store_true", help="Save test results to a file")
     args = parser.parse_args()
 
     settings = load_settings()
     max_tier = args.max_tier if args.max_tier is not None else settings.max_tier
+    save_results = True if args.save_results else False
 
     registry._reset_for_tests()
     registry.load_all()
@@ -62,6 +74,10 @@ async def main() -> int:
     tools = build_tools(ctx, max_tier=max_tier)
     llm = build_llm(settings)
     system = timestamped_system(build_system_prompt(settings, ctx.skills_dir))
+    output = {'model': settings.llm_model,
+              'provider': settings.llm_provider,
+              'num_gpu': settings.num_gpu,
+              'num_ctx': settings.num_ctx}
 
     cases = yaml.safe_load(CASES_FILE.read_text())
     passed = 0
@@ -69,6 +85,7 @@ async def main() -> int:
     subset = settings.enable_tool_subsetting
     print(f"model: {settings.llm_model} via {settings.llm_provider} "
           f"(tool_subsetting={'on' if subset else 'off'})\n")
+    t0 = time.monotonic()
     for case in cases:
         if case.get("min_tier", 1) > max_tier:
             print(f"  SKIP  {case['id']} (needs tier {case['min_tier']})")
@@ -80,8 +97,14 @@ async def main() -> int:
         msg = await bound.ainvoke([system, HumanMessage(case["prompt"])])
         ok, reason = check(case, msg.tool_calls)
         passed += ok
-        print(f"  {'PASS' if ok else 'FAIL'}  {case['id']}" + (f" — {reason}" if reason else ""))
+        output_message = f"  {'PASS' if ok else 'FAIL'}  {case['id']}" + (f" — {reason}" if reason else "")
+        output[case['id']] = output_message
+        print(output_message)
+    elapsed = time.monotonic() - t0
     print(f"\nscore: {passed}/{run}")
+    print(f"\n[{elapsed:.1f}s]\n")
+    if save_results:
+        _write_to_file(output)
     return 0 if passed == run else 1
 
 
