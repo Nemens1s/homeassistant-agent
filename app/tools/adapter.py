@@ -62,6 +62,10 @@ async def _did_you_mean(ctx: ToolContext, entity_id: str) -> list[str]:
 def to_structured_tool(
     defn: ToolDefinition, ctx: ToolContext, guard: LoopGuard
 ) -> StructuredTool:
+    # A tool may derive its schema from the runtime context (e.g. an enum built
+    # from files); fall back to the static model otherwise.
+    params_model = defn.dynamic_params(ctx) if defn.dynamic_params else defn.params_model
+
     async def _run(config: RunnableConfig = None, **kwargs) -> str:
         started = time.monotonic()
         thread_id = ((config or {}).get("configurable") or {}).get("thread_id", "default")
@@ -74,7 +78,7 @@ def to_structured_tool(
             )
         else:
             try:
-                params = defn.params_model(**kwargs)
+                params = params_model(**kwargs)
                 result = await defn.handler(params, ctx)
             except ValidationError as exc:
                 result = ToolResult.error("invalid_params", _validation_message(exc))
@@ -136,7 +140,7 @@ def to_structured_tool(
     return StructuredTool(
         name=defn.name,
         description=defn.description,
-        args_schema=defn.params_model,
+        args_schema=params_model,
         coroutine=_run,
         handle_validation_error=lambda exc: ToolResult.error(
             "invalid_params", _validation_message(exc)

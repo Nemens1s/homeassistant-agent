@@ -4,8 +4,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from app.agent.factory import (
     LoopGuardResetMiddleware,
+    ToolSubsetMiddleware,
     build_agent,
     build_system_prompt,
+    latest_human_text,
     timestamped_system,
     trim_history,
 )
@@ -83,3 +85,62 @@ def test_build_agent_compiles_with_read_tools():
     assert tier2 - tier1 == {"control_entity", "trigger_automation"}
     assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()
+
+
+def test_latest_human_text_picks_most_recent_human():
+    msgs = [
+        HumanMessage("first question"),
+        AIMessage("some answer"),
+        HumanMessage("second question"),
+        ToolMessage("tool output", tool_call_id="x"),
+    ]
+    assert latest_human_text(msgs) == "second question"
+
+
+def test_latest_human_text_handles_multimodal_content():
+    msgs = [HumanMessage(content=[{"type": "text", "text": "hello"}, {"type": "text", "text": "world"}])]
+    assert latest_human_text(msgs) == "hello world"
+
+
+def test_latest_human_text_empty_when_no_human():
+    assert latest_human_text([AIMessage("only ai")]) == ""
+
+
+def _model_request(tools, messages):
+    from langchain.agents.middleware import ModelRequest
+
+    return ModelRequest(
+        model=object(), messages=messages, system_message=None, tool_choice=None,
+        tools=tools, response_format=None, state={}, runtime=None,
+    )
+
+
+def test_tool_subset_middleware_trims_to_message():
+    class T:
+        def __init__(self, name):
+            self.name = name
+
+    tools = [T("list_entities"), T("get_weather"), T("get_vacuum_state"), T("control_entity")]
+    captured = {}
+
+    def handler(req):
+        captured["names"] = {t.name for t in req.tools}
+        return AIMessage("ok")
+
+    req = _model_request(tools, [HumanMessage("what's the weather?")])
+    ToolSubsetMiddleware().wrap_model_call(req, handler)
+    assert "get_weather" in captured["names"]
+    assert "get_vacuum_state" not in captured["names"]  # trimmed
+    assert "list_entities" in captured["names"]  # core survives
+
+
+def test_tool_subsetting_flag_toggles_middleware():
+    from app.agent.factory import build_middleware
+    from app.tools.adapter import LoopGuard
+
+    def mws(enabled):
+        s = Settings(_env_file=None, enable_tool_subsetting=enabled)
+        return build_middleware(s, LoopGuard(), "prompt", 1024)
+
+    assert any(isinstance(m, ToolSubsetMiddleware) for m in mws(True))
+    assert not any(isinstance(m, ToolSubsetMiddleware) for m in mws(False))

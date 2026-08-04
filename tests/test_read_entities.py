@@ -152,3 +152,20 @@ async def test_list_entities_domain_and_area_combined():
     result = await defn.handler(defn.params_model(domain="light", area="Kitchen"), _ctx(ws=FakeWS()))
     assert result.status == "ok"
     assert [r["entity_id"] for r in result.data["rows"]] == ["light.kitchen"]
+
+
+async def test_list_entities_rejects_unknown_domain_enum():
+    """domain is a constrained enum — an invented value fails validation."""
+    defn = registry.get("list_entities")
+    with pytest.raises(Exception):  # pydantic ValidationError
+        defn.params_model(domain="not_a_real_domain")
+
+
+async def test_list_entities_domain_enum_exposed_in_schema():
+    """The LLM must see the allowed domains as a JSON-schema enum, not a free string."""
+    defn = registry.get("list_entities")
+    schema = defn.params_model.model_json_schema()
+    domain_field = schema["properties"]["domain"]
+    # pydantic renders Literal as an enum (possibly via allOf/$ref); flatten to check.
+    dumped = str(domain_field) + str(schema.get("$defs", ""))
+    assert "light" in dumped and "climate" in dumped

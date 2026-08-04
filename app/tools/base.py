@@ -49,13 +49,19 @@ class ToolResult:
 @dataclass(slots=True)
 class ToolDefinition:
     """One tool. name: snake_case id the LLM calls. description: what the
-    LLM sees (keep under ~400 chars). handler: async (params, ctx) -> ToolResult."""
+    LLM sees (keep under ~400 chars). handler: async (params, ctx) -> ToolResult.
+
+    dynamic_params: optional hook to build the params model from the runtime
+    ToolContext (e.g. an enum of names discovered from files). When set, the
+    adapter uses dynamic_params(ctx) as the schema the LLM sees; params_model is
+    the static fallback used for direct handler calls and registry defaults."""
 
     name: str
     description: str
     params_model: type[BaseModel]
     tier: Tier
     handler: Callable[[BaseModel, Any], Awaitable[ToolResult]]
+    dynamic_params: Callable[[Any], type[BaseModel]] | None = None
 
 
 def entity_domain(entity_id: str) -> str:

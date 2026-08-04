@@ -37,6 +37,7 @@ options:
   keep_alive: -1
   recursion_limit: 15
   max_rows: 50
+  enable_tool_subsetting: true
 schema:
   llm_provider: "str"
   ollama_url: "url"
@@ -54,3 +55,4 @@ schema:
   keep_alive: "int"
   recursion_limit: "int(2,50)"
   max_rows: "int(5,500)"
+  enable_tool_subsetting: "bool"

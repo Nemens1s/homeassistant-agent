@@ -22,21 +22,41 @@
   expect_params:
     entity_id: sensor.living_room_temperature
 
+- id: history_range_today
+  prompt: "Show me the temperature history of sensor.living_room_temperature today."
+  expect_tool: get_history
+  expect_params:
+    entity_id: sensor.living_room_temperature
+    range: today
+
 - id: logbook_recent
   prompt: "What happened in the house in the last hour?"
   expect_tool: get_logbook
+
+- id: logbook_range_last_hour
+  prompt: "What happened in the house in the last hour?"
+  expect_tool: get_logbook
+  expect_params:
+    range: last_hour
 
 - id: error_log
   prompt: "Is Home Assistant showing any errors?"
   expect_tool: get_error_log
 
+- id: area_names_only
+  prompt: "What rooms do I have in my home?"
+  expect_tool: get_areas
+
 - id: topology_single_room
   prompt: "What devices are in the bedroom?"
-  expect_tool: get_area_devices
+  expect_tool: get_areas
+  # name is checked case-insensitively (see runner) — "bedroom"/"Bedroom" both fine.
+  expect_params:
+    name: bedroom
 
 - id: topology_full_map
   prompt: "Show me all rooms and what devices are in each."
-  expect_tool: get_areas_and_devices
+  expect_tool: get_areas
 
 - id: automations_list
   prompt: "List my automations and when they last ran."

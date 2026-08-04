@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     recursion_limit: int = 15
     max_rows: int = 50
     audit_db_path: str = ""
+    enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
 
     @property
     def ws_url(self) -> str:

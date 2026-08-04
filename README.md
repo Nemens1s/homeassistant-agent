@@ -37,6 +37,11 @@ Run CLI:
 venv/bin/python -m app.cli
 ```
 
+**To save conversations**
+```bash
+venv/bin/python -m app.cli --save-conversations
+```
+
 Run server locally:
 
 ```bash
@@ -51,9 +56,6 @@ reliably calls tools instead of answering in prose.
 ```bash
 venv/bin/python -m tests.evals.run
 ```
-
-Latest score: **8/9** on `qwen3.5:4b`. Qwen2.5/Qwen3 and Llama 3.1+ are solid
-starting points; older models (llama2, plain command-r) are less reliable.
 
 ## Installing as a Local Add-on
 

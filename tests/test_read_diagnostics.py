@@ -41,7 +41,7 @@ def _ctx():
 async def test_get_history_compacts_rows():
     defn = registry.get("get_history")
     result = await defn.handler(
-        defn.params_model(entity_id="light.kitchen", start_time="2026-07-12T00:00:00"),
+        defn.params_model(entity_id="light.kitchen", range="last_24h"),
         _ctx(),
     )
     assert result.status == "ok"
@@ -51,11 +51,22 @@ async def test_get_history_compacts_rows():
     ]
 
 
+async def test_get_history_defaults_range_to_last_24h():
+    defn = registry.get("get_history")
+    # range is optional — a small model may omit it entirely.
+    result = await defn.handler(defn.params_model(entity_id="light.kitchen"), _ctx())
+    assert result.status == "ok"
+
+
+async def test_get_history_rejects_freetext_timestamp():
+    defn = registry.get("get_history")
+    with pytest.raises(Exception):  # ValidationError — timestamps are no longer accepted
+        defn.params_model(entity_id="light.kitchen", range="2026-07-12T00:00:00")
+
+
 async def test_get_logbook_rows():
     defn = registry.get("get_logbook")
-    result = await defn.handler(
-        defn.params_model(start_time="2026-07-12T00:00:00"), _ctx()
-    )
+    result = await defn.handler(defn.params_model(range="last_hour"), _ctx())
     assert result.status == "ok"
     row = result.data["rows"][0]
     assert row == {
@@ -88,32 +99,37 @@ async def test_get_history_empty_data_returns_empty_rows():
     assert result.data["total"] == 0
 
 
-async def test_get_history_normalizes_empty_end_time_to_none():
+async def test_get_history_open_range_passes_none_end_time():
+    """Open-ended ranges (last_24h) resolve end_time to None → HA defaults to now."""
     captured = {}
 
     class CapturingRest:
         async def get_history(self, entity_id, start_time, end_time=None):
+            captured["start_time"] = start_time
             captured["end_time"] = end_time
             return []
 
     defn = registry.get("get_history")
     ctx = ToolContext(settings=Settings(_env_file=None), rest=CapturingRest(), ws=None)
     await defn.handler(
-        defn.params_model(entity_id="light.kitchen", start_time="2026-07-12T00:00:00", end_time=""),
-        ctx,
+        defn.params_model(entity_id="light.kitchen", range="last_24h"), ctx
     )
     assert captured["end_time"] is None
+    assert "T" in captured["start_time"]  # a resolved ISO8601 timestamp
 
 
-async def test_get_logbook_normalizes_empty_end_time_to_none():
+async def test_get_logbook_yesterday_passes_closed_window():
+    """'yesterday' is a closed day, so end_time is a concrete timestamp, not None."""
     captured = {}
 
     class CapturingRest:
         async def get_logbook(self, start_time, end_time=None):
+            captured["start_time"] = start_time
             captured["end_time"] = end_time
             return []
 
     defn = registry.get("get_logbook")
     ctx = ToolContext(settings=Settings(_env_file=None), rest=CapturingRest(), ws=None)
-    await defn.handler(defn.params_model(start_time="2026-07-12T00:00:00", end_time=""), ctx)
-    assert captured["end_time"] is None
+    await defn.handler(defn.params_model(range="yesterday"), ctx)
+    assert captured["end_time"] is not None
+    assert "T" in captured["start_time"] and "T" in captured["end_time"]

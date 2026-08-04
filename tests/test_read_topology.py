@@ -49,7 +49,7 @@ class FakeRest:
 def load_tools():
     registry._reset_for_tests()
     registry.load_all((
-        "app.tools.read.get_areas_and_devices",
+        "app.tools.read.get_areas",
         "app.tools.read.get_automations",
     ))
     yield
@@ -60,9 +60,17 @@ def _ctx(ws=None):
     return ToolContext(settings=Settings(_env_file=None), rest=FakeRest(), ws=ws)
 
 
-async def test_topology_groups_by_area():
-    defn = registry.get("get_areas_and_devices")
+async def test_get_areas_names_only():
+    """No args → just the room names (cheap, no device walk)."""
+    defn = registry.get("get_areas")
     result = await defn.handler(defn.params_model(), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    assert result.data == {"areas": ["Kitchen", "Bedroom"]}
+
+
+async def test_get_areas_full_topology_with_include_devices():
+    defn = registry.get("get_areas")
+    result = await defn.handler(defn.params_model(include_devices=True), _ctx(ws=FakeWS()))
     assert result.status == "ok"
     kitchen = result.data["areas"]["Kitchen"]
     assert kitchen["devices"] == ["Hue Bulb"]
@@ -73,8 +81,33 @@ async def test_topology_groups_by_area():
     assert result.data["unassigned"]["devices"] == ["Odd Sensor"]
 
 
-async def test_topology_without_ws():
-    defn = registry.get("get_areas_and_devices")
+async def test_get_areas_single_area_returns_devices_only():
+    """Single-area mode is devices-only — entities-with-state is list_entities(area=)'s
+    job, so the two tools don't overlap."""
+    defn = registry.get("get_areas")
+    result = await defn.handler(defn.params_model(name="Kitchen"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    assert result.data == {"area": "Kitchen", "devices": ["Hue Bulb"]}
+    assert "entities" not in result.data
+
+
+async def test_get_areas_single_area_is_case_insensitive():
+    defn = registry.get("get_areas")
+    result = await defn.handler(defn.params_model(name="kitchen"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    assert result.data["area"] == "Kitchen"
+
+
+async def test_get_areas_unknown_area_lists_available():
+    defn = registry.get("get_areas")
+    result = await defn.handler(defn.params_model(name="Garage"), _ctx(ws=FakeWS()))
+    assert result.status == "error"
+    assert result.error_code == "area_not_found"
+    assert result.data["available_areas"] == ["Kitchen", "Bedroom"]
+
+
+async def test_get_areas_without_ws():
+    defn = registry.get("get_areas")
     result = await defn.handler(defn.params_model(), _ctx(ws=None))
     assert result.status == "error"
     assert result.error_code == "ws_unavailable"

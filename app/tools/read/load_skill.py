@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, create_model
 
 from app.skills import list_skills, read_skill
 from app.tools.base import Tier, ToolDefinition, ToolResult
@@ -6,7 +8,23 @@ from app.tools.registry import register
 
 
 class Params(BaseModel):
+    # Static fallback (direct handler calls, registry default). The schema the LLM
+    # actually sees is built by build_params_model() from the skill files.
     name: str = Field(description="Skill name exactly as listed in the system prompt")
+
+
+def build_params_model(skill_names: list[str]) -> type[BaseModel]:
+    """Params model whose `name` is a Literal enum of the real skill names, so the
+    LLM picks from a menu and can't invent a name. Empty dir → free string."""
+    name_type = Literal[tuple(skill_names)] if skill_names else str  # type: ignore[valid-type]
+    return create_model(
+        "LoadSkillParams",
+        name=(name_type, Field(description="Skill playbook to load — pick exactly one.")),
+    )
+
+
+def _params_from_ctx(ctx) -> type[BaseModel]:
+    return build_params_model([m.name for m in list_skills(ctx.skills_dir)])
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -22,9 +40,10 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="load_skill",
-        description="Load a skill playbook by name. Call this FIRST for any diagnosis or troubleshooting request. Available skill names are listed in the system prompt — pass the exact name from that list.",
+        description="Load a troubleshooting playbook by name. Use ONLY for diagnosing a problem (e.g. an automation didn't fire). Not for ordinary listing/state/history questions. Pick a name from the enum.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
+        dynamic_params=_params_from_ctx,
     )
 )

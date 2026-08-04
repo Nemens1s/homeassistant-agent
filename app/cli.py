@@ -89,8 +89,9 @@ async def main(save_conversations: bool = False) -> None:
                     stream_mode="messages",
                 ):
                     if not isinstance(token, AIMessageChunk):
-                        if content_buf and not has_tool_calls:
-                            print("".join(content_buf), end="", flush=True)
+                        visible = content_buf or (think_buf if not has_tool_calls else [])
+                        if visible and not has_tool_calls:
+                            print("".join(visible), end="", flush=True)
                         if conv_file and think_buf:
                             conv_file.write(f"{_ts()} <think> {''.join(think_buf)} </think>\n")
                             conv_file.flush()
@@ -108,12 +109,11 @@ async def main(save_conversations: bool = False) -> None:
                                     conv_file.flush()
                                     break
                         continue
-                    if settings.show_thinking:
-                        thinking = token.additional_kwargs.get("reasoning_content", "")
-                        if thinking:
+                    thinking = token.additional_kwargs.get("reasoning_content", "")
+                    if thinking:
+                        think_buf.append(thinking)
+                        if settings.show_thinking:
                             print(f"\033[2m{thinking}\033[0m", end="", flush=True)
-                            if conv_file:
-                                think_buf.append(thinking)
                     if token.tool_call_chunks:
                         has_tool_calls = True
                         if conv_file:
@@ -126,15 +126,26 @@ async def main(save_conversations: bool = False) -> None:
                                 if chunk.get("id"):
                                     pending_tool_calls[idx]["id"] = chunk["id"]
                                 pending_tool_calls[idx]["args"] += chunk.get("args") or ""
-                    if isinstance(token.content, str) and token.content:
-                        content_buf.append(token.content)
+                    raw = token.content
+                    if isinstance(raw, str):
+                        text = raw
+                    elif isinstance(raw, list):
+                        text = "".join(
+                            b.get("text", "") if isinstance(b, dict) else str(b)
+                            for b in raw
+                        )
+                    else:
+                        text = ""
+                    if text:
+                        content_buf.append(text)
                 # Flush the final turn (no non-AIMessageChunk follows it).
-                if content_buf and not has_tool_calls:
-                    print("".join(content_buf), end="", flush=True)
+                visible = content_buf or (think_buf if not has_tool_calls else [])
+                if visible and not has_tool_calls:
+                    print("".join(visible), end="", flush=True)
                     if conv_file:
-                        if think_buf:
+                        if think_buf and content_buf:  # thinking is separate from answer
                             conv_file.write(f"{_ts()} <think> {''.join(think_buf)} </think>\n")
-                        conv_file.write(f"{_ts()} Agent: {''.join(content_buf)}\n")
+                        conv_file.write(f"{_ts()} Agent: {''.join(visible)}\n")
                         conv_file.flush()
             except GraphRecursionError:
                 msg = f"[stopped: hit the {settings.recursion_limit}-step limit without finishing]"

@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage
 
 from app.agent.factory import build_system_prompt, timestamped_system
 from app.agent.llm import build_llm
+from app.agent.tool_router import select_tools
 from app.config import load_settings
 from app.tools import registry
 from app.tools.adapter import build_tools
@@ -37,7 +38,12 @@ def check(case: dict, tool_calls: list) -> tuple[bool, str]:
         return False, f"called {call['name']} (args {call['args']})"
     for key, expected in (case.get("expect_params") or {}).items():
         actual = call["args"].get(key)
-        if actual != expected:
+        # Case-insensitive for strings: HA area/friendly names vary in case and the
+        # handlers match case-insensitively, so "Bedroom" == "bedroom" is a pass.
+        if isinstance(actual, str) and isinstance(expected, str):
+            if actual.lower() != expected.lower():
+                return False, f"param {key}={actual!r}, expected {expected!r}"
+        elif actual != expected:
             return False, f"param {key}={actual!r}, expected {expected!r}"
     return True, ""
 
@@ -54,19 +60,24 @@ async def main() -> int:
     registry.load_all()
     ctx = ToolContext(settings=settings, rest=None, ws=None)  # handlers never run
     tools = build_tools(ctx, max_tier=max_tier)
-    llm = build_llm(settings).bind_tools(tools)
+    llm = build_llm(settings)
     system = timestamped_system(build_system_prompt(settings, ctx.skills_dir))
 
     cases = yaml.safe_load(CASES_FILE.read_text())
     passed = 0
     run = 0
-    print(f"model: {settings.llm_model} via {settings.llm_provider}\n")
+    subset = settings.enable_tool_subsetting
+    print(f"model: {settings.llm_model} via {settings.llm_provider} "
+          f"(tool_subsetting={'on' if subset else 'off'})\n")
     for case in cases:
         if case.get("min_tier", 1) > max_tier:
             print(f"  SKIP  {case['id']} (needs tier {case['min_tier']})")
             continue
         run += 1
-        msg = await llm.ainvoke([system, HumanMessage(case["prompt"])])
+        # Mirror production: the agent only sees the per-query tool subset.
+        case_tools = select_tools(tools, case["prompt"]) if subset else tools
+        bound = llm.bind_tools(case_tools)
+        msg = await bound.ainvoke([system, HumanMessage(case["prompt"])])
         ok, reason = check(case, msg.tool_calls)
         passed += ok
         print(f"  {'PASS' if ok else 'FAIL'}  {case['id']}" + (f" — {reason}" if reason else ""))
