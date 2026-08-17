@@ -55,7 +55,7 @@ def _write_to_file(output: dict) -> None:
     title = f"{datetime.now().isoformat(timespec='seconds')} {output['model']} {output['provider']}"
     out_dir = Path(__file__).parent.parent.parent / ".evals"
     out_dir.mkdir(exist_ok=True)
-    filename = title.replace(":", "-").replace(" ", "_") + ".json"
+    filename = title.replace(":", "-").replace(" ", "_").replace("/", "-") + ".json"
     (out_dir / filename).write_text(json.dumps(output, indent=2))
 
 async def main() -> int:
@@ -101,6 +101,7 @@ async def main() -> int:
         output[case['id']] = output_message
         print(output_message)
     elapsed = time.monotonic() - t0
+    output['elapsed'] =f"\n[{elapsed:.1f}s]\n"
     print(f"\nscore: {passed}/{run}")
     print(f"\n[{elapsed:.1f}s]\n")
     if save_results:
