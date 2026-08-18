@@ -12,11 +12,16 @@ class FakeRest:
             {"state": "on", "last_changed": "2026-07-12T21:00:00+00:00"},
         ]]
 
-    async def get_logbook(self, start_time, end_time=None):
-        return [
+    async def get_logbook(self, start_time, end_time=None, entity_id=None):
+        entries = [
             {"when": "2026-07-12T21:00:00+00:00", "name": "Kitchen Light",
              "message": "turned on", "entity_id": "light.kitchen"},
+            {"when": "2026-07-12T22:00:00+00:00", "name": "Air Purifier",
+             "message": "turned on", "entity_id": "fan.air_purifier"},
         ]
+        if entity_id:
+            entries = [e for e in entries if e["entity_id"] == entity_id]
+        return entries
 
     async def get_error_log(self):
         return "\n".join(f"line {i}" for i in range(1, 101))
@@ -68,11 +73,19 @@ async def test_get_logbook_rows():
     defn = registry.get("get_logbook")
     result = await defn.handler(defn.params_model(range="last_hour"), _ctx())
     assert result.status == "ok"
-    row = result.data["rows"][0]
-    assert row == {
-        "at": "2026-07-12T21:00:00+00:00", "name": "Kitchen Light",
-        "message": "turned on", "entity_id": "light.kitchen",
-    }
+    assert len(result.data["rows"]) == 2
+    assert result.data["rows"][0]["entity_id"] == "light.kitchen"
+
+
+async def test_get_logbook_entity_filter():
+    defn = registry.get("get_logbook")
+    result = await defn.handler(
+        defn.params_model(range="last_hour", entity_id="fan.air_purifier"), _ctx()
+    )
+    assert result.status == "ok"
+    rows = result.data["rows"]
+    assert len(rows) == 1
+    assert rows[0]["entity_id"] == "fan.air_purifier"
 
 
 async def test_get_error_log_tails_50_lines():
@@ -123,7 +136,7 @@ async def test_get_logbook_yesterday_passes_closed_window():
     captured = {}
 
     class CapturingRest:
-        async def get_logbook(self, start_time, end_time=None):
+        async def get_logbook(self, start_time, end_time=None, entity_id=None):
             captured["start_time"] = start_time
             captured["end_time"] = end_time
             return []

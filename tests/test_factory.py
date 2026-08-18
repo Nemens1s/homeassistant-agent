@@ -70,7 +70,7 @@ def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
     assert "control" not in build_system_prompt(s1, tmp_path).lower()
     p2 = build_system_prompt(s2, tmp_path)
     assert "turn entities on or off" in p2
-    assert "light, switch, automation" in p2
+    assert "light, switch, fan, automation" in p2
 
 
 def test_build_agent_compiles_with_read_tools():

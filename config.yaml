@@ -16,7 +16,7 @@ watchdog: "http://[HOST]:[PORT:8099]/api/health"
 options:
   llm_provider: "ollama"
   ollama_url: "http://192.168.1.50:11434"
-  llm_model: "qwen2.5:7b"
+  llm_model: "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
   api_key: ""
   system_prompt: >-
     You are an assistant for this Home Assistant instance.
@@ -27,6 +27,7 @@ options:
   allowed_domains:
     - light
     - switch
+    - fan
     - automation
   allowed_labels: []
   temperature: 0.0
@@ -38,6 +39,8 @@ options:
   recursion_limit: 15
   max_rows: 50
   enable_tool_subsetting: true
+  person_name_map: []
+  person_name_exclude: []
 schema:
   llm_provider: "str"
   ollama_url: "url"
@@ -56,3 +59,7 @@ schema:
   recursion_limit: "int(2,50)"
   max_rows: "int(5,500)"
   enable_tool_subsetting: "bool"
+  person_name_map:
+    - ha_name: str
+      name: str
+  person_name_exclude: ["str"]

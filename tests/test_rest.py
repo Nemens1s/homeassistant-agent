@@ -69,11 +69,24 @@ async def test_get_logbook_without_end_time_omits_param():
     def handler(request):
         assert request.url.path == "/api/logbook/2026-07-12T00:00:00"
         assert "end_time" not in request.url.params
+        assert "entity_id" not in request.url.params
         return httpx.Response(200, json=[{"when": "2026-07-12T01:00:00+00:00"}])
 
     client = _client(handler)
     data = await client.get_logbook("2026-07-12T00:00:00")
     assert data == [{"when": "2026-07-12T01:00:00+00:00"}]
+    await client.aclose()
+
+
+async def test_get_logbook_with_entity_id_sends_param():
+    def handler(request):
+        assert request.url.path == "/api/logbook/2026-07-12T00:00:00"
+        assert request.url.params["entity_id"] == "fan.air_purifier"
+        return httpx.Response(200, json=[{"when": "2026-07-12T05:00:00+00:00", "entity_id": "fan.air_purifier"}])
+
+    client = _client(handler)
+    data = await client.get_logbook("2026-07-12T00:00:00", entity_id="fan.air_purifier")
+    assert data[0]["entity_id"] == "fan.air_purifier"
     await client.aclose()
 
 

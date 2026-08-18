@@ -88,7 +88,7 @@ async def test_control_entity_denies_non_allowlisted_domain():
         defn.params_model(entity_id="lock.front", action="turn_off"), _ctx(rest))
     assert result.status == "error"
     assert result.error_code == "domain_not_allowed"
-    assert result.data["allowed"] == ["light", "switch", "automation"]
+    assert result.data["allowed"] == ["light", "switch", "fan", "automation"]
     assert rest.calls == []                        # never reached the client
 
 

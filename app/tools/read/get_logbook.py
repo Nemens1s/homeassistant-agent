@@ -10,11 +10,15 @@ class Params(BaseModel):
         default="last_24h",
         description="How far back to look: last_hour, last_24h, today, yesterday, last_7d, or last_30d.",
     )
+    entity_id: str | None = Field(
+        default=None,
+        description="Filter to a single entity, e.g. 'fan.air_purifier'. Omit to get house-wide activity.",
+    )
 
 
 async def handler(params: Params, ctx) -> ToolResult:
     start_time, end_time = resolve_range(params.range)
-    entries = await ctx.rest.get_logbook(start_time, end_time)
+    entries = await ctx.rest.get_logbook(start_time, end_time, params.entity_id)
     rows = [
         {
             "at": e.get("when", ""),
@@ -33,7 +37,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_logbook",
-        description="Activity log across the house — automations triggered, devices that changed state, script executions. Use for: 'what happened?', 'what events occurred?', 'did X run today?', 'show recent activity'. range: last_hour/last_24h/today/yesterday/last_7d/last_30d. For one entity's numeric history use get_history.",
+        description="Activity log — automations triggered, devices that changed state, script executions. Use for: 'what happened?', 'did X run today?', 'show recent activity'. Supply entity_id to filter to one device (e.g. 'did the purifier turn on last night?'); omit for house-wide activity. range: last_hour/last_24h/today/yesterday/last_7d/last_30d. For numeric history use get_history.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

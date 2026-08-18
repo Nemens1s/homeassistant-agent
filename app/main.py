@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+_FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 import httpx
 from fastapi import FastAPI
@@ -113,5 +116,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Mounted last so /api/* wins. Frontend must use relative fetch paths
     # ("api/chat", not "/api/chat") — HA ingress serves us under a prefix.
-    app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
     return app

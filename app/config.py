@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # LLM backend
     llm_provider: str = "ollama"  # "ollama" or a litellm provider, e.g. "anthropic"
     ollama_url: str = "http://localhost:11434"
-    llm_model: str = "qwen2.5:7b"
+    llm_model: str = "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
     api_key: str = ""  # cloud provider key, used only by litellm providers
 
     # Model options — small-model tuning (spec: LLM factory & model settings)
@@ -51,12 +51,23 @@ class Settings(BaseSettings):
     # Agent behavior
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     max_tier: int = 1
-    allowed_domains: list[str] = ["light", "switch", "automation"]
+    allowed_domains: list[str] = ["light", "switch", "fan", "automation"]
     allowed_labels: list[str] = []  # if non-empty, entity/device must carry at least one
     recursion_limit: int = 15
     max_rows: int = 50
     audit_db_path: str = ""
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
+
+    # Person display names: list of {ha_name: "<HA friendly_name>", name: "<shown name>"}
+    # ha_name is the lookup key (what HA reports); name is what the agent sees.
+    person_name_map: list[dict[str, str]] = []
+    # Person exclusions: person entities whose friendly_name contains any of these
+    # substrings (case-insensitive) are hidden from get_person_locations output.
+    person_name_exclude: list[str] = []
+
+    @property
+    def person_name_lookup(self) -> dict[str, str]:
+        return {e["ha_name"]: e["name"] for e in self.person_name_map}
 
     @property
     def ws_url(self) -> str:

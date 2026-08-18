@@ -58,10 +58,14 @@ class RestClient:
             params["end_time"] = end_time
         return await self._get_json(f"/api/history/period/{start_time}", params)
 
-    async def get_logbook(self, start_time: str, end_time: str | None = None) -> list:
+    async def get_logbook(
+        self, start_time: str, end_time: str | None = None, entity_id: str | None = None
+    ) -> list:
         params: dict = {}
         if end_time:
             params["end_time"] = end_time
+        if entity_id:
+            params["entity_id"] = entity_id
         return await self._get_json(f"/api/logbook/{start_time}", params)
 
     async def get_error_log(self) -> str:
