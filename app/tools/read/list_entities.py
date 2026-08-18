@@ -29,11 +29,11 @@ State = Literal[
 
 
 class Params(BaseModel):
+    device: str = Field(
+        default="", description="Hardware device name (substring match). Returns all non-diagnostic entities for that device. Use list_devices to find device names."
+    )
     domain: Domain = Field(
         default="", description="Optional domain filter, e.g. 'light', 'sensor', 'automation'."
-    )
-    area: str = Field(
-        default="", description="Optional area name filter, e.g. 'Living room'."
     )
     device_class: DeviceClass = Field(
         default="", description="Optional device class filter, e.g. 'battery', 'motion', 'temperature', 'humidity'."
@@ -43,48 +43,52 @@ class Params(BaseModel):
     )
 
 
-async def _entity_ids_in_area(ctx, area_name: str) -> set[str] | None:
-    areas = await ctx.ws.request_cached("config/area_registry/list")
-    match = next((a for a in areas if a["name"].lower() == area_name.lower()), None)
-    if match is None:
-        return None
-    area_id = match["area_id"]
+def _device_name(d: dict) -> str:
+    return d.get("name_by_user") or d.get("name") or d["id"]
+
+
+async def _entity_ids_for_device(ctx, device_name: str) -> tuple[set[str] | None, list[str]]:
+    """Return (entity_id_set, did_you_mean). entity_id_set is None when device not found."""
     devices = await ctx.ws.request_cached("config/device_registry/list")
-    device_ids = {d["id"] for d in devices if d.get("area_id") == area_id}
-    entities = await ctx.ws.request_cached("config/entity_registry/list")
-    ids: set[str] = set()
-    for e in entities:
-        # entity's own area assignment overrides its device's area
-        if e.get("area_id") == area_id or (
-            e.get("area_id") is None and e.get("device_id") in device_ids
-        ):
-            ids.add(e["entity_id"])
-    return ids
+    q = device_name.lower()
+    match = next((d for d in devices if q in _device_name(d).lower()), None)
+    if match is None:
+        return None, [_device_name(d) for d in devices]
+    entries = await ctx.ws.request_cached("config/entity_registry/list")
+    ids = {
+        e["entity_id"] for e in entries
+        if e.get("device_id") == match["id"]
+        and e.get("entity_category") not in ("diagnostic", "config")
+    }
+    return ids, []
 
 
 async def handler(params: Params, ctx) -> ToolResult:
-    states = await ctx.rest.list_states()
-    if params.domain:
-        states = [s for s in states if s["entity_id"].startswith(params.domain + ".")]
-    if params.area:
+    if params.device:
         if ctx.ws is None:
             return ToolResult.error(
                 "ws_unavailable",
-                "Area filtering needs the websocket connection, which is not available. Filter by domain instead.",
+                "Device filtering needs the websocket connection.",
             )
-        entity_ids = await _entity_ids_in_area(ctx, params.area)
+        entity_ids, suggestions = await _entity_ids_for_device(ctx, params.device)
         if entity_ids is None:
-            areas = await ctx.ws.request_cached("config/area_registry/list")
             return ToolResult.error(
-                "area_not_found",
-                f"No area named {params.area!r}.",
-                data={"available_areas": [a["name"] for a in areas]},
+                "device_not_found",
+                f"No device matching {params.device!r}.",
+                data={"did_you_mean": suggestions[:5]},
             )
+        states = await ctx.rest.list_states()
         states = [s for s in states if s["entity_id"] in entity_ids]
+    else:
+        states = await ctx.rest.list_states()
+
+    if params.domain:
+        states = [s for s in states if s["entity_id"].startswith(params.domain + ".")]
     if params.device_class:
         states = [s for s in states if s.get("attributes", {}).get("device_class") == params.device_class]
     if params.state:
         states = [s for s in states if s["state"] == params.state]
+
     rows = [
         {
             "entity_id": s["entity_id"],
@@ -99,9 +103,13 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="list_entities",
-        description="List entities WITH their current state, filtered by domain (domain='light' for all lights, 'switch', 'sensor', 'input_boolean'), area, device_class, or state."
-                    " Use area='Living room' to see what entities are in a room and whether they're on/off — this is the tool for 'what entities/what's on in <room>'."
-                    " Do NOT use when a full entity_id like 'light.kitchen' is already given (use get_entity_state) or when searching by device name (use search_entities).",
+        description=(
+            "List HA entities with entity_ids and live states. "
+            "Primary use: device='Roborock Qrevo S' → all non-diagnostic entities for that device "
+            "(use list_devices to find device names). "
+            "Also supports cross-device filters: domain='light', state='on', device_class='battery'. "
+            "Not when entity_id already known — use get_entity_state."
+        ),
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

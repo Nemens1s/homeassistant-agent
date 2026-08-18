@@ -40,7 +40,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="load_skill",
-        description="Load a troubleshooting playbook by name. Use ONLY for diagnosing a problem (e.g. an automation didn't fire). Not for ordinary listing/state/history questions. Pick a name from the enum.",
+        description="Load a troubleshooting playbook by exact name. Use ONLY when diagnosing a problem (automation didn't fire, device stopped responding). If unsure of the name, call list_skills first. Use the exact name from the enum — do not guess.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

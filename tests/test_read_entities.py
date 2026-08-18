@@ -15,6 +15,10 @@ STATES = [
     {"entity_id": "sensor.temp", "state": "21.5",
      "attributes": {"friendly_name": "Temperature"},
      "last_changed": "2026-07-13T10:30:00+00:00"},
+    # diagnostic entity — should be excluded by device filter
+    {"entity_id": "sensor.kitchen_power", "state": "150",
+     "attributes": {"friendly_name": "Kitchen Power"},
+     "last_changed": "2026-07-13T10:00:00+00:00"},
 ]
 
 
@@ -33,10 +37,15 @@ class FakeWS:
     def __init__(self):
         self.registries = {
             "config/area_registry/list": [{"area_id": "kitchen", "name": "Kitchen"}],
-            "config/device_registry/list": [{"id": "dev1", "area_id": "kitchen"}],
+            "config/device_registry/list": [
+                {"id": "dev1", "area_id": "kitchen", "name_by_user": None, "name": "Hue Bulb"},
+                {"id": "dev2", "area_id": None, "name_by_user": None, "name": "Smart Plug"},
+            ],
             "config/entity_registry/list": [
-                {"entity_id": "light.kitchen", "area_id": None, "device_id": "dev1"},
-                {"entity_id": "light.bedroom", "area_id": None, "device_id": None},
+                {"entity_id": "light.kitchen", "area_id": None, "device_id": "dev1", "entity_category": None},
+                {"entity_id": "sensor.kitchen_power", "area_id": None, "device_id": "dev1", "entity_category": "diagnostic"},
+                {"entity_id": "light.bedroom", "area_id": None, "device_id": None, "entity_category": None},
+                {"entity_id": "switch.plug", "area_id": None, "device_id": "dev2", "entity_category": None},
             ],
         }
 
@@ -77,44 +86,6 @@ async def test_list_entities_domain_filter():
     assert result.data["total"] == 2
 
 
-async def test_list_entities_area_filter():
-    defn = registry.get("list_entities")
-    result = await defn.handler(defn.params_model(area="Kitchen"), _ctx(ws=FakeWS()))
-    assert result.status == "ok"
-    ids = [r["entity_id"] for r in result.data["rows"]]
-    assert ids == ["light.kitchen"]  # via device dev1 in area kitchen
-
-
-async def test_list_entities_unknown_area():
-    defn = registry.get("list_entities")
-    result = await defn.handler(defn.params_model(area="Garage"), _ctx(ws=FakeWS()))
-    assert result.status == "error"
-    assert result.error_code == "area_not_found"
-    assert result.data["available_areas"] == ["Kitchen"]
-
-
-async def test_list_entities_area_without_ws():
-    defn = registry.get("list_entities")
-    result = await defn.handler(defn.params_model(area="Kitchen"), _ctx(ws=None))
-    assert result.status == "error"
-    assert result.error_code == "ws_unavailable"
-
-
-async def test_list_entities_area_override():
-    """Entity-level area assignment overrides device's area."""
-    ws = FakeWS()
-    ws.registries["config/area_registry/list"].append({"area_id": "other", "name": "Other"})
-    ws.registries["config/entity_registry/list"] = [
-        {"entity_id": "light.bedroom", "area_id": "kitchen", "device_id": None},
-        {"entity_id": "light.kitchen", "area_id": "other", "device_id": "dev1"},
-    ]
-    defn = registry.get("list_entities")
-    result = await defn.handler(defn.params_model(area="Kitchen"), _ctx(ws=ws))
-    assert result.status == "ok"
-    ids = [r["entity_id"] for r in result.data["rows"]]
-    assert ids == ["light.bedroom"]
-
-
 async def test_list_entities_state_filter():
     defn = registry.get("list_entities")
     result = await defn.handler(defn.params_model(state="on"), _ctx())
@@ -132,6 +103,49 @@ async def test_list_entities_state_and_domain_filter():
     assert ids == ["light.bedroom"]
 
 
+async def test_list_entities_device_filter():
+    """device filter returns only non-diagnostic entities for the matched device."""
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(device="Hue Bulb"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert "light.kitchen" in ids
+    # diagnostic entity excluded
+    assert "sensor.kitchen_power" not in ids
+
+
+async def test_list_entities_device_substring_match():
+    """device is matched by case-insensitive substring."""
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(device="hue"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    assert result.data["rows"][0]["entity_id"] == "light.kitchen"
+
+
+async def test_list_entities_device_not_found():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(device="Nonexistent"), _ctx(ws=FakeWS()))
+    assert result.status == "error"
+    assert result.error_code == "device_not_found"
+    assert "did_you_mean" in result.data
+
+
+async def test_list_entities_device_without_ws():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(device="Hue Bulb"), _ctx(ws=None))
+    assert result.status == "error"
+    assert result.error_code == "ws_unavailable"
+
+
+async def test_list_entities_device_and_domain_combined():
+    """domain filter still applies on top of device filter."""
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(device="Hue Bulb", domain="sensor"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    # light.kitchen is filtered out by domain=sensor; diagnostic sensor also excluded
+    assert result.data["rows"] == []
+
+
 async def test_get_entity_state_propagates_http_error():
     """404 from REST client is not caught and propagates."""
     class Raising404Rest:
@@ -145,13 +159,6 @@ async def test_get_entity_state_propagates_http_error():
     ctx = ToolContext(settings=Settings(_env_file=None), rest=Raising404Rest(), ws=None)
     with pytest.raises(httpx.HTTPStatusError):
         await defn.handler(defn.params_model(entity_id="light.nope"), ctx)
-
-
-async def test_list_entities_domain_and_area_combined():
-    defn = registry.get("list_entities")
-    result = await defn.handler(defn.params_model(domain="light", area="Kitchen"), _ctx(ws=FakeWS()))
-    assert result.status == "ok"
-    assert [r["entity_id"] for r in result.data["rows"]] == ["light.kitchen"]
 
 
 async def test_list_entities_rejects_unknown_domain_enum():

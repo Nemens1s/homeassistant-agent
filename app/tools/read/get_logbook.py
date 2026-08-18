@@ -33,7 +33,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_logbook",
-        description="Get a time-range log of all events, state changes, and triggered automations across all entities, over a relative window (range=last_hour/last_24h/today/yesterday/last_7d/last_30d). Use for 'what happened in the house?', 'did automation X run today?', 'when did Y last occur?'. For state history of one specific entity only, use get_history instead.",
+        description="Activity log across the house — automations triggered, devices that changed state, script executions. Use for: 'what happened?', 'what events occurred?', 'did X run today?', 'show recent activity'. range: last_hour/last_24h/today/yesterday/last_7d/last_30d. For one entity's numeric history use get_history.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

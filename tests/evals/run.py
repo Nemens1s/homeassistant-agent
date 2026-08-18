@@ -14,13 +14,14 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
-from langchain_core.messages import HumanMessage
-from langsmith.integrations import otel
+from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
 
-from app.agent.factory import build_system_prompt, timestamped_system
+from app.agent.factory import build_agent, build_system_prompt, timestamped_system
 from app.agent.llm import build_llm
 from app.agent.tool_router import select_tools
 from app.config import load_settings
+from app.ha.rest import RestClient
+from app.ha.websocket import WebSocketClient
 from app.tools import registry
 from app.tools.adapter import build_tools
 from app.tools.context import ToolContext
@@ -38,17 +39,27 @@ def check(case: dict, tool_calls: list) -> tuple[bool, str]:
     if not tool_calls:
         return False, "no tool call"
     call = tool_calls[0]
-    if call["name"] != case["expect_tool"]:
+
+    # Accept expect_tool (str) or expect_any_tool (list) — both are valid.
+    any_of = case.get("expect_any_tool")
+    expected = any_of or [case.get("expect_tool")]
+    if call["name"] not in expected:
         return False, f"called {call['name']} (args {call['args']})"
-    for key, expected in (case.get("expect_params") or {}).items():
+
+    # Skip param check when the model called an alternate "discovery" tool that
+    # naturally takes no args (e.g. list_skills called instead of load_skill).
+    if any_of and call["name"] != case.get("expect_tool"):
+        return True, ""
+
+    # Case-insensitive param check: HA area/friendly names vary in case and the
+    # handlers match case-insensitively, so "Bedroom" == "bedroom" is a pass.
+    for key, exp_val in (case.get("expect_params") or {}).items():
         actual = call["args"].get(key)
-        # Case-insensitive for strings: HA area/friendly names vary in case and the
-        # handlers match case-insensitively, so "Bedroom" == "bedroom" is a pass.
-        if isinstance(actual, str) and isinstance(expected, str):
-            if actual.lower() != expected.lower():
-                return False, f"param {key}={actual!r}, expected {expected!r}"
-        elif actual != expected:
-            return False, f"param {key}={actual!r}, expected {expected!r}"
+        if isinstance(actual, str) and isinstance(exp_val, str):
+            if actual.lower() != exp_val.lower():
+                return False, f"param {key}={actual!r}, expected {exp_val!r}"
+        elif actual != exp_val:
+            return False, f"param {key}={actual!r}, expected {exp_val!r}"
     return True, ""
 
 def _write_to_file(output: dict) -> None:
@@ -58,15 +69,108 @@ def _write_to_file(output: dict) -> None:
     filename = title.replace(":", "-").replace(" ", "_").replace("/", "-") + ".json"
     (out_dir / filename).write_text(json.dumps(output, indent=2))
 
+async def _agent_trace(settings, prompt: str) -> list[dict]:
+    """Run the full agent against real HA and capture every turn as a list of dicts.
+    Each entry is one of:
+      {"thinking": ..., "calls": [...]}   — AI turn with tool proposals
+      {"tool_result": "..."}              — tool response
+      {"thinking": ..., "answer": "..."}  — final AI turn with text reply
+      {"error": "..."}                    — agent raised an exception
+    """
+    write_domains = tuple(settings.allowed_domains) if settings.max_tier >= 2 else ()
+    rest = RestClient(settings.ha_base_url, settings.ha_token, allowed_write_domains=write_domains)
+    ws: WebSocketClient | None = None
+    try:
+        _ws = WebSocketClient(settings.ws_url, settings.ha_token)
+        await _ws.start(connect_timeout=settings.ws_connect_timeout)
+        ws = _ws
+    except Exception:
+        pass
+
+    trace_ctx = ToolContext(settings=settings, rest=rest, ws=ws)
+    agent = build_agent(settings, trace_ctx)
+    config = {
+        "configurable": {"thread_id": f"eval-{time.monotonic_ns()}"},
+        "recursion_limit": settings.recursion_limit,
+    }
+
+    trace: list[dict] = []
+    current: dict = {}
+    pending: dict[int, dict] = {}
+
+    try:
+        async for token, _ in agent.astream(
+            {"messages": [{"role": "user", "content": prompt}]},
+            config=config,
+            stream_mode="messages",
+        ):
+            if not isinstance(token, AIMessageChunk):
+                if current:
+                    trace.append({k: v for k, v in current.items() if v})
+                current = {}
+                pending = {}
+                if isinstance(token, ToolMessage):
+                    raw = token.content
+                    trace.append({"tool_result": raw if isinstance(raw, str) else json.dumps(raw)})
+                continue
+
+            if t := token.additional_kwargs.get("reasoning_content", ""):
+                current["thinking"] = current.get("thinking", "") + t
+
+            for chunk in token.tool_call_chunks or []:
+                idx = chunk.get("index") or 0
+                if idx not in pending:
+                    pending[idx] = {"name": "", "args": ""}
+                if chunk.get("name"):
+                    pending[idx]["name"] += chunk["name"]
+                pending[idx]["args"] += chunk.get("args") or ""
+            if pending:
+                current["calls"] = [
+                    {"name": v["name"], "args": json.loads(v["args"]) if v["args"] else {}}
+                    for v in pending.values() if v["name"]
+                ]
+
+            if txt := (token.content if isinstance(token.content, str) else ""):
+                current["answer"] = current.get("answer", "") + txt
+
+        if current:
+            trace.append({k: v for k, v in current.items() if v})
+    except Exception as exc:
+        trace.append({"error": str(exc)})
+    finally:
+        await rest.aclose()
+        if ws:
+            await ws.stop()
+
+    return trace
+
+
+def _print_trace(trace: list[dict]) -> None:
+    for entry in trace:
+        if "thinking" in entry:
+            print(f"    [think]  {entry['thinking']}")
+        for tc in entry.get("calls", []):
+            print(f"    [call]   {tc['name']}({tc['args']})")
+        if "tool_result" in entry:
+            print(f"    [result] {entry['tool_result']}")
+        if "answer" in entry:
+            print(f"    [answer] {entry['answer']}")
+        if "error" in entry:
+            print(f"    [error]  {entry['error']}")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-tier", type=int, default=None)
     parser.add_argument("--save-results", action="store_true", help="Save test results to a file")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Show thinking and all tool calls per case; always saves results")
     args = parser.parse_args()
 
     settings = load_settings()
     max_tier = args.max_tier if args.max_tier is not None else settings.max_tier
-    save_results = True if args.save_results else False
+    verbose = args.verbose
+    save_results = args.save_results or verbose
 
     registry._reset_for_tests()
     registry.load_all()
@@ -74,10 +178,13 @@ async def main() -> int:
     tools = build_tools(ctx, max_tier=max_tier)
     llm = build_llm(settings)
     system = timestamped_system(build_system_prompt(settings, ctx.skills_dir))
-    output = {'model': settings.llm_model,
-              'provider': settings.llm_provider,
-              'num_gpu': settings.num_gpu,
-              'num_ctx': settings.num_ctx}
+    output: dict = {
+        "model": settings.llm_model,
+        "provider": settings.llm_provider,
+        "num_gpu": settings.num_gpu,
+        "num_ctx": settings.num_ctx,
+        "cases": {},
+    }
 
     cases = yaml.safe_load(CASES_FILE.read_text())
     passed = 0
@@ -87,21 +194,43 @@ async def main() -> int:
           f"(tool_subsetting={'on' if subset else 'off'})\n")
     t0 = time.monotonic()
     for case in cases:
+        print("-" * 20)
         if case.get("min_tier", 1) > max_tier:
             print(f"  SKIP  {case['id']} (needs tier {case['min_tier']})")
             continue
         run += 1
         # Mirror production: the agent only sees the per-query tool subset.
         case_tools = select_tools(tools, case["prompt"]) if subset else tools
-        bound = llm.bind_tools(case_tools)
-        msg = await bound.ainvoke([system, HumanMessage(case["prompt"])])
-        ok, reason = check(case, msg.tool_calls)
-        passed += ok
-        output_message = f"  {'PASS' if ok else 'FAIL'}  {case['id']}" + (f" — {reason}" if reason else "")
-        output[case['id']] = output_message
-        print(output_message)
+        trace: list[dict] = []
+        if verbose:
+            trace = await _agent_trace(settings, case["prompt"])
+            lc_calls = next(
+                (entry["calls"] for entry in trace if "calls" in entry), []
+            )
+            ok, reason = check(case, lc_calls)
+            passed += ok
+            case_data: dict = {"passed": ok}
+            if reason:
+                case_data["reason"] = reason
+            case_data['prompt'] = case["prompt"]
+            case_data["trace"] = trace
+        else:
+            bound = llm.bind_tools(case_tools)
+            msg = await bound.ainvoke([system, HumanMessage(case["prompt"])])
+            ok, reason = check(case, msg.tool_calls)
+            passed += ok
+            case_data = {"passed": ok}
+            if reason:
+                case_data["reason"] = reason
+
+        output["cases"][case["id"]] = case_data
+        print(f"  {'PASS' if ok else 'FAIL'}  {case['id']}" + (f" — {reason}" if reason else ""))
+        if verbose:
+            _print_trace(trace)
+
     elapsed = time.monotonic() - t0
-    output['elapsed'] =f"\n[{elapsed:.1f}s]\n"
+    output["score"] = f"{passed}/{run}"
+    output["elapsed"] = round(elapsed, 1)
     print(f"\nscore: {passed}/{run}")
     print(f"\n[{elapsed:.1f}s]\n")
     if save_results:

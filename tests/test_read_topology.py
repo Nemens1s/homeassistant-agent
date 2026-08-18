@@ -82,8 +82,8 @@ async def test_get_areas_full_topology_with_include_devices():
 
 
 async def test_get_areas_single_area_returns_devices_only():
-    """Single-area mode is devices-only — entities-with-state is list_entities(area=)'s
-    job, so the two tools don't overlap."""
+    """Single-area mode is devices-only — use list_devices + list_entities(device=)
+    to drill into HA entities for a specific device."""
     defn = registry.get("get_areas")
     result = await defn.handler(defn.params_model(name="Kitchen"), _ctx(ws=FakeWS()))
     assert result.status == "ok"

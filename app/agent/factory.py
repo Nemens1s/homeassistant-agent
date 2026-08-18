@@ -189,13 +189,20 @@ class ContextWindowMiddleware(AgentMiddleware):
         try:
             return await handler(prepared)
         except Exception as exc:
-            if "XML syntax error" not in str(exc):
-                raise
-            log.warning("LLM produced malformed XML tool call — skipping retry: %s", exc)
-            return AIMessage(
-                content="Your previous tool call contained malformed XML and could not be parsed. "
-                "Please retry with well-formed XML."
-            )
+            msg = str(exc)
+            if "XML syntax error" in msg:
+                log.warning("LLM produced malformed XML tool call: %s", exc)
+                return AIMessage(
+                    content="Your previous tool call contained malformed XML and could not be parsed. "
+                    "Please retry with well-formed XML."
+                )
+            if "Extra data" in msg:
+                log.warning("LLM produced trailing text after tool call JSON: %s", exc)
+                return AIMessage(
+                    content="Your previous tool call contained text after the JSON object. "
+                    "Output only the JSON tool call with no trailing text."
+                )
+            raise
 
 
 def build_middleware(settings: Settings, guard: LoopGuard, base_prompt: str, budget: int) -> list[AgentMiddleware]:

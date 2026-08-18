@@ -6,14 +6,20 @@ from app.tools.timerange import TimeRange, resolve_range
 
 
 class Params(BaseModel):
-    entity_id: str = Field(description="Full entity id, e.g. 'sensor.living_room_temperature'")
+    entity_id: str = Field(description="Full entity id, e.g. 'sensor.living_room_temperature'. Must be a specific entity — wildcards not supported.")
     range: TimeRange = Field(
         default="last_24h",
-        description="How far back to look: last_hour, last_24h, today, yesterday, last_7d, or last_30d.",
+        description="How far back to look. 'today' = since midnight local time. 'last_24h' = rolling 24-hour window. Other options: last_hour, yesterday, last_7d, last_30d.",
     )
 
 
 async def handler(params: Params, ctx) -> ToolResult:
+    if not params.entity_id or params.entity_id in ("*", "all") or params.entity_id.endswith(".*"):
+        return ToolResult.error(
+            "invalid_entity_id",
+            "entity_id must be a specific entity (e.g. 'sensor.living_room_temperature'). "
+            "For cross-entity activity use get_logbook instead.",
+        )
     start_time, end_time = resolve_range(params.range)
     data = await ctx.rest.get_history(params.entity_id, start_time, end_time)
     changes = data[0] if data else []
@@ -27,7 +33,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_history",
-        description="Get state change history for ONE specific entity over a relative time window (range=last_hour/last_24h/today/yesterday/last_7d/last_30d). Use only when an entity_id is known and the user asks for a timeseries (e.g. 'temperature history'). NOT for 'what happened in the house?' — use get_logbook for that.",
+        description="Timeseries history for ONE specific entity (temperature, power, battery %). entity_id must be a real entity — wildcards rejected. 'today' = since midnight, 'last_24h' = rolling window. Do NOT use for 'what happened in the house?' or 'did X run?' — use get_logbook for those.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

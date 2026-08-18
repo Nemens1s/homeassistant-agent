@@ -76,11 +76,10 @@ register(
     ToolDefinition(
         name="get_areas",
         description=(
-            "Explore the physical layout of rooms/areas. No arguments → list all area "
-            "names. name='Kitchen' → the DEVICES (hardware) in that one room. "
-            "include_devices=true (no name) → the full home topology (every room's "
-            "devices and entity_ids). To list the ENTITIES in a room or check their "
-            "on/off states, use list_entities with area= — NOT this tool."
+            "Room/area names and hardware device names only — no HA entity_ids, no live states. "
+            "No args → all room names. name='Kitchen' → devices in that room. "
+            "include_devices=true → full home map. "
+            "For HA entities of a specific device, use list_devices then list_entities(device=)."
         ),
         params_model=Params,
         tier=Tier.READ,
