@@ -52,23 +52,14 @@ async def handler(params: Params, ctx) -> ToolResult:
             "devices": [_device_name(d) for d in devices if d.get("area_id") == area_id],
         })
 
-    # Mode 3: full topology — every room with its devices and entities, plus unassigned.
-    entities = await ctx.ws.request_cached("config/entity_registry/list")
+    # Mode 3: full topology — every room with its device names. No entity IDs;
+    # those are too numerous and overflow the context window for large installs.
     area_names = {a["area_id"]: a["name"] for a in areas}
-    device_area = {d["id"]: d.get("area_id") for d in devices}
-
-    # entity's own area assignment overrides its device's area
-    def entity_area(e: dict) -> str | None:
-        return e.get("area_id") or device_area.get(e.get("device_id"))
-
-    out = {name: {"devices": [], "entities": []} for name in area_names.values()}
-    unassigned = {"devices": [], "entities": []}
+    out: dict[str, list[str]] = {name: [] for name in area_names.values()}
+    unassigned: list[str] = []
     for d in devices:
-        bucket = out.get(area_names.get(d.get("area_id"))) or unassigned
-        bucket["devices"].append(_device_name(d))
-    for e in entities:
-        bucket = out.get(area_names.get(entity_area(e))) or unassigned
-        bucket["entities"].append(e["entity_id"])
+        bucket_name = area_names.get(d.get("area_id"))
+        (out[bucket_name] if bucket_name else unassigned).append(_device_name(d))
     return ToolResult.ok({"areas": out, "unassigned": unassigned})
 
 

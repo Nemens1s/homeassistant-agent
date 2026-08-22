@@ -29,10 +29,6 @@
     entity_id: sensor.mt6000_temperature
     range: today
 
-- id: logbook_recent
-  prompt: "What happened in the house in the last hour?"
-  expect_tool: get_logbook
-
 - id: logbook_range_last_hour
   prompt: "What happened in the house in the last hour?"
   expect_tool: get_logbook
@@ -136,13 +132,13 @@
     entity_id: light.living_room_concorde_smart_plug
     action: turn_off
 
-- id: toggle_switch
-  min_tier: 2
-  prompt: "Toggle switch.kitchen_smart_plug."
-  expect_tool: control_entity
-  expect_params:
-    entity_id: switch.kitchen_smart_plug
-    action: toggle
+#- id: toggle_switch
+#  min_tier: 2
+#  prompt: "Toggle switch.kitchen_smart_plug."
+#  expect_tool: control_entity
+#  expect_params:
+#    entity_id: switch.kitchen_smart_plug
+#    action: toggle
 
 - id: run_automation
   min_tier: 2

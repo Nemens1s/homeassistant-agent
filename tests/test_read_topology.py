@@ -72,13 +72,9 @@ async def test_get_areas_full_topology_with_include_devices():
     defn = registry.get("get_areas")
     result = await defn.handler(defn.params_model(include_devices=True), _ctx(ws=FakeWS()))
     assert result.status == "ok"
-    kitchen = result.data["areas"]["Kitchen"]
-    assert kitchen["devices"] == ["Hue Bulb"]
-    assert kitchen["entities"] == ["light.kitchen"]
-    bedroom = result.data["areas"]["Bedroom"]
-    assert bedroom["entities"] == ["light.bedroom_lamp"]
-    assert result.data["unassigned"]["entities"] == ["sensor.odd"]
-    assert result.data["unassigned"]["devices"] == ["Odd Sensor"]
+    assert result.data["areas"]["Kitchen"] == ["Hue Bulb"]
+    assert result.data["areas"]["Bedroom"] == []
+    assert result.data["unassigned"] == ["Odd Sensor"]
 
 
 async def test_get_areas_single_area_returns_devices_only():

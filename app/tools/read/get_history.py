@@ -33,7 +33,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_history",
-        description="Timeseries history for ONE specific entity (temperature, power, battery %). entity_id must be a real entity — wildcards rejected. 'today' = since midnight, 'last_24h' = rolling window. Do NOT use for 'what happened in the house?' or 'did X run?' — use get_logbook for those.",
+        description="NOT for general activity — use get_logbook for 'what happened?' questions. This tool only gives the state-change timeline for ONE specific entity (e.g. temperature trend, battery %). entity_id must be a real entity id — wildcards rejected. 'today' = since midnight, 'last_24h' = rolling window.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
