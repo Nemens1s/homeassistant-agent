@@ -14,7 +14,7 @@ is merged; specs and plans for iterations 2 (control + audit) and 3
   starlette TestClient deprecation) are expected; new warnings are findings.
 - Capability REPL: `venv/bin/python -m app.cli` (needs `.env` + live HA + Ollama).
 - Tool-selection evals: `venv/bin/python -m tests.evals.run` (needs live
-  Ollama; deliberately NOT collected by pytest). Baseline: 8/9 on qwen3.5:4b.
+  Ollama; deliberately NOT collected by pytest).
 - Server (dev): `venv/bin/uvicorn app.main:create_app --factory --port 8099`.
 
 ## Dev environment
