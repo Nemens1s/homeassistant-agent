@@ -39,6 +39,11 @@ class in `app/config.py`; in the addon container it reads
   never raise into the agent loop; never log/handle errors inside handlers.**
 - `tools/context.py` — `ToolContext` carries rest/ws clients + settings;
   handlers never import clients (tests pass fakes).
+- `tools/helpers/` — reusable utilities shared across tool modules (register
+  nothing): `labels.py` (label guardrail), `timerange.py` (range parsing),
+  `lookups.py` (area/device/entity resolution over HA registries — e.g.
+  `resolve_area`, `entity_area_ids`, `device_name`). Not `tools/registry.py`,
+  which is the tool catalogue.
 - `ha/rest.py` — GET-only httpx client (read-only by construction; iteration
   2 adds exactly one allowlist-guarded write method).
 - `ha/websocket.py` — persistent WS client (auth, id-correlated `request()`,

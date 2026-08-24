@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
-from app.tools.labels import check_entity_labels
+from app.tools.helpers.labels import check_entity_labels
 from app.tools.registry import register
 
 

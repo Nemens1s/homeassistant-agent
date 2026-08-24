@@ -1,16 +1,13 @@
 from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
+from app.tools.helpers.lookups import device_name
 from app.tools.registry import register
 
 
 class Params(BaseModel):
     area: str = Field(default="", description="Optional area/room name filter, e.g. 'Kitchen'.")
     name: str = Field(default="", description="Optional substring to search in device name, e.g. 'roborock'.")
-
-
-def _device_name(d: dict) -> str:
-    return d.get("name_by_user") or d.get("name") or d["id"]
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -33,10 +30,10 @@ async def handler(params: Params, ctx) -> ToolResult:
 
     if params.name:
         q = params.name.lower()
-        devices = [d for d in devices if q in _device_name(d).lower()]
+        devices = [d for d in devices if q in device_name(d).lower()]
 
     rows = sorted(
-        [{"name": _device_name(d), "area": area_names.get(d.get("area_id"), "")} for d in devices],
+        [{"name": device_name(d), "area": area_names.get(d.get("area_id"), "")} for d in devices],
         key=lambda r: (r["area"], r["name"]),
     )
     return ToolResult.ok({"devices": rows, "total": len(rows)})
@@ -46,9 +43,10 @@ register(
     ToolDefinition(
         name="list_devices",
         description=(
-            "List hardware devices (not HA entities). No args → all devices. area='Kitchen' → devices "
-            "in that room. name='roborock' → search by device name. Returns device names — pass one to "
-            "list_entities(device=...) to see its HA entities and states."
+            "List hardware devices (not HA entities), device names only. No args → all devices. "
+            "area='Kitchen' → devices in that room. name='roborock' → search by device name. "
+            "Pass a device name to list_entities(device=) for its entities+states; "
+            "for a whole room's entities+states go straight to list_entities(area=)."
         ),
         params_model=Params,
         tier=Tier.READ,

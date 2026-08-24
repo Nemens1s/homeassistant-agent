@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows
 from app.tools.registry import register
-from app.tools.timerange import TimeRange, resolve_range
+from app.tools.helpers.timerange import TimeRange, resolve_range
 
 
 class Params(BaseModel):

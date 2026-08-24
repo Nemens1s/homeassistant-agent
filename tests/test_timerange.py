@@ -5,7 +5,7 @@ tools take a `range` keyword and the handler resolves it here against a fixed no
 
 from datetime import datetime
 
-from app.tools.timerange import RANGE_VALUES, resolve_range
+from app.tools.helpers.timerange import RANGE_VALUES, resolve_range
 
 NOW = datetime.fromisoformat("2026-08-03T14:30:00+02:00")
 

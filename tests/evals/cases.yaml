@@ -50,6 +50,16 @@
   expect_params:
     name: bedroom
 
+- id: room_contents
+  prompt: "What do I have in my bedroom?"
+  # "in my <room>" → room-aware tools. list_entities(area=) is the entities+states
+  # path; get_areas / list_devices (names only) are acceptable alternates. The bug
+  # this guards against: treating the room as a device — list_entities(device=bedroom).
+  expect_any_tool: [list_entities, get_areas, list_devices]
+  expect_tool: list_entities
+  expect_params:
+    area: bedroom
+
 - id: topology_full_map
   prompt: "Show me all rooms and what devices are in each."
   expect_tool: get_areas

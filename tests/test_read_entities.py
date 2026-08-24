@@ -146,6 +146,51 @@ async def test_list_entities_device_and_domain_combined():
     assert result.data["rows"] == []
 
 
+async def test_list_entities_area_filter():
+    """area filter returns entities in that room (via device or direct area_id),
+    excluding diagnostic entities."""
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(area="Kitchen"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert ids == ["light.kitchen"]
+    # diagnostic entity in the same room is excluded
+    assert "sensor.kitchen_power" not in ids
+    # entity with no device/area is not in the room
+    assert "light.bedroom" not in ids
+
+
+async def test_list_entities_area_case_insensitive():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(area="kitchen"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    assert result.data["rows"][0]["entity_id"] == "light.kitchen"
+
+
+async def test_list_entities_area_and_domain_combined():
+    """domain filter still applies on top of area filter."""
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(area="Kitchen", domain="sensor"), _ctx(ws=FakeWS()))
+    assert result.status == "ok"
+    # only light.kitchen is in the room; domain=sensor drops it
+    assert result.data["rows"] == []
+
+
+async def test_list_entities_area_not_found():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(area="Nowhere"), _ctx(ws=FakeWS()))
+    assert result.status == "error"
+    assert result.error_code == "area_not_found"
+    assert result.data["available_areas"] == ["Kitchen"]
+
+
+async def test_list_entities_area_without_ws():
+    defn = registry.get("list_entities")
+    result = await defn.handler(defn.params_model(area="Kitchen"), _ctx(ws=None))
+    assert result.status == "error"
+    assert result.error_code == "ws_unavailable"
+
+
 async def test_get_entity_state_propagates_http_error():
     """404 from REST client is not caught and propagates."""
     class Raising404Rest:

@@ -5,6 +5,7 @@ reliably route among them. One tool, three modes selected by the arguments."""
 from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
+from app.tools.helpers.lookups import device_name
 from app.tools.registry import register
 
 
@@ -13,12 +14,8 @@ class Params(BaseModel):
         default="", description="A specific room/area name to inspect, e.g. 'Kitchen'. Empty = all areas."
     )
     include_devices: bool = Field(
-        default=False, description="When no name is given, set true to return every room's devices and entities (full topology) instead of just names."
+        default=False, description="When no name is given, set true to return every room's devices instead of just names."
     )
-
-
-def _device_name(d: dict) -> str:
-    return d.get("name_by_user") or d.get("name") or d["id"]
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -33,7 +30,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     if not params.name and not params.include_devices:
         return ToolResult.ok({"areas": [a["name"] for a in areas]})
 
-    devices = await ctx.ws.request_cached("config/device_registry/list")
+    devices = [d for d in await ctx.ws.request_cached("config/device_registry/list") if not d.get("disabled_by")]
 
     # Mode 2: one specific room → its DEVICES (hardware) only. Entities-with-state
     # for a room are list_entities(area=)'s job — keeping this devices-only is what
@@ -49,7 +46,7 @@ async def handler(params: Params, ctx) -> ToolResult:
         area_id = area["area_id"]
         return ToolResult.ok({
             "area": area["name"],
-            "devices": [_device_name(d) for d in devices if d.get("area_id") == area_id],
+            "devices": [device_name(d) for d in devices if d.get("area_id") == area_id],
         })
 
     # Mode 3: full topology — every room with its device names. No entity IDs;
@@ -59,7 +56,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     unassigned: list[str] = []
     for d in devices:
         bucket_name = area_names.get(d.get("area_id"))
-        (out[bucket_name] if bucket_name else unassigned).append(_device_name(d))
+        (out[bucket_name] if bucket_name else unassigned).append(device_name(d))
     return ToolResult.ok({"areas": out, "unassigned": unassigned})
 
 
@@ -70,7 +67,8 @@ register(
             "Room/area names and hardware device names only — no HA entity_ids, no live states. "
             "No args → all room names. name='Kitchen' → devices in that room. "
             "include_devices=true → full home map. "
-            "For HA entities of a specific device, use list_devices then list_entities(device=)."
+            "For the entities+states in a room, use list_entities(area=); "
+            "for a specific device's entities, use list_entities(device=)."
         ),
         params_model=Params,
         tier=Tier.READ,
