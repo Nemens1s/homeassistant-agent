@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 
 from app.audit import AuditSink
@@ -31,6 +32,24 @@ async def test_record_writes_row(tmp_path):
     mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     assert mode == "wal"
     conn.close()
+
+
+async def test_concurrent_writes_both_land(tmp_path):
+    db = tmp_path / "audit.db"
+    sink = AuditSink(str(db))
+    await asyncio.gather(
+        sink.record(thread_id="t1", tool="control_entity", entity_id="light.a",
+                    domain="light", service="turn_on", params_json="{}",
+                    status="ok", error_code=None, duration_ms=10),
+        sink.record(thread_id="t2", tool="control_entity", entity_id="light.b",
+                    domain="light", service="turn_off", params_json="{}",
+                    status="ok", error_code=None, duration_ms=20),
+    )
+    sink.close()
+    conn = sqlite3.connect(db)
+    count = conn.execute("SELECT COUNT(*) FROM actions").fetchone()[0]
+    conn.close()
+    assert count == 2
 
 
 async def test_record_never_raises(tmp_path, caplog):

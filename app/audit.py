@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS actions (
 class AuditSink:
     def __init__(self, db_path: str):
         self._conn: sqlite3.Connection | None = None
+        self._lock = asyncio.Lock()
         if not db_path:
             return
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -49,12 +50,12 @@ class AuditSink:
                thread_id, tool, entity_id, domain, service, params_json,
                status, error_code, duration_ms)
         try:
-            await asyncio.to_thread(self._write, row)
+            async with self._lock:
+                await asyncio.to_thread(self._write, row)
         except Exception:
             log.exception("audit write failed (tool=%s)", tool)
 
     def _write(self, row: tuple) -> None:
-        # Single-writer assumed: addon is single-user, tool calls are sequential per turn.
         self._conn.execute(
             "INSERT INTO actions (ts, thread_id, tool, entity_id, domain, service,"
             " params_json, status, error_code, duration_ms)"
