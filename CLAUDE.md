@@ -40,7 +40,7 @@ class in `app/config.py`; in the addon container it reads
 - `tools/context.py` — `ToolContext` carries rest/ws clients + settings;
   handlers never import clients (tests pass fakes).
 - `tools/helpers/` — reusable utilities shared across tool modules (register
-  nothing): `labels.py` (label guardrail), `timerange.py` (range parsing),
+  nothing): `timerange.py` (range parsing),
   `lookups.py` (area/device/entity resolution over HA registries — e.g.
   `resolve_area`, `entity_area_ids`, `device_name`). Not `tools/registry.py`,
   which is the tool catalogue.
@@ -75,6 +75,11 @@ class in `app/config.py`; in the addon container it reads
 - Prefer plain, readable Python: regular `for` loops over comprehensions,
   explicit steps over clever one-liners. Optimize for readability, not
   brevity.
+- Writes are menu-only: the agent's only action tool is `trigger_automation`,
+  which triggers only `automation.ai_*` automations, and every ACTION-tier call
+  is gated in `tools/adapter.py` by a fail-closed point-read of
+  `settings.ai_actions_switch` (default `input_boolean.ai_triggered_actions`).
+  Off/unreadable ⇒ refused (`ai_disabled` / `ai_gate_unavailable`).
 
 ## Where things live
 

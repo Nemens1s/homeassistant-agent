@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     max_tier: int = 1
     allowed_domains: list[str] = ["light", "switch", "fan", "automation"]
-    allowed_labels: list[str] = []  # if non-empty, entity/device must carry at least one
+    ai_actions_switch: str = "input_boolean.ai_triggered_actions"  # master gate; "" disables
     recursion_limit: int = 15
     max_rows: int = 50
     audit_db_path: str = ""

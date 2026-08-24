@@ -2,8 +2,8 @@
 imports them. Adding a tool = one new module + one line in _DEFAULT_MODULES.
 
 tools_for_tier() is the permission gate: the agent only sees tools at or
-below max_tier. At max_tier=1 that means READ-only; at max_tier=2 action
-tools (control_entity, trigger_automation) are also included.
+below max_tier. At max_tier=1 that means READ-only; at max_tier=2 the action
+tool (trigger_automation) is also included.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.list_devices",
     "app.tools.read.list_skills",
     "app.tools.read.load_skill",
-    "app.tools.action.control_entity",
     "app.tools.action.trigger_automation",
 )
 

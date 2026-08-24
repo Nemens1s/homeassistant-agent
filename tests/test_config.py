@@ -20,6 +20,7 @@ def test_defaults():
     assert s.temperature == 0.0
     assert s.reasoning is False
     assert s.num_ctx == 8192
+    assert s.ai_actions_switch == "input_boolean.ai_triggered_actions"
 
 
 def test_env_overrides(monkeypatch):

@@ -18,6 +18,9 @@ class _FakeRest:
     async def list_states(self):
         return [{"entity_id": "light.kitchen"}, {"entity_id": "light.bedroom"}]
 
+    async def get_state(self, entity_id):
+        return {"entity_id": entity_id, "state": "on"}
+
 
 def _ctx():
     return ToolContext(settings=Settings(_env_file=None), rest=_FakeRest(), ws=None)
@@ -246,3 +249,116 @@ async def test_tier2_refused_outcome_is_audited():
     await tool.ainvoke({"entity_id": "lock.front"})
     assert sink.rows[0]["status"] == "error"
     assert sink.rows[0]["error_code"] == "domain_not_allowed"
+
+
+class _GateRest:
+    """Fake rest whose get_state returns a configurable AI-switch state."""
+    def __init__(self, switch_state="on", raise_on_get=False):
+        self.switch_state = switch_state
+        self.raise_on_get = raise_on_get
+
+    async def list_states(self):
+        return [{"entity_id": "light.kitchen"}]
+
+    async def get_state(self, entity_id):
+        if self.raise_on_get:
+            raise httpx.ConnectError("refused")
+        return {"entity_id": entity_id, "state": self.switch_state}
+
+
+def _gate_tool(handler, rest, name="gate_demo", switch="input_boolean.ai_triggered_actions"):
+    from app.config import Settings
+    ctx = ToolContext(
+        settings=Settings(_env_file=None, ai_actions_switch=switch), rest=rest, ws=None)
+    defn = ToolDefinition(name=name, description="d", params_model=_Params,
+                          tier=Tier.ACTION, handler=handler)
+    return to_structured_tool(defn, ctx, LoopGuard())
+
+
+async def test_action_allowed_when_ai_switch_on():
+    ran = {"v": False}
+
+    async def handler(params, ctx):
+        ran["v"] = True
+        return ToolResult.ok("done")
+
+    tool = _gate_tool(handler, _GateRest(switch_state="on"))
+    out = json.loads(await tool.ainvoke({"entity_id": "automation.ai_x"}))
+    assert out["status"] == "ok"
+    assert ran["v"] is True
+
+
+async def test_action_blocked_when_ai_switch_off():
+    ran = {"v": False}
+
+    async def handler(params, ctx):
+        ran["v"] = True
+        return ToolResult.ok("done")
+
+    tool = _gate_tool(handler, _GateRest(switch_state="off"))
+    out = json.loads(await tool.ainvoke({"entity_id": "automation.ai_x"}))
+    assert out["status"] == "error"
+    assert out["error"]["code"] == "ai_disabled"
+    assert ran["v"] is False  # handler never ran
+
+
+async def test_action_blocked_when_switch_unavailable():
+    async def handler(params, ctx):
+        return ToolResult.ok("done")
+
+    tool = _gate_tool(handler, _GateRest(switch_state="unavailable"))
+    out = json.loads(await tool.ainvoke({"entity_id": "automation.ai_x"}))
+    assert out["error"]["code"] == "ai_gate_unavailable"
+
+
+async def test_action_blocked_when_switch_read_raises():
+    async def handler(params, ctx):
+        return ToolResult.ok("done")
+
+    tool = _gate_tool(handler, _GateRest(raise_on_get=True))
+    out = json.loads(await tool.ainvoke({"entity_id": "automation.ai_x"}))
+    assert out["error"]["code"] == "ai_gate_unavailable"
+
+
+async def test_gate_skipped_when_switch_setting_empty():
+    async def handler(params, ctx):
+        return ToolResult.ok("done")
+
+    tool = _gate_tool(handler, _GateRest(switch_state="off"), switch="")
+    out = json.loads(await tool.ainvoke({"entity_id": "automation.ai_x"}))
+    assert out["status"] == "ok"  # gate disabled → off switch ignored
+
+
+async def test_read_tier_bypasses_gate():
+    async def handler(params, ctx):
+        return ToolResult.ok("read")
+
+    # READ-tier tool: gate check must be skipped even when rest.get_state raises
+    from app.config import Settings
+    ctx = ToolContext(
+        settings=Settings(_env_file=None, ai_actions_switch="input_boolean.ai_triggered_actions"),
+        rest=_GateRest(raise_on_get=True), ws=None)
+    defn = ToolDefinition(name="read_bypass", description="d", params_model=_Params,
+                          tier=Tier.READ, handler=handler)
+    tool = to_structured_tool(defn, ctx, LoopGuard())
+    out = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}))
+    assert out["status"] == "ok"  # gate not evaluated for READ tier
+
+
+async def test_gated_refusal_is_audited():
+    async def handler(params, ctx):
+        return ToolResult.ok("done")
+
+    sink = RecordingSink()
+    from app.config import Settings
+    ctx = ToolContext(
+        settings=Settings(_env_file=None, ai_actions_switch="input_boolean.ai_triggered_actions"),
+        rest=_GateRest(switch_state="off"), ws=None)
+    ctx.audit = sink
+    defn = ToolDefinition(name="act_gated", description="d", params_model=_Params,
+                          tier=Tier.ACTION, handler=handler)
+    tool = to_structured_tool(defn, ctx, LoopGuard())
+    await tool.ainvoke({"entity_id": "automation.ai_x"},
+                       config={"configurable": {"thread_id": "t"}})
+    assert sink.rows[0]["status"] == "error"
+    assert sink.rows[0]["error_code"] == "ai_disabled"

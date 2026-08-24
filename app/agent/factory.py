@@ -67,11 +67,12 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
             + lines
         )
     if settings.max_tier >= 2:
-        domains = ", ".join(settings.allowed_domains)
         prompt += (
-            "\n\nYou can also turn entities on or off, toggle them, and trigger "
-            f"automations — but only in these domains: {domains}. "
-            "Refuse control requests outside them."
+            "\n\nACTIONS: you can trigger AI-controllable automations — those whose "
+            "entity_id starts with 'automation.ai_' (see the ai_controllable flag from "
+            "get_automations). You cannot control lights, switches, or other entities "
+            "directly; act only by triggering one of these automations. Every action "
+            "also requires the home's AI-actions switch to be on, or it is refused."
         )
     return prompt
 

@@ -70,10 +70,11 @@ def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
 def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
     s1 = Settings(_env_file=None, system_prompt="Base.", max_tier=1)
     s2 = Settings(_env_file=None, system_prompt="Base.", max_tier=2)
-    assert "control" not in build_system_prompt(s1, tmp_path).lower()
+    p1 = build_system_prompt(s1, tmp_path)
     p2 = build_system_prompt(s2, tmp_path)
-    assert "turn entities on or off" in p2
-    assert "light, switch, fan, automation" in p2
+    assert "automation.ai_" not in p1  # no action guidance at tier 1
+    assert "automation.ai_" in p2
+    assert "trigger" in p2.lower()
 
 
 def test_build_agent_compiles_with_read_tools():
@@ -85,7 +86,7 @@ def test_build_agent_compiles_with_read_tools():
     tier1 = {t.name for t in registry.tools_for_tier(1)}
     tier2 = {t.name for t in registry.tools_for_tier(2)}
     assert tier1  # registry loaded
-    assert tier2 - tier1 == {"control_entity", "trigger_automation"}
+    assert tier2 - tier1 == {"trigger_automation"}
     assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()
 
@@ -123,7 +124,7 @@ def test_tool_subset_middleware_trims_to_message():
         def __init__(self, name):
             self.name = name
 
-    tools = [T("list_entities"), T("get_weather"), T("get_vacuum_state"), T("control_entity")]
+    tools = [T("list_entities"), T("get_weather"), T("get_vacuum_state"), T("trigger_automation")]
     captured = {}
 
     def handler(req):

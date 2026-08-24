@@ -1,12 +1,18 @@
 from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
-from app.tools.helpers.labels import check_entity_labels
 from app.tools.registry import register
+
+# The AI menu marker. An automation is triggerable by the agent only when its
+# entity_id starts with this prefix. Single source of truth (imported by
+# get_automations for the ai_controllable flag).
+AI_AUTOMATION_PREFIX = "automation.ai_"
 
 
 class Params(BaseModel):
-    entity_id: str = Field(description="Automation entity id, e.g. 'automation.night_lights'")
+    entity_id: str = Field(
+        description="AI-controllable automation entity id, e.g. 'automation.ai_night_lights'"
+    )
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -14,11 +20,12 @@ async def handler(params: Params, ctx) -> ToolResult:
         return ToolResult.error(
             "invalid_params", "entity_id must start with 'automation.'"
         )
-    label_ok = await check_entity_labels(params.entity_id, ctx.settings.allowed_labels, ctx)
-    if label_ok is False:
+    if not params.entity_id.startswith(AI_AUTOMATION_PREFIX):
         return ToolResult.error(
-            "label_not_allowed",
-            f"{params.entity_id!r} does not have any of the required labels: {ctx.settings.allowed_labels}.",
+            "not_ai_controllable",
+            f"{params.entity_id!r} is not an AI-controllable automation. "
+            f"Only automations whose entity_id starts with {AI_AUTOMATION_PREFIX!r} "
+            "may be triggered.",
         )
     if "automation" not in ctx.settings.allowed_domains:
         return ToolResult.error(
@@ -40,7 +47,12 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="trigger_automation",
-        description="Run a Home Assistant automation right now by its entity_id. Only works when the 'automation' domain is allowed.",
+        description=(
+            "Run an AI-controllable Home Assistant automation right now by its "
+            "entity_id. Only automations whose entity_id starts with 'automation.ai_' "
+            "may be triggered (see the ai_controllable flag from get_automations). "
+            "Requires the home's AI-actions switch to be on."
+        ),
         params_model=Params,
         tier=Tier.ACTION,
         handler=handler,

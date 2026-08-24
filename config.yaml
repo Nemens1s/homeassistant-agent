@@ -29,7 +29,8 @@ options:
     - switch
     - fan
     - automation
-  allowed_labels: []
+  # empty string disables the home-level AI kill switch (menu + domain guards still apply)
+  ai_actions_switch: "input_boolean.ai_triggered_actions"
   temperature: 0.0
   seed: 42
   reasoning: false
@@ -49,7 +50,7 @@ schema:
   system_prompt: "str"
   max_tier: "int(1,2)"
   allowed_domains: ["str"]
-  allowed_labels: ["str"]
+  ai_actions_switch: "str"
   temperature: "float(0,2)"
   seed: "int"
   reasoning: "bool"

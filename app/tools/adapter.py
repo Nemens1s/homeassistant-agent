@@ -64,6 +64,67 @@ async def _did_you_mean(ctx: ToolContext, entity_id: str) -> list[str]:
         return []
 
 
+async def _invoke_handler(defn, params_model, ctx, kwargs) -> ToolResult:
+    try:
+        params = params_model(**kwargs)
+        return await defn.handler(params, ctx)
+    except ValidationError as exc:
+        return ToolResult.error("invalid_params", _validation_message(exc))
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            entity_id = str(kwargs.get("entity_id", ""))
+            data = (
+                {"did_you_mean": await _did_you_mean(ctx, entity_id)}
+                if entity_id
+                else None
+            )
+            return ToolResult.error("entity_not_found", f"No entity {entity_id!r}.", data=data)
+        return ToolResult.error(
+            "ha_unreachable", f"Home Assistant returned HTTP {exc.response.status_code}.")
+    except (httpx.HTTPError, ConnectionError) as exc:
+        return ToolResult.error("ha_unreachable", f"Could not reach Home Assistant: {exc}.")
+    except TimeoutError:
+        return ToolResult.error("ha_timeout", "Home Assistant did not answer in time.")
+    except PermissionError as exc:
+        return ToolResult.error("domain_not_allowed", str(exc))
+    except RuntimeError as exc:
+        return ToolResult.error("ha_error", f"Command failed: {exc}.")
+    except Exception as exc:  # terminal guard: nothing may escape into the agent loop
+        log.exception("tool=%s unexpected error", defn.name)
+        return ToolResult.error("internal_error", f"Unexpected error: {exc}.")
+
+
+async def _ai_gate_block(defn, ctx) -> ToolResult | None:
+    """Master gate for ACTION-tier tools: refuse unless the AI-actions switch is on.
+    Returns an error ToolResult to short-circuit, or None to proceed. Fails closed:
+    any read problem or non-on state blocks the action."""
+    if defn.tier < 2:
+        return None
+    switch = ctx.settings.ai_actions_switch
+    if not switch:
+        return None
+    try:
+        state = await ctx.rest.get_state(switch)
+    except Exception:
+        return ToolResult.error(
+            "ai_gate_unavailable",
+            f"Could not read the AI-actions switch {switch!r}; refusing to act.",
+        )
+    value = state.get("state")
+    if value == "on":
+        return None
+    if value in ("unavailable", "unknown", None):
+        return ToolResult.error(
+            "ai_gate_unavailable",
+            f"The AI-actions switch {switch!r} is {value!r}; refusing to act.",
+        )
+    return ToolResult.error(
+        "ai_disabled",
+        "AI-triggered actions are turned off at the home level. "
+        "Enable the AI-actions switch to allow control.",
+    )
+
+
 def to_structured_tool(
     defn: ToolDefinition, ctx: ToolContext, guard: LoopGuard
 ) -> StructuredTool:
@@ -82,44 +143,11 @@ def to_structured_tool(
                 "Use the previous result or try a different approach.",
             )
         else:
-            try:
-                params = params_model(**kwargs)
-                result = await defn.handler(params, ctx)
-            except ValidationError as exc:
-                result = ToolResult.error("invalid_params", _validation_message(exc))
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    entity_id = str(kwargs.get("entity_id", ""))
-                    data = (
-                        {"did_you_mean": await _did_you_mean(ctx, entity_id)}
-                        if entity_id
-                        else None
-                    )
-                    result = ToolResult.error(
-                        "entity_not_found", f"No entity {entity_id!r}.", data=data
-                    )
-                else:
-                    result = ToolResult.error(
-                        "ha_unreachable",
-                        f"Home Assistant returned HTTP {exc.response.status_code}.",
-                    )
-            except (httpx.HTTPError, ConnectionError) as exc:
-                result = ToolResult.error(
-                    "ha_unreachable", f"Could not reach Home Assistant: {exc}."
-                )
-            except TimeoutError:
-                result = ToolResult.error(
-                    "ha_timeout", "Home Assistant did not answer in time."
-                )
-            except PermissionError as exc:
-                result = ToolResult.error("domain_not_allowed", str(exc))
-            except RuntimeError as exc:
-                result = ToolResult.error(
-                    "ha_error", f"Command failed: {exc}."
-                )
-            except Exception as exc:  # terminal guard: nothing may escape into the agent loop
-                log.exception("tool=%s unexpected error", defn.name)
-                result = ToolResult.error("internal_error", f"Unexpected error: {exc}.")
+            block = await _ai_gate_block(defn, ctx)
+            if block is not None:
+                result = block
+            else:
+                result = await _invoke_handler(defn, params_model, ctx, kwargs)
         duration_ms = round((time.monotonic() - started) * 1000)
         log.info(
             "tool=%s tier=%s status=%s duration_ms=%s args=%s",

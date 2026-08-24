@@ -13,15 +13,14 @@ slightly slower path, never a dead end. When in doubt it exposes more, not less.
 
 from __future__ import annotations
 
-# Always offered: general-purpose querying + control. These cover any request even
-# when no specialized keyword matches, so hiding a shortcut can only cost a step,
-# never capability.
+# Always offered: general-purpose querying + automation triggering. These cover any
+# request even when no specialized keyword matches, so hiding a shortcut can only
+# cost a step, never capability.
 CORE_TOOLS: frozenset[str] = frozenset({
     "search_entities",
     "get_entity_state",
     "list_entities",
     "load_skill",
-    "control_entity",      # tier-gated at build time; harmless if absent
     "trigger_automation",
 })
 

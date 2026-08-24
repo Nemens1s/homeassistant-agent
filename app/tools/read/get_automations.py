@@ -2,6 +2,7 @@ import difflib
 
 from pydantic import BaseModel, Field
 
+from app.tools.action.trigger_automation import AI_AUTOMATION_PREFIX
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows
 from app.tools.registry import register
 
@@ -28,6 +29,7 @@ async def handler(params: Params, ctx) -> ToolResult:
                 "state": a["state"],
                 "name": a.get("attributes", {}).get("friendly_name", ""),
                 "last_triggered": a.get("attributes", {}).get("last_triggered"),
+                "ai_controllable": a["entity_id"].startswith(AI_AUTOMATION_PREFIX),
             })
         return ToolResult.ok(bound_rows(rows, max_rows=ctx.settings.max_rows))
 
