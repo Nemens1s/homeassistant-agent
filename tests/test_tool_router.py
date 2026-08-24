@@ -9,7 +9,7 @@ from app.agent.tool_router import CORE_TOOLS, select_tool_names, select_tools
 
 ALL_TOOLS = {
     "search_entities", "get_entity_state", "list_entities", "load_skill",
-    "control_entity", "trigger_automation", "get_battery_status", "get_vacuum_state",
+    "trigger_automation", "get_battery_status", "get_vacuum_state",
     "get_weather", "get_person_locations", "get_history", "get_logbook",
     "get_error_log", "get_automations", "get_areas", "list_devices",
 }
@@ -34,7 +34,7 @@ def test_unrelated_query_hides_specialized_tools():
     assert "get_vacuum_state" not in selected
     assert "get_weather" not in selected
     # ...but the general + control tools remain
-    assert {"list_entities", "control_entity"} <= selected
+    assert {"list_entities", "trigger_automation"} <= selected
 
 
 def test_room_mention_exposes_area_tool():
