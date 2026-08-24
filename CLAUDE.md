@@ -40,7 +40,7 @@ class in `app/config.py`; in the addon container it reads
 - `tools/context.py` — `ToolContext` carries rest/ws clients + settings;
   handlers never import clients (tests pass fakes).
 - `tools/helpers/` — reusable utilities shared across tool modules (register
-  nothing): `labels.py` (label guardrail), `timerange.py` (range parsing),
+  nothing): `timerange.py` (range parsing),
   `lookups.py` (area/device/entity resolution over HA registries — e.g.
   `resolve_area`, `entity_area_ids`, `device_name`). Not `tools/registry.py`,
   which is the tool catalogue.

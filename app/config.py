@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     max_tier: int = 1
     allowed_domains: list[str] = ["light", "switch", "fan", "automation"]
     ai_actions_switch: str = "input_boolean.ai_triggered_actions"  # master gate; "" disables
-    allowed_labels: list[str] = []  # if non-empty, entity/device must carry at least one
     recursion_limit: int = 15
     max_rows: int = 50
     audit_db_path: str = ""
