@@ -77,7 +77,10 @@ def select_tool_names(available: set[str] | frozenset[str], message: str) -> set
     is non-empty.
     """
     text = message.lower()
-    selected = {name for name in available if name in CORE_TOOLS}
+    selected = set()
+    for name in available:
+        if name in CORE_TOOLS:
+            selected.add(name)
     for name in available:
         for kw in _KEYWORDS.get(name, ()):
             if kw in text:
@@ -91,5 +94,12 @@ def select_tool_names(available: set[str] | frozenset[str], message: str) -> set
 def select_tools(tools: list, message: str) -> list:
     """Filter a list of tool objects (anything with a `.name`) by `select_tool_names`,
     preserving input order."""
-    keep = select_tool_names({t.name for t in tools}, message)
-    return [t for t in tools if t.name in keep]
+    available = set()
+    for t in tools:
+        available.add(t.name)
+    keep = select_tool_names(available, message)
+    result = []
+    for t in tools:
+        if t.name in keep:
+            result.append(t)
+    return result
