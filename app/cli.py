@@ -13,7 +13,6 @@ from typing import IO
 
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.errors import GraphRecursionError
-from litellm.proxy.guardrails.guardrail_hooks.custom_code.primitives import lower
 
 from app.agent.factory import build_agent
 from app.audit import AuditSink
@@ -96,7 +95,7 @@ async def main(save_conversations: bool = False) -> None:
         while True:
             try:
                 user_input = input("You: ").strip()
-                if user_input == lower("Bye"):
+                if user_input == "bye":
                     print("Shutting down")
                     break
             except (KeyboardInterrupt, EOFError):
