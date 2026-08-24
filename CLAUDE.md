@@ -75,6 +75,11 @@ class in `app/config.py`; in the addon container it reads
 - Prefer plain, readable Python: regular `for` loops over comprehensions,
   explicit steps over clever one-liners. Optimize for readability, not
   brevity.
+- Writes are menu-only: the agent's only action tool is `trigger_automation`,
+  which triggers only `automation.ai_*` automations, and every ACTION-tier call
+  is gated in `tools/adapter.py` by a fail-closed point-read of
+  `settings.ai_actions_switch` (default `input_boolean.ai_triggered_actions`).
+  Off/unreadable ⇒ refused (`ai_disabled` / `ai_gate_unavailable`).
 
 ## Where things live
 
