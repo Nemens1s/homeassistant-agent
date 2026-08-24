@@ -43,10 +43,10 @@ register(
     ToolDefinition(
         name="list_devices",
         description=(
-            "List hardware devices (not HA entities), device names only. No args → all devices. "
-            "area='Kitchen' → devices in that room. name='roborock' → search by device name. "
-            "Pass a device name to list_entities(device=) for its entities+states; "
-            "for a whole room's entities+states go straight to list_entities(area=)."
+            "List hardware devices (not HA entities), device names only. THE tool for "
+            "'what's in <room>' / 'what do I have' — a clean device-level view without noisy entities. "
+            "No args → all devices. area='Kitchen' → devices in that room. name='roborock' → search by name. "
+            "Drilling into one device's individual entities+states is a separate, narrower lookup."
         ),
         params_model=Params,
         tier=Tier.READ,

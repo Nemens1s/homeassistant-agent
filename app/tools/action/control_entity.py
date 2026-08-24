@@ -47,7 +47,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="control_entity",
-        description="Turn a light or switch on/off/toggle. ONLY supported entity domains: light.* and switch.*. Returns ok when HA accepted the command; state updates asynchronously so use get_entity_state to verify.",
+        description="Turn a light or switch on/off/toggle. ONLY supported entity domains: light.* and switch.*. Returns ok when HA accepted the command; the entity's state updates asynchronously, so re-read it afterward to confirm the change.",
         params_model=Params,
         tier=Tier.ACTION,
         handler=handler,

@@ -29,7 +29,10 @@ def test_build_system_prompt_lists_skills(tmp_path):
 
 def test_build_system_prompt_no_skills(tmp_path):
     s = Settings(_env_file=None, system_prompt="Base prompt.")
-    assert build_system_prompt(s, tmp_path) == "Base prompt."
+    prompt = build_system_prompt(s, tmp_path)
+    assert prompt.startswith("Base prompt.")
+    assert "CHOOSING A TOOL" in prompt  # routing block always appended
+    assert "SKILL PLAYBOOKS" not in prompt
 
 
 def test_timestamped_system_injects_current_time():

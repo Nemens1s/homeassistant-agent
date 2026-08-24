@@ -25,7 +25,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_entity_state",
-        description="Get the current state and attributes of one HA entity by its exact entity_id. Use ONLY when the entity_id is already known (e.g. given verbatim in the user's message). If only a friendly name or keyword is given, use search_entities first.",
+        description="Get the current state and attributes of one HA entity by its exact entity_id. Use ONLY when the exact entity_id is already known (e.g. given verbatim in the user's message). A friendly name or keyword is NOT an entity_id — it must be resolved to one first.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

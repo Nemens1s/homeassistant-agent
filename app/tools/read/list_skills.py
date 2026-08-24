@@ -19,7 +19,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="list_skills",
-        description="List available troubleshooting playbook names and descriptions. Call this when you need to diagnose a problem but are unsure of the exact skill name, then call load_skill with the exact name.",
+        description="List available troubleshooting playbook names and descriptions. Call this when you need to diagnose a problem but are unsure of the exact playbook name to load.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

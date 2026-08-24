@@ -51,7 +51,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_battery_status",
-        description="Get battery level for all battery-powered devices. Use for ANY battery question: 'what is Sofija's phone battery?', 'which batteries are low?', 'battery status'. Do NOT call search_entities first — this tool already returns every device including phones, remotes, and sensors.",
+        description="Get battery level for all battery-powered devices. Use for ANY battery question: 'what is Sofija's phone battery?', 'which batteries are low?', 'battery status'. Already returns every device (phones, remotes, sensors) — no need to look anything up first.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

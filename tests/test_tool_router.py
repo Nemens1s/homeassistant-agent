@@ -11,7 +11,7 @@ ALL_TOOLS = {
     "search_entities", "get_entity_state", "list_entities", "load_skill",
     "control_entity", "trigger_automation", "get_battery_status", "get_vacuum_state",
     "get_weather", "get_person_locations", "get_history", "get_logbook",
-    "get_error_log", "get_automations", "get_areas",
+    "get_error_log", "get_automations", "get_areas", "list_devices",
 }
 
 CASES = yaml.safe_load(

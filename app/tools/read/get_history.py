@@ -18,7 +18,7 @@ async def handler(params: Params, ctx) -> ToolResult:
         return ToolResult.error(
             "invalid_entity_id",
             "entity_id must be a specific entity (e.g. 'sensor.living_room_temperature'). "
-            "For cross-entity activity use get_logbook instead.",
+            "House-wide activity across devices is a different kind of query.",
         )
     start_time, end_time = resolve_range(params.range)
     data = await ctx.rest.get_history(params.entity_id, start_time, end_time)
@@ -33,7 +33,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_history",
-        description="NOT for general activity — use get_logbook for 'what happened?' questions. This tool only gives the state-change timeline for ONE specific entity (e.g. temperature trend, battery %). entity_id must be a real entity id — wildcards rejected. 'today' = since midnight, 'last_24h' = rolling window.",
+        description="The state-change timeline for ONE specific entity (e.g. temperature trend, battery %) over a time range. NOT for house-wide 'what happened?' activity across devices. entity_id must be a real entity id — wildcards rejected. 'today' = since midnight, 'last_24h' = rolling window.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

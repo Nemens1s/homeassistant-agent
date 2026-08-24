@@ -32,9 +32,9 @@ async def handler(params: Params, ctx) -> ToolResult:
 
     devices = [d for d in await ctx.ws.request_cached("config/device_registry/list") if not d.get("disabled_by")]
 
-    # Mode 2: one specific room → its DEVICES (hardware) only. Entities-with-state
-    # for a room are list_entities(area=)'s job — keeping this devices-only is what
-    # makes the two tools genuinely non-overlapping.
+    # Mode 2: one specific room → its DEVICES (hardware) only. Room questions stay
+    # device-level here (and in list_devices); entity-level detail is only for
+    # drilling into one device via list_entities(device=).
     if params.name:
         area = next((a for a in areas if a["name"].lower() == params.name.lower()), None)
         if area is None:
@@ -67,8 +67,7 @@ register(
             "Room/area names and hardware device names only — no HA entity_ids, no live states. "
             "No args → all room names. name='Kitchen' → devices in that room. "
             "include_devices=true → full home map. "
-            "For the entities+states in a room, use list_entities(area=); "
-            "for a specific device's entities, use list_entities(device=)."
+            "Stop here for a room overview; individual entity_ids and states are a separate, narrower lookup."
         ),
         params_model=Params,
         tier=Tier.READ,

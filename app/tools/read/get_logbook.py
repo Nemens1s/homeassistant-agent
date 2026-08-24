@@ -37,7 +37,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_logbook",
-        description="House-wide activity log (automations triggered, devices changed state, scripts ran). Use this — NOT get_history — for 'what happened in the house?', 'what happened in the last hour?', 'did X run?', 'show recent activity'. Omit entity_id for house-wide; supply it to filter to one device. range: last_hour/last_24h/today/yesterday/last_7d/last_30d.",
+        description="House-wide activity log (automations triggered, devices changed state, scripts ran). Use for cross-device activity: 'what happened in the house?', 'what happened in the last hour?', 'did X run?', 'show recent activity'. Not for a single entity's numeric trend over time. Omit entity_id for house-wide; supply it to filter to one device. range: last_hour/last_24h/today/yesterday/last_7d/last_30d.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

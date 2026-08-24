@@ -28,9 +28,29 @@ log = logging.getLogger("agent.factory")
 # Reserve room for the model's own output and for tool schemas + prompt.
 _RESPONSE_AND_SCHEMA_MARGIN = 2048
 
+# The single source of truth for choosing BETWEEN tools. Individual tool
+# descriptions state only what each tool does and is not for (by intent); the
+# cross-tool routing lives here, in one place that sees the whole taxonomy and
+# cannot drift as tools are renamed. Kept terse — it rides on every call.
+_TOOL_ROUTING = (
+    "\n\nCHOOSING A TOOL:\n"
+    "- A name/keyword you must resolve to an entity → search_entities to get the "
+    "entity_id; if the exact entity_id is already given, get_entity_state directly.\n"
+    "- 'What's in <room>' / 'what do I have' → list_devices (device-level); "
+    "get_areas for room names or a whole-home map. Never enumerate individual "
+    "entities for a whole room.\n"
+    "- The entities/sensors of ONE named device → list_entities(device=). "
+    "Filtered fleets ('which lights are on') → list_entities with domain/state.\n"
+    "- Battery questions → get_battery_status (already covers every device; no search first).\n"
+    "- 'What happened' / 'did X run' across the house → get_logbook; the state trend "
+    "of ONE entity over time → get_history.\n"
+    "- Automations (enabled? triggers? config?) → get_automations; diagnosing why "
+    "one failed → load_skill."
+)
+
 
 def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
-    prompt = settings.system_prompt
+    prompt = settings.system_prompt + _TOOL_ROUTING
     metas = list_skills(skills_dir)
     if metas:
         lines = "\n".join(f"- {m.name}: {m.description}" for m in metas)

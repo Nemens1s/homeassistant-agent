@@ -25,6 +25,17 @@ CORE_TOOLS: frozenset[str] = frozenset({
     "trigger_automation",
 })
 
+# Room/area overview intents. Both device-level room tools are offered together so
+# the model can answer "what's in <room>" with names-only topology (get_areas) or the
+# flat device list (list_devices) — never with noisy entity lists. Keyed on intent
+# PHRASES, not the bare token "room" (which fires on entity_ids like
+# sensor.living_room_temperature and distracts the model).
+_ROOM_OVERVIEW: tuple[str, ...] = (
+    "rooms", "areas", "which room", "what room", "list rooms", "in the",
+    "what devices", "devices in", "home map", "topology", "layout", "overview",
+    "all rooms", "every room", "what do i have", "what's in", "whats in", "in my",
+)
+
 # tool -> trigger substrings (matched against the lowercased message). Generous by
 # design: false positives just add a schema; false negatives hide a shortcut.
 _KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -52,14 +63,9 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
     "get_automations": (
         "automat", "routine", "trigger", "enabled", "disabled", "runs when", "run when",
     ),
-    # Single area tool now (get_areas covers names / one room / full topology).
-    # Keyed on intent PHRASES, not the bare token "room" — the latter fires on
-    # entity_ids like sensor.living_room_temperature and distracts the model.
-    "get_areas": (
-        "rooms", "areas", "which room", "what room", "list rooms", "in the",
-        "what devices", "devices in", "home map", "topology", "layout", "overview",
-        "all rooms", "every room",
-    ),
+    # Both device-level room tools share the overview triggers (see _ROOM_OVERVIEW).
+    "get_areas": _ROOM_OVERVIEW,
+    "list_devices": _ROOM_OVERVIEW,
 }
 
 

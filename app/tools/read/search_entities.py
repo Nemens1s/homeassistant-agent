@@ -77,7 +77,7 @@ register(
         description=(
             "Search entities by a keyword in their name or entity_id when the exact entity_id is unknown. Returns state and area for each match. "
             "Use when the user names a specific thing but you don't know its entity_id (e.g. 'zigbee bridge', 'sleeping helper', 'tapo'). "
-            "For a whole room use list_entities(area=); for automation queries use get_automations; for battery questions use get_battery_status."
+            "Not for whole-room overviews, automation lists, or battery questions — those have dedicated tools."
         ),
         params_model=Params,
         tier=Tier.READ,

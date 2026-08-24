@@ -31,10 +31,10 @@ State = Literal[
 
 class Params(BaseModel):
     area: str = Field(
-        default="", description="Room/area name (case-insensitive), e.g. 'Bedroom', 'Living Room'. Returns entities in that room. Use get_areas to list room names."
+        default="", description="Scope a domain/state filter to a room (case-insensitive), e.g. 'Bedroom'. Refinement only — a plain 'what's in this room' overview is the wrong job for this tool (too noisy)."
     )
     device: str = Field(
-        default="", description="A single piece of hardware by name (substring match), e.g. 'Roborock Qrevo S' — NOT a room. Returns that device's non-diagnostic entities. Use list_devices to find device names."
+        default="", description="A single piece of hardware by name (substring match), e.g. 'Air Purifier' — NOT a room. Returns that device's non-diagnostic entities."
     )
     domain: Domain = Field(
         default="", description="Optional domain filter, e.g. 'light', 'sensor', 'automation'."
@@ -119,12 +119,11 @@ register(
     ToolDefinition(
         name="list_entities",
         description=(
-            "List HA entities with entity_ids and live states. The ONLY tool returning "
-            "entities+states for a room: area='Bedroom' answers 'what's in the bedroom'. "
-            "device='Roborock Qrevo S' = one device's entities (hardware, not a room). "
-            "Filters combine: domain='light', state='on', device_class='battery'. "
-            "Room/device names come from get_areas / list_devices. "
-            "Known entity_id → use get_entity_state instead."
+            "List individual HA entities (entity_ids + live states) for NARROW queries, "
+            "not room overviews. device='Air Purifier' → that device's entities (its lamp, "
+            "PM2.5 sensor, ...). Or filter domain='light', state='on', device_class='battery' "
+            "(add area='Bedroom' to scope a filter to a room). "
+            "A whole-room inventory is the wrong use — entity lists are too noisy for that."
         ),
         params_model=Params,
         tier=Tier.READ,
