@@ -13,7 +13,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, SystemMessage, trim_messages
 from langchain_core.messages.utils import count_tokens_approximately
-from langgraph.checkpoint.memory import MemorySaver
+from app.agent.memory import BoundedMemorySaver
 
 from app.agent.llm import build_llm
 from app.agent.tool_router import select_tools
@@ -259,5 +259,5 @@ def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None):
         model=llm,
         tools=tools,
         middleware=build_middleware(settings, guard, base_prompt, budget),
-        checkpointer=checkpointer or MemorySaver(),
+        checkpointer=checkpointer or BoundedMemorySaver(),
     )
