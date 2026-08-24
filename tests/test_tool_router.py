@@ -33,7 +33,7 @@ def test_unrelated_query_hides_specialized_tools():
     selected = select_tool_names(ALL_TOOLS, "Turn on the desk lamp")
     assert "get_vacuum_state" not in selected
     assert "get_weather" not in selected
-    # ...but the general + control tools remain
+    # ...but the general + action tools remain
     assert {"list_entities", "trigger_automation"} <= selected
 
 

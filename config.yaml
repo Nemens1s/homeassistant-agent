@@ -29,6 +29,7 @@ options:
     - switch
     - fan
     - automation
+  # empty string disables the home-level AI kill switch (menu + domain guards still apply)
   ai_actions_switch: "input_boolean.ai_triggered_actions"
   temperature: 0.0
   seed: 42

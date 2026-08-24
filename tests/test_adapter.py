@@ -333,10 +333,16 @@ async def test_read_tier_bypasses_gate():
     async def handler(params, ctx):
         return ToolResult.ok("read")
 
-    # tier READ tool: even a rest that raises on get_state must not be gated
-    tool = _make_tool(handler, name="read_bypass")  # _FakeRest, tier READ
+    # READ-tier tool: gate check must be skipped even when rest.get_state raises
+    from app.config import Settings
+    ctx = ToolContext(
+        settings=Settings(_env_file=None, ai_actions_switch="input_boolean.ai_triggered_actions"),
+        rest=_GateRest(raise_on_get=True), ws=None)
+    defn = ToolDefinition(name="read_bypass", description="d", params_model=_Params,
+                          tier=Tier.READ, handler=handler)
+    tool = to_structured_tool(defn, ctx, LoopGuard())
     out = json.loads(await tool.ainvoke({"entity_id": "light.kitchen"}))
-    assert out["status"] == "ok"
+    assert out["status"] == "ok"  # gate not evaluated for READ tier
 
 
 async def test_gated_refusal_is_audited():
