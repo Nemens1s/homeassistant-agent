@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from langchain_core.messages import AIMessageChunk, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.errors import GraphRecursionError
 from litellm.proxy.guardrails.guardrail_hooks.custom_code.primitives import lower
 
@@ -25,6 +25,32 @@ from app.tools.context import ToolContext
 
 def _ts() -> str:
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+
+
+def _content_str(content, max_len: int = 300) -> str:
+    if isinstance(content, list):
+        content = " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+        )
+    content = str(content)
+    return content[:max_len] + "…" if len(content) > max_len else content
+
+
+def _print_history(messages: list) -> None:
+    if not messages:
+        print("  (no history)")
+        return
+    for msg in messages:
+        role = getattr(msg, "type", "?")
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            calls = ", ".join(
+                f"{tc['name']}({tc['args']})" for tc in msg.tool_calls
+            )
+            print(f"  [{role}] → tool calls: {calls}")
+        elif isinstance(msg, ToolMessage):
+            print(f"  [tool/{msg.name}] {_content_str(msg.content)}")
+        else:
+            print(f"  [{role}] {_content_str(msg.content)}")
 
 
 def _open_conv_file(base_dir: Path) -> IO[str]:
@@ -73,6 +99,20 @@ async def main(save_conversations: bool = False) -> None:
                 break
             if not user_input:
                 continue
+            if user_input.startswith("/"):
+                cmd = user_input.lower()
+                if cmd == "/history":
+                    state = await agent.aget_state(config)
+                    msgs = state.values.get("messages", [])
+                    print(f"  --- {len(msgs)} message(s) in history ---")
+                    _print_history(msgs)
+                    print()
+                elif cmd == "/clear":
+                    await agent.aupdate_state(config, {"messages": []})
+                    print("  (history cleared)\n")
+                else:
+                    print(f"  Unknown command: {user_input}  (available: /history, /clear)\n")
+                continue
             if conv_file:
                 conv_file.write(f"{_ts()} You: {user_input}\n")
                 conv_file.flush()
@@ -83,6 +123,7 @@ async def main(save_conversations: bool = False) -> None:
                 think_buf: list[str] = []
                 pending_tool_calls: dict[int, dict] = {}  # index → {name, args, id}
                 has_tool_calls = False
+                last_response_meta: dict = {}
                 async for token, _meta in agent.astream(
                     {"messages": [{"role": "user", "content": user_input}]},
                     config=config,
@@ -109,6 +150,8 @@ async def main(save_conversations: bool = False) -> None:
                                     conv_file.flush()
                                     break
                         continue
+                    if token.response_metadata:
+                        last_response_meta = token.response_metadata
                     thinking = token.additional_kwargs.get("reasoning_content", "")
                     if thinking:
                         think_buf.append(thinking)
@@ -159,7 +202,10 @@ async def main(save_conversations: bool = False) -> None:
                     conv_file.write(f"{_ts()} [error: {exc}]\n")
                     conv_file.flush()
             elapsed = time.monotonic() - t0
-            print(f"\n[{elapsed:.1f}s]\n")
+            prompt_tok = last_response_meta.get("prompt_eval_count")
+            gen_tok = last_response_meta.get("eval_count")
+            tok_str = f" | {prompt_tok} prompt + {gen_tok} gen tokens" if prompt_tok is not None else ""
+            print(f"\n[{elapsed:.1f}s{tok_str}]\n")
     finally:
         print("Closing rest client")
         await rest.aclose()

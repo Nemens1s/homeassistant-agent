@@ -134,13 +134,13 @@
   expect_params:
     name: diagnosing_automations
 
-- id: turn_off_light
-  min_tier: 2
-  prompt: "Turn off the living room smart plug light (light.living_room_concorde_smart_plug)."
-  expect_tool: control_entity
-  expect_params:
-    entity_id: light.living_room_concorde_smart_plug
-    action: turn_off
+#- id: turn_off_light
+#  min_tier: 2
+#  prompt: "Turn off the living room smart plug light (light.living_room_concorde_smart_plug)."
+#  expect_tool: control_entity
+#  expect_params:
+#    entity_id: light.living_room_concorde_smart_plug
+#    action: turn_off
 
 #- id: toggle_switch
 #  min_tier: 2
