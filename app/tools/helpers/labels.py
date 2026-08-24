@@ -9,6 +9,34 @@ callers fail-open.
 from __future__ import annotations
 
 
+def _build_label_name(label_list: list) -> dict:
+    label_name = {}
+    for lb in label_list:
+        label_name[lb["label_id"]] = lb["name"]
+    return label_name
+
+
+def _resolve_names(label_ids: list, label_name: dict) -> set:
+    names = set()
+    for lid in label_ids:
+        names.add(label_name.get(lid, lid))
+    return names
+
+
+def _find_entity(entities: list, entity_id: str) -> dict | None:
+    for e in entities:
+        if e["entity_id"] == entity_id:
+            return e
+    return None
+
+
+def _find_device(devices: list, device_id: str) -> dict | None:
+    for d in devices:
+        if d["id"] == device_id:
+            return d
+    return None
+
+
 async def check_entity_labels(entity_id: str, allowed_labels: list[str], ctx) -> bool | None:
     """Check whether entity_id (or its device) has at least one allowed label.
 
@@ -21,23 +49,23 @@ async def check_entity_labels(entity_id: str, allowed_labels: list[str], ctx) ->
         return None
 
     label_list = await ctx.ws.request_cached("config/label_registry/list")
-    label_name: dict[str, str] = {lb["label_id"]: lb["name"] for lb in label_list}
+    label_name = _build_label_name(label_list)
 
     entities = await ctx.ws.request_cached("config/entity_registry/list")
-    entry = next((e for e in entities if e["entity_id"] == entity_id), None)
+    entry = _find_entity(entities, entity_id)
 
     entity_labels: set[str] = set()
     device_id: str | None = None
     if entry:
-        entity_labels = {label_name.get(lid, lid) for lid in entry.get("labels", [])}
+        entity_labels = _resolve_names(entry.get("labels", []), label_name)
         device_id = entry.get("device_id")
 
     device_labels: set[str] = set()
     if device_id:
         devices = await ctx.ws.request_cached("config/device_registry/list")
-        device = next((d for d in devices if d["id"] == device_id), None)
+        device = _find_device(devices, device_id)
         if device:
-            device_labels = {label_name.get(lid, lid) for lid in device.get("labels", [])}
+            device_labels = _resolve_names(device.get("labels", []), label_name)
 
     all_labels = entity_labels | device_labels
     return bool(all_labels & set(allowed_labels))
@@ -50,22 +78,22 @@ async def entity_label_names(entity_id: str, ctx) -> list[str]:
         return []
 
     label_list = await ctx.ws.request_cached("config/label_registry/list")
-    label_name: dict[str, str] = {lb["label_id"]: lb["name"] for lb in label_list}
+    label_name = _build_label_name(label_list)
 
     entities = await ctx.ws.request_cached("config/entity_registry/list")
-    entry = next((e for e in entities if e["entity_id"] == entity_id), None)
+    entry = _find_entity(entities, entity_id)
 
     entity_labels: set[str] = set()
     device_id: str | None = None
     if entry:
-        entity_labels = {label_name.get(lid, lid) for lid in entry.get("labels", [])}
+        entity_labels = _resolve_names(entry.get("labels", []), label_name)
         device_id = entry.get("device_id")
 
     device_labels: set[str] = set()
     if device_id:
         devices = await ctx.ws.request_cached("config/device_registry/list")
-        device = next((d for d in devices if d["id"] == device_id), None)
+        device = _find_device(devices, device_id)
         if device:
-            device_labels = {label_name.get(lid, lid) for lid in device.get("labels", [])}
+            device_labels = _resolve_names(device.get("labels", []), label_name)
 
     return sorted(entity_labels | device_labels)

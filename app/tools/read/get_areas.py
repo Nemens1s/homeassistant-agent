@@ -28,35 +28,60 @@ async def handler(params: Params, ctx) -> ToolResult:
 
     # Mode 1: just the names — no device/entity walk needed.
     if not params.name and not params.include_devices:
-        return ToolResult.ok({"areas": [a["name"] for a in areas]})
+        names = []
+        for a in areas:
+            names.append(a["name"])
+        return ToolResult.ok({"areas": names})
 
-    devices = [d for d in await ctx.ws.request_cached("config/device_registry/list") if not d.get("disabled_by")]
+    all_devices = await ctx.ws.request_cached("config/device_registry/list")
+    devices = []
+    for d in all_devices:
+        if not d.get("disabled_by"):
+            devices.append(d)
 
     # Mode 2: one specific room → its DEVICES (hardware) only. Room questions stay
     # device-level here (and in list_devices); entity-level detail is only for
     # drilling into one device via list_entities(device=).
     if params.name:
-        area = next((a for a in areas if a["name"].lower() == params.name.lower()), None)
+        area = None
+        for a in areas:
+            if a["name"].lower() == params.name.lower():
+                area = a
+                break
         if area is None:
+            available = []
+            for a in areas:
+                available.append(a["name"])
             return ToolResult.error(
                 "area_not_found",
                 f"No area named {params.name!r}.",
-                data={"available_areas": [a["name"] for a in areas]},
+                data={"available_areas": available},
             )
         area_id = area["area_id"]
+        room_devices = []
+        for d in devices:
+            if d.get("area_id") == area_id:
+                room_devices.append(device_name(d))
         return ToolResult.ok({
             "area": area["name"],
-            "devices": [device_name(d) for d in devices if d.get("area_id") == area_id],
+            "devices": room_devices,
         })
 
     # Mode 3: full topology — every room with its device names. No entity IDs;
     # those are too numerous and overflow the context window for large installs.
-    area_names = {a["area_id"]: a["name"] for a in areas}
-    out: dict[str, list[str]] = {name: [] for name in area_names.values()}
+    area_names = {}
+    for a in areas:
+        area_names[a["area_id"]] = a["name"]
+    out: dict[str, list[str]] = {}
+    for name in area_names.values():
+        out[name] = []
     unassigned: list[str] = []
     for d in devices:
         bucket_name = area_names.get(d.get("area_id"))
-        (out[bucket_name] if bucket_name else unassigned).append(device_name(d))
+        if bucket_name:
+            out[bucket_name].append(device_name(d))
+        else:
+            unassigned.append(device_name(d))
     return ToolResult.ok({"areas": out, "unassigned": unassigned})
 
 
