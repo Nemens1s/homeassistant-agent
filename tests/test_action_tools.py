@@ -100,14 +100,14 @@ async def test_control_entity_action_is_schema_constrained():
 
 async def test_trigger_automation_happy_path():
     rest = FakeRest()
-    rest.state = {"entity_id": "automation.night", "state": "on",
+    rest.state = {"entity_id": "automation.ai_night", "state": "on",
                   "attributes": {"last_triggered": "2026-07-13T22:00:00+00:00"},
                   "last_changed": ""}
     defn = registry.get("trigger_automation")
     assert int(defn.tier) == 2
-    result = await defn.handler(defn.params_model(entity_id="automation.night"), _ctx(rest))
+    result = await defn.handler(defn.params_model(entity_id="automation.ai_night"), _ctx(rest))
     assert result.status == "ok"
-    assert rest.calls == [("automation", "trigger", "automation.night")]
+    assert rest.calls == [("automation", "trigger", "automation.ai_night")]
     assert result.data["last_triggered"] == "2026-07-13T22:00:00+00:00"
 
 
@@ -117,10 +117,18 @@ async def test_trigger_automation_rejects_non_automation_entity():
     assert result.error_code == "invalid_params"
 
 
+async def test_trigger_automation_rejects_non_ai_automation():
+    rest = FakeRest()
+    defn = registry.get("trigger_automation")
+    result = await defn.handler(defn.params_model(entity_id="automation.night"), _ctx(rest))
+    assert result.error_code == "not_ai_controllable"
+    assert rest.calls == []  # never triggered
+
+
 async def test_trigger_automation_respects_allowlist():
     defn = registry.get("trigger_automation")
     result = await defn.handler(
-        defn.params_model(entity_id="automation.night"), _ctx(allowed=["light"]))
+        defn.params_model(entity_id="automation.ai_night"), _ctx(allowed=["light"]))
     assert result.error_code == "domain_not_allowed"
 
 
@@ -160,15 +168,3 @@ async def test_control_entity_label_check_skipped_when_allowed_labels_empty():
         _ctx(allowed_labels=[], ws=ws))
     assert result.status == "ok"
 
-
-async def test_trigger_automation_label_check_blocks():
-    rest = FakeRest()
-    rest.state = {"entity_id": "automation.night", "state": "on",
-                  "attributes": {"last_triggered": ""}, "last_changed": ""}
-    ws = FakeWS(entity_labels={"automation.night": []})
-    defn = registry.get("trigger_automation")
-    result = await defn.handler(
-        defn.params_model(entity_id="automation.night"),
-        _ctx(rest=rest, allowed_labels=["AI Allowed"], ws=ws))
-    assert result.error_code == "label_not_allowed"
-    assert rest.calls == []
