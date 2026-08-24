@@ -53,7 +53,10 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     prompt = settings.system_prompt + _TOOL_ROUTING
     metas = list_skills(skills_dir)
     if metas:
-        lines = "\n".join(f"- {m.name}: {m.description}" for m in metas)
+        skill_lines = []
+        for meta in metas:
+            skill_lines.append(f"- {meta.name}: {meta.description}")
+        lines = "\n".join(skill_lines)
         prompt += (
             "\n\nSKILL PLAYBOOKS — step-by-step guides for TROUBLESHOOTING and DIAGNOSIS "
             "only (e.g. an automation didn't fire, a device stopped responding). "
@@ -99,17 +102,21 @@ def _drop_reasoning(messages: list) -> list:
             continue
         updates: dict = {}
         if m.additional_kwargs.get("reasoning_content"):
-            updates["additional_kwargs"] = {
-                k: v for k, v in m.additional_kwargs.items()
-                if k != "reasoning_content"
-            }
+            filtered_kwargs = {}
+            for k, v in m.additional_kwargs.items():
+                if k != "reasoning_content":
+                    filtered_kwargs[k] = v
+            updates["additional_kwargs"] = filtered_kwargs
         if isinstance(m.content, list):
-            text = "".join(
-                block.get("text", "") if isinstance(block, dict) else str(block)
-                for block in m.content
-                if not (isinstance(block, dict) and block.get("type") == "thinking")
-            )
-            updates["content"] = text
+            parts = []
+            for block in m.content:
+                if isinstance(block, dict) and block.get("type") == "thinking":
+                    continue
+                if isinstance(block, dict):
+                    parts.append(block.get("text", ""))
+                else:
+                    parts.append(str(block))
+            updates["content"] = "".join(parts)
         if updates:
             m = m.model_copy(update=updates)
         result.append(m)
@@ -139,9 +146,13 @@ def latest_human_text(messages: list) -> str:
             if isinstance(content, str):
                 return content
             if isinstance(content, list):  # multimodal: concatenate text parts
-                return " ".join(
-                    p.get("text", "") if isinstance(p, dict) else str(p) for p in content
-                )
+                parts = []
+                for p in content:
+                    if isinstance(p, dict):
+                        parts.append(p.get("text", ""))
+                    else:
+                        parts.append(str(p))
+                return " ".join(parts)
     return ""
 
 
