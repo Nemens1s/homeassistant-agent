@@ -15,7 +15,10 @@ async def handler(params: Params, ctx) -> ToolResult:
             "Weather lookup needs the websocket connection, which is not available.",
         )
     entities = await ctx.ws.request_cached("config/entity_registry/list")
-    weather_ids = [e["entity_id"] for e in entities if e["entity_id"].startswith("weather.")]
+    weather_ids = []
+    for e in entities:
+        if e["entity_id"].startswith("weather."):
+            weather_ids.append(e["entity_id"])
 
     if not weather_ids:
         return ToolResult.error("no_weather_entity", "No weather entities found in Home Assistant.")

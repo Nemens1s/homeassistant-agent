@@ -15,15 +15,22 @@ async def _label_map(ctx) -> dict[str, list[str]]:
     entities = await ctx.ws.request_cached("config/entity_registry/list")
     labels = await ctx.ws.request_cached("config/label_registry/list")
 
-    label_name = {lb["label_id"]: lb["name"] for lb in labels}
-    device_labels: dict[str, list[str]] = {
-        d["id"]: [label_name.get(lid, lid) for lid in d.get("labels", [])]
-        for d in devices
-    }
+    label_name = {}
+    for lb in labels:
+        label_name[lb["label_id"]] = lb["name"]
+
+    device_labels: dict[str, list[str]] = {}
+    for d in devices:
+        resolved = []
+        for lid in d.get("labels", []):
+            resolved.append(label_name.get(lid, lid))
+        device_labels[d["id"]] = resolved
 
     label_map: dict[str, list[str]] = {}
     for e in entities:
-        entity_lbls = [label_name.get(lid, lid) for lid in e.get("labels", [])]
+        entity_lbls = []
+        for lid in e.get("labels", []):
+            entity_lbls.append(label_name.get(lid, lid))
         dev_lbls = device_labels.get(e.get("device_id", ""), [])
         all_lbls = sorted(set(entity_lbls) | set(dev_lbls))
         if all_lbls:
@@ -34,25 +41,30 @@ async def _label_map(ctx) -> dict[str, list[str]]:
 async def handler(params: Params, ctx) -> ToolResult:
     words = params.query.lower().split()
     states = await ctx.rest.list_states()
-    matches = [
-        s for s in states
-        if any(
-            w in s["entity_id"].lower()
-            or w in s.get("attributes", {}).get("friendly_name", "").lower()
-            for w in words
-        )
-    ]
+    matches = []
+    for s in states:
+        eid_lower = s["entity_id"].lower()
+        fname_lower = s.get("attributes", {}).get("friendly_name", "").lower()
+        for w in words:
+            if w in eid_lower or w in fname_lower:
+                matches.append(s)
+                break
+
     area_map: dict[str, str] = {}
     label_map: dict[str, list[str]] = {}
     if ctx.ws is not None:
         names = await area_names(ctx)
         # include all categories: a matched diagnostic entity should still show its area
-        area_map = {
-            eid: names.get(aid, "")
-            for eid, aid in (await entity_area_ids(ctx, exclude_categories=())).items()
-        }
+        by_area = await entity_area_ids(ctx, exclude_categories=())
+        for eid, aid in by_area.items():
+            area_map[eid] = names.get(aid, "")
         label_map = await _label_map(ctx)
-    controllable = {d for d in ctx.settings.allowed_domains if d != "automation"}
+
+    controllable = set()
+    for d in ctx.settings.allowed_domains:
+        if d != "automation":
+            controllable.add(d)
+
     rows = []
     for s in matches:
         domain = entity_domain(s["entity_id"])

@@ -51,15 +51,21 @@ async def _entity_ids_for_device(ctx, query: str) -> tuple[set[str] | None, list
     """Return (entity_id_set, did_you_mean). entity_id_set is None when device not found."""
     devices = await ctx.ws.request_cached("config/device_registry/list")
     q = query.lower()
-    match = next((d for d in devices if q in device_name(d).lower()), None)
+    match = None
+    for d in devices:
+        if q in device_name(d).lower():
+            match = d
+            break
     if match is None:
-        return None, [device_name(d) for d in devices]
+        suggestions = []
+        for d in devices:
+            suggestions.append(device_name(d))
+        return None, suggestions
     entries = await ctx.ws.request_cached("config/entity_registry/list")
-    ids = {
-        e["entity_id"] for e in entries
-        if e.get("device_id") == match["id"]
-        and e.get("entity_category") not in ("diagnostic", "config")
-    }
+    ids = set()
+    for e in entries:
+        if e.get("device_id") == match["id"] and e.get("entity_category") not in ("diagnostic", "config"):
+            ids.add(e["entity_id"])
     return ids, []
 
 
@@ -90,28 +96,47 @@ async def handler(params: Params, ctx) -> ToolResult:
                 data={"available_areas": available},
             )
         by_area = await entity_area_ids(ctx)
-        in_area = {eid for eid, aid in by_area.items() if aid == area["area_id"]}
+        in_area = set()
+        for eid, aid in by_area.items():
+            if aid == area["area_id"]:
+                in_area.add(eid)
         restrict = in_area if restrict is None else restrict & in_area
 
     states = await ctx.rest.list_states()
     if restrict is not None:
-        states = [s for s in states if s["entity_id"] in restrict]
+        filtered = []
+        for s in states:
+            if s["entity_id"] in restrict:
+                filtered.append(s)
+        states = filtered
 
     if params.domain:
-        states = [s for s in states if s["entity_id"].startswith(params.domain + ".")]
+        prefix = params.domain + "."
+        filtered = []
+        for s in states:
+            if s["entity_id"].startswith(prefix):
+                filtered.append(s)
+        states = filtered
     if params.device_class:
-        states = [s for s in states if s.get("attributes", {}).get("device_class") == params.device_class]
+        filtered = []
+        for s in states:
+            if s.get("attributes", {}).get("device_class") == params.device_class:
+                filtered.append(s)
+        states = filtered
     if params.state:
-        states = [s for s in states if s["state"] == params.state]
+        filtered = []
+        for s in states:
+            if s["state"] == params.state:
+                filtered.append(s)
+        states = filtered
 
-    rows = [
-        {
+    rows = []
+    for s in states:
+        rows.append({
             "entity_id": s["entity_id"],
             "state": s["state"],
             "name": s.get("attributes", {}).get("friendly_name", ""),
-        }
-        for s in states
-    ]
+        })
     return ToolResult.ok(bound_rows(rows, max_rows=ctx.settings.max_rows))
 
 

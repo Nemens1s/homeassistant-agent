@@ -23,7 +23,9 @@ async def handler(params: Params, ctx) -> ToolResult:
     start_time, end_time = resolve_range(params.range)
     data = await ctx.rest.get_history(params.entity_id, start_time, end_time)
     changes = data[0] if data else []
-    rows = [{"state": c.get("state"), "at": c.get("last_changed", "")} for c in changes]
+    rows = []
+    for c in changes:
+        rows.append({"state": c.get("state"), "at": c.get("last_changed", "")})
     return ToolResult.ok(
         bound_rows(rows, max_rows=ctx.settings.max_rows,
                    hint="Narrow the time range to see the rest.")

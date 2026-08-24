@@ -68,7 +68,10 @@ class Settings(BaseSettings):
 
     @property
     def person_name_lookup(self) -> dict[str, str]:
-        return {e["ha_name"]: e["name"] for e in self.person_name_map}
+        lookup = {}
+        for e in self.person_name_map:
+            lookup[e["ha_name"]] = e["name"]
+        return lookup
 
     @property
     def ws_url(self) -> str:
@@ -81,5 +84,9 @@ class Settings(BaseSettings):
 def load_settings() -> Settings:
     if OPTIONS_FILE.exists():
         data = json.loads(OPTIONS_FILE.read_text())
-        return Settings(**{k: v for k, v in data.items() if v is not None})
+        filtered = {}
+        for k, v in data.items():
+            if v is not None:
+                filtered[k] = v
+        return Settings(**filtered)
     return Settings()

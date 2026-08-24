@@ -48,9 +48,16 @@ def get(name: str) -> ToolDefinition | None:
 
 
 def tools_for_tier(max_tier: int) -> list[ToolDefinition]:
-    return sorted(
-        (t for t in _REGISTRY.values() if t.tier <= max_tier), key=lambda t: t.name
-    )
+    eligible = []
+    for t in _REGISTRY.values():
+        if t.tier <= max_tier:
+            eligible.append(t)
+
+    def sort_key(t):
+        return t.name
+
+    eligible.sort(key=sort_key)
+    return eligible
 
 
 def load_all(modules: tuple[str, ...] = _DEFAULT_MODULES) -> None:

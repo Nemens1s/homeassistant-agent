@@ -29,9 +29,13 @@ def _ts() -> str:
 
 def _content_str(content, max_len: int = 300) -> str:
     if isinstance(content, list):
-        content = " ".join(
-            b.get("text", "") if isinstance(b, dict) else str(b) for b in content
-        )
+        parts = []
+        for b in content:
+            if isinstance(b, dict):
+                parts.append(b.get("text", ""))
+            else:
+                parts.append(str(b))
+        content = " ".join(parts)
     content = str(content)
     return content[:max_len] + "…" if len(content) > max_len else content
 
@@ -43,9 +47,10 @@ def _print_history(messages: list) -> None:
     for msg in messages:
         role = getattr(msg, "type", "?")
         if isinstance(msg, AIMessage) and msg.tool_calls:
-            calls = ", ".join(
-                f"{tc['name']}({tc['args']})" for tc in msg.tool_calls
-            )
+            call_parts = []
+            for tc in msg.tool_calls:
+                call_parts.append(f"{tc['name']}({tc['args']})")
+            calls = ", ".join(call_parts)
             print(f"  [{role}] → tool calls: {calls}")
         elif isinstance(msg, ToolMessage):
             print(f"  [tool/{msg.name}] {_content_str(msg.content)}")
@@ -173,10 +178,13 @@ async def main(save_conversations: bool = False) -> None:
                     if isinstance(raw, str):
                         text = raw
                     elif isinstance(raw, list):
-                        text = "".join(
-                            b.get("text", "") if isinstance(b, dict) else str(b)
-                            for b in raw
-                        )
+                        parts = []
+                        for b in raw:
+                            if isinstance(b, dict):
+                                parts.append(b.get("text", ""))
+                            else:
+                                parts.append(str(b))
+                        text = "".join(parts)
                     else:
                         text = ""
                     if text:

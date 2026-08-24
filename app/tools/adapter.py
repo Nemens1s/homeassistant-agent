@@ -44,16 +44,21 @@ class LoopGuard:
 
 
 def _validation_message(exc: ValidationError) -> str:
-    problems = [
-        f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
-    ]
+    problems = []
+    for e in exc.errors():
+        loc_parts = []
+        for p in e["loc"]:
+            loc_parts.append(str(p))
+        problems.append(f"{'.'.join(loc_parts)}: {e['msg']}")
     return "Invalid parameters — " + "; ".join(problems)
 
 
 async def _did_you_mean(ctx: ToolContext, entity_id: str) -> list[str]:
     try:
         states = await ctx.rest.list_states()
-        ids = [s["entity_id"] for s in states]
+        ids = []
+        for s in states:
+            ids.append(s["entity_id"])
         return difflib.get_close_matches(entity_id, ids, n=3, cutoff=0.5)
     except Exception:  # suggestion is best-effort; never mask the real error
         return []
@@ -137,17 +142,21 @@ def to_structured_tool(
                 )
         return result.to_json()
 
+    def _handle_validation_error(exc):
+        return ToolResult.error("invalid_params", _validation_message(exc)).to_json()
+
     return StructuredTool(
         name=defn.name,
         description=defn.description,
         args_schema=params_model,
         coroutine=_run,
-        handle_validation_error=lambda exc: ToolResult.error(
-            "invalid_params", _validation_message(exc)
-        ).to_json(),
+        handle_validation_error=_handle_validation_error,
     )
 
 
 def build_tools(ctx: ToolContext, max_tier: int, guard: LoopGuard | None = None) -> list[StructuredTool]:
     guard = guard or LoopGuard()
-    return [to_structured_tool(d, ctx, guard) for d in registry.tools_for_tier(max_tier)]
+    tools = []
+    for d in registry.tools_for_tier(max_tier):
+        tools.append(to_structured_tool(d, ctx, guard))
+    return tools

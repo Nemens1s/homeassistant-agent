@@ -11,7 +11,9 @@ class Params(BaseModel):
 
 async def handler(params: Params, ctx) -> ToolResult:
     states = await ctx.rest.list_states()
-    exclude = {s.lower() for s in ctx.settings.person_name_exclude}
+    exclude = set()
+    for s in ctx.settings.person_name_exclude:
+        exclude.add(s.lower())
 
     rows = []
     for s in states:
@@ -19,7 +21,13 @@ async def handler(params: Params, ctx) -> ToolResult:
             continue
         ha_name = s.get("attributes", {}).get("friendly_name", s["entity_id"])
         canonical, aliases = resolve_name(ha_name, ctx.settings)
-        if any(ex in canonical.lower() for ex in exclude):
+        canonical_lower = canonical.lower()
+        excluded = False
+        for ex in exclude:
+            if ex in canonical_lower:
+                excluded = True
+                break
+        if excluded:
             continue
         row: dict = {"entity_id": s["entity_id"], "name": canonical, "state": s["state"]}
         if aliases:

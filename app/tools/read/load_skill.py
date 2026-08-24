@@ -24,13 +24,18 @@ def build_params_model(skill_names: list[str]) -> type[BaseModel]:
 
 
 def _params_from_ctx(ctx) -> type[BaseModel]:
-    return build_params_model([m.name for m in list_skills(ctx.skills_dir)])
+    names = []
+    for m in list_skills(ctx.skills_dir):
+        names.append(m.name)
+    return build_params_model(names)
 
 
 async def handler(params: Params, ctx) -> ToolResult:
     body = read_skill(ctx.skills_dir, params.name)
     if body is None:
-        available = [m.name for m in list_skills(ctx.skills_dir)]
+        available = []
+        for m in list_skills(ctx.skills_dir):
+            available.append(m.name)
         return ToolResult.error(
             "skill_not_found", f"No skill {params.name!r}.", data={"available": available}
         )

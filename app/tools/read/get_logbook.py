@@ -19,15 +19,14 @@ class Params(BaseModel):
 async def handler(params: Params, ctx) -> ToolResult:
     start_time, end_time = resolve_range(params.range)
     entries = await ctx.rest.get_logbook(start_time, end_time, params.entity_id)
-    rows = [
-        {
+    rows = []
+    for e in entries:
+        rows.append({
             "at": e.get("when", ""),
             "name": e.get("name", ""),
             "message": e.get("message", ""),
             "entity_id": e.get("entity_id", ""),
-        }
-        for e in entries
-    ]
+        })
     return ToolResult.ok(
         bound_rows(rows, max_rows=ctx.settings.max_rows,
                    hint="Narrow the time range to see the rest.")

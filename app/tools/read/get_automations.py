@@ -15,23 +15,31 @@ class Params(BaseModel):
 
 async def handler(params: Params, ctx) -> ToolResult:
     states = await ctx.rest.list_states()
-    autos = [s for s in states if s["entity_id"].startswith("automation.")]
+    autos = []
+    for s in states:
+        if s["entity_id"].startswith("automation."):
+            autos.append(s)
 
     if not params.entity_id:
-        rows = [
-            {
+        rows = []
+        for a in autos:
+            rows.append({
                 "entity_id": a["entity_id"],
                 "state": a["state"],
                 "name": a.get("attributes", {}).get("friendly_name", ""),
                 "last_triggered": a.get("attributes", {}).get("last_triggered"),
-            }
-            for a in autos
-        ]
+            })
         return ToolResult.ok(bound_rows(rows, max_rows=ctx.settings.max_rows))
 
-    match = next((a for a in autos if a["entity_id"] == params.entity_id), None)
+    match = None
+    for a in autos:
+        if a["entity_id"] == params.entity_id:
+            match = a
+            break
     if match is None:
-        ids = [a["entity_id"] for a in autos]
+        ids = []
+        for a in autos:
+            ids.append(a["entity_id"])
         return ToolResult.error(
             "entity_not_found",
             f"No automation {params.entity_id!r}.",

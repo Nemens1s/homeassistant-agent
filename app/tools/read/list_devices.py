@@ -16,26 +16,47 @@ async def handler(params: Params, ctx) -> ToolResult:
 
     devices = await ctx.ws.request_cached("config/device_registry/list")
     areas = await ctx.ws.request_cached("config/area_registry/list")
-    area_names = {a["area_id"]: a["name"] for a in areas}
+    area_names = {}
+    for a in areas:
+        area_names[a["area_id"]] = a["name"]
 
     if params.area:
-        match = next((a for a in areas if a["name"].lower() == params.area.lower()), None)
+        match = None
+        for a in areas:
+            if a["name"].lower() == params.area.lower():
+                match = a
+                break
         if match is None:
+            available = []
+            for a in areas:
+                available.append(a["name"])
             return ToolResult.error(
                 "area_not_found",
                 f"No area named {params.area!r}.",
-                data={"available_areas": [a["name"] for a in areas]},
+                data={"available_areas": available},
             )
-        devices = [d for d in devices if d.get("area_id") == match["area_id"]]
+        filtered = []
+        for d in devices:
+            if d.get("area_id") == match["area_id"]:
+                filtered.append(d)
+        devices = filtered
 
     if params.name:
         q = params.name.lower()
-        devices = [d for d in devices if q in device_name(d).lower()]
+        filtered = []
+        for d in devices:
+            if q in device_name(d).lower():
+                filtered.append(d)
+        devices = filtered
 
-    rows = sorted(
-        [{"name": device_name(d), "area": area_names.get(d.get("area_id"), "")} for d in devices],
-        key=lambda r: (r["area"], r["name"]),
-    )
+    rows = []
+    for d in devices:
+        rows.append({"name": device_name(d), "area": area_names.get(d.get("area_id"), "")})
+
+    def sort_key(r):
+        return (r["area"], r["name"])
+
+    rows.sort(key=sort_key)
     return ToolResult.ok({"devices": rows, "total": len(rows)})
 
 

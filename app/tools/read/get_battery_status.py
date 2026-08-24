@@ -11,10 +11,10 @@ class Params(BaseModel):
 
 async def handler(params: Params, ctx) -> ToolResult:
     states = await ctx.rest.list_states()
-    battery_states = [
-        s for s in states
-        if s.get("attributes", {}).get("device_class") == "battery"
-    ]
+    battery_states = []
+    for s in states:
+        if s.get("attributes", {}).get("device_class") == "battery":
+            battery_states.append(s)
 
     if not battery_states:
         return ToolResult.ok({"batteries": []})
@@ -25,8 +25,12 @@ async def handler(params: Params, ctx) -> ToolResult:
         areas = await ctx.ws.request_cached("config/area_registry/list")
         devices = await ctx.ws.request_cached("config/device_registry/list")
         entities = await ctx.ws.request_cached("config/entity_registry/list")
-        area_name = {a["area_id"]: a["name"] for a in areas}
-        device_area = {d["id"]: d.get("area_id") for d in devices}
+        area_name = {}
+        for a in areas:
+            area_name[a["area_id"]] = a["name"]
+        device_area = {}
+        for d in devices:
+            device_area[d["id"]] = d.get("area_id")
         for e in entities:
             aid = e.get("area_id") or device_area.get(e.get("device_id"))
             if aid:
@@ -45,7 +49,10 @@ async def handler(params: Params, ctx) -> ToolResult:
             "last_changed": s.get("last_changed", ""),
         })
 
-    results.sort(key=lambda r: (r["area"], r["name"]))
+    def sort_key(r):
+        return (r["area"], r["name"])
+
+    results.sort(key=sort_key)
     data: dict = {"batteries": results}
     # Alias legend lets the agent map a query like "sonja's battery" to the
     # canonical person whose name appears in a device's friendly_name.
