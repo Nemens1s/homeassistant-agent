@@ -18,6 +18,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "Answer questions about the home using the available tools. "
     "Always look up real data with tools instead of guessing. "
     "Be concise and factual."
+    "Follow instructions precisely, do not do anything extra that wasn't asked"
 )
 
 
