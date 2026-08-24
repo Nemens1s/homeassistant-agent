@@ -72,6 +72,9 @@ class in `app/config.py`; in the addon container it reads
   verify API details against the installed venv (`inspect`), don't trust
   training data — this has bitten before.
 - Use regular branches. DO not use worktrees
+- Prefer plain, readable Python: regular `for` loops over comprehensions,
+  explicit steps over clever one-liners. Optimize for readability, not
+  brevity.
 
 ## Where things live
 

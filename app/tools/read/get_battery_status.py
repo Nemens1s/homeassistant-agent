@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
+from app.tools.helpers.people import alias_legend
 from app.tools.registry import register
 
 
@@ -45,7 +46,13 @@ async def handler(params: Params, ctx) -> ToolResult:
         })
 
     results.sort(key=lambda r: (r["area"], r["name"]))
-    return ToolResult.ok({"batteries": results})
+    data: dict = {"batteries": results}
+    # Alias legend lets the agent map a query like "sonja's battery" to the
+    # canonical person whose name appears in a device's friendly_name.
+    aliases = alias_legend(ctx.settings)
+    if aliases:
+        data["name_aliases"] = aliases
+    return ToolResult.ok(data)
 
 
 register(
