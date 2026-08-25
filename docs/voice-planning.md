@@ -29,6 +29,36 @@ Where language matters: **STT** (must handle RU/ET audio) and **the response**
 (should come back in the user's language). Intent routing and action execution
 are language-agnostic once we have English text.
 
+## Architecture: how the pieces connect
+
+**HA orchestrates the voice pipeline — our app does not.** The satellite streams
+audio to HA; HA's **Assist pipeline** (Settings → Voice assistants) calls STT,
+then the conversation agent, then TTS. Neither the satellite nor our app is the
+conductor.
+
+- **Whisper is a separate service that HA calls**, running side-by-side with
+  Ollama on the i5 laptop (`wyoming-faster-whisper` container, Wyoming protocol).
+  Ollama and Whisper don't know about each other — HA talks to both. **Our app
+  never touches audio.**
+- **Our app is HA's *conversation agent*** — it receives already-transcribed
+  **text**, runs Needle/agent, returns a reply which HA speaks via TTS (Piper).
+
+So our app has **two text entry points**, and STT is HA's job in both:
+- UI chat: browser → `/api/chat` directly.
+- Voice: satellite → HA → (STT) → our app → reply → (TTS) → satellite.
+
+**Two pieces of glue that don't exist yet (future work):**
+
+1. **A small custom HA integration to make our app the conversation agent.** HA
+   has no built-in "call an arbitrary HTTP endpoint" agent (the stock ones point
+   at Ollama/OpenAI/Anthropic directly, bypassing Needle). We'd write a thin
+   `ConversationEntity` that forwards the text to `/api/chat` and returns the
+   reply, then select it in the Assist pipeline.
+2. **Deciding where translation happens** — see below.
+
+Do **not** invert this and make our app receive audio / drive satellites — that
+re-implements HA's satellite + wake-word + pipeline machinery for no gain.
+
 ## Multilingual strategy: translate *in*, at the STT stage
 
 **Do NOT fine-tune Needle for Russian.** Its tokenizer is 8,192 tokens,
@@ -37,16 +67,27 @@ explodes in the 256-token window. Estonian (Latin) is only marginally better.
 Needle is an English model; making it multilingual would need a new tokenizer +
 base, not a fine-tune.
 
-Instead, solve language at STT — nearly free, because **Whisper has a built-in
-`translate` task** (any-language audio → English text in one pass):
+Instead, get **English text** to the fast path. The Whisper *model* has a
+`translate` task (any-language audio → English in one pass), which would be ideal
+— but **the stock HA `wyoming-faster-whisper` add-on transcribes in the native
+language and does not surface the translate task.** So translation placement is a
+real decision, not free:
 
 ```
-RU/ET audio → Whisper(translate) → English text → Needle / English agent → action
+RU/ET audio → [ translate somewhere ] → English text → Needle / English agent → action
 ```
 
-- No separate translation model, no extra latency for the action path.
-- Everything downstream stays English: English automations, English Needle, even
-  HA's free English template intents keep working unchanged.
+- **(a) Translate at STT (best for the fast path):** run a translate-capable
+  Whisper wrapper so HA hands our app **English**. Keeps the trigger path fast and
+  our app simple. Cost: a custom/configured STT (not the stock add-on as-is) —
+  verify what `wyoming-faster-whisper` actually exposes before relying on this.
+- **(b) Translate in our app:** app receives native Russian, translates → English
+  before Needle. Simpler to deploy, but adds a translation step to the **fast
+  path** — the very latency we optimized. Only acceptable on the read path.
+
+Everything downstream stays English regardless: English automations, English
+Needle, even HA's free English template intents keep working.
+
 - **Responses:**
   - Fast-path triggers → confirmation is a **canned string localized per
     language** ("Готово" / "Tehtud" / "Done"). No translation needed.
@@ -124,10 +165,16 @@ and the app.
 
 ## Open questions / to test
 
+- **Does `wyoming-faster-whisper` expose the `translate` task?** Decides
+  translation placement (a) vs (b) above. Check its options before relying on
+  translate-at-STT.
+- **Custom conversation-agent integration** (glue #1): a thin HA `ConversationEntity`
+  forwarding transcribed text to `/api/chat`. Needed for voice→our-app; doesn't
+  exist yet.
 - Whisper `small` vs `base` on **real Russian short commands** — latency and
   accuracy on the i5-8250U CPU.
-- Whisper **`translate` task quality** on terse RU commands (proper nouns like
-  "Concorde" surviving translation).
+- Whisper **`translate` quality** (if using path (a)) on terse RU commands (proper
+  nouns like "Concorde" surviving translation).
 - Where the **app (Needle + agent) runs** in the voice setup — currently the Mac;
   for always-on it'd move to a box that's always up (ties into the deferred
   deployment question).
