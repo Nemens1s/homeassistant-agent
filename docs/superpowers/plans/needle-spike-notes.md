@@ -219,3 +219,28 @@ build; it stays a drop-in `NeedleBackend` swap if so.
 **Possible future latency lever:** the 1.7–4.2 s variance looks like XLA
 recompiles per input shape. Padding the prompt to a fixed length so XLA compiles
 once (plus a warm-up call at startup) may lower steady-state latency — untested.
+
+## Confident-fraction eval (2026-08-25) — the go/no-go on VALUE
+
+Ran `tests/evals/run_needle.py` (4-automation menu, 9 utterances) — confidence
+is a model property, so measured on arm64. **Verdict: zero-shot is not reliably
+useful.**
+
+- Confident-fraction **2/9 (~22%)** at any threshold in [0.7, 0.85]. Only
+  near-exact lexical matches fire (`goodnight` 0.956, `start movie night` 0.987);
+  canonical generalisations fail (`good morning`→movie 0.119, `time for bed`→
+  movie 0.000, `let's watch a film`→movie 0.438).
+- **Brutally brittle**: one shared token wrecks it — a goodnight description
+  ending "…for the night" + a "Movie night" description made `goodnight`→movie
+  at 0.006. Tool ORDER also swings confidence (goodnight 0.980 → 0.433 just moved
+  to last). Descriptions must be imperative and share no tokens across tools.
+- Odd bias: when unsure it dumps onto one tool (movie, the 2nd) at low confidence.
+- **Safety holds**: no read ever false-fired; every wrong pick was low-confidence
+  → falls through to the agent. Never dangerous, just mostly unhelpful zero-shot.
+
+**Implication:** the realistic path to value is **fine-tuning Needle** (LoRA, which
+it supports) on the user's automations + phrasing variations — NOT more
+prompt/description fiddling, and NOT a threshold change. Recommendation: do NOT
+do the Debian base-image migration for a zero-shot deploy. Either invest in a
+fine-tuning spike first, or shelf until fine-tuning / newer hardware. The eval
+harness (`run_needle.py`) is the yardstick for any fine-tune.
