@@ -15,6 +15,7 @@ from app.tools.action.trigger_automation import AI_AUTOMATION_PREFIX
 class MenuItem:
     entity_id: str
     name: str
+    description: str = ""  # optional; Needle matches on name + description
 
 
 @dataclass(frozen=True)

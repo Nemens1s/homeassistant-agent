@@ -89,7 +89,7 @@ def _default_agent_factory(model_path: str):
         name_to_id = _build_name_map(menu)
         id_to_desc = {}
         for item in menu.items:
-            id_to_desc[item.entity_id] = item.name
+            id_to_desc[item.entity_id] = item.description or item.name
         tools = []
         for name, entity_id in name_to_id.items():
             tools.append(_make_tool(name, id_to_desc[entity_id]))
