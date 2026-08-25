@@ -143,8 +143,38 @@ PY
   different box and point `needle_sidecar_url` at it (loses the "on the HA host"
   benefit but keeps the model-loading and network-hop wins if that box is fast).
 
+## Host results (2026-08-25) — amd64 HA VM, no AVX exposed
+
+Ran the described-tools probe inside a throwaway `python:3.12` container in the
+HA VM (`pip install cactus-needle`). CPU flags showed **no `avx` at all** (likely
+Proxmox `kvm64`), yet **inference ran without SIGILL**:
+
+```
+model load: 3.56s
+'goodnight'                -> goodnight   conf=0.969  2849ms
+"let's watch a movie"      -> movie_time  conf=0.001  4194ms
+"what's the temperature?"  -> (none)      conf=0.995  1918ms
+```
+
+- **The JAX/pip path RUNS on the no-AVX host** — jaxlib 0.11.1 has a scalar
+  fallback; AVX is not required. Deployment is just `pip install cactus-needle`,
+  no C build.
+- **Latency ~1.9–4.2 s** per call (scalar XLA; ~40–100× slower than the arm64
+  NEON path). Worse than the ~1–2 s goal but well under the >10 s agent — user
+  accepts it for the common case. Variance is partly XLA recompiles on differing
+  input shapes; could stabilise with padding.
+- Confidence calibration matches arm64: correct→high, and the sub-threshold
+  `movie` case correctly falls through.
+
 ## Decision
 
-**Approach A pending the HA-host import test above.** API, parse-only mode,
-grammar constraint, and the confidence/threshold strategy are all confirmed
-working on arm64. The single open risk is the amd64 SIMD floor.
+**Approach A, via the `cactus-needle` pip/JAX backend, in-process.** Confirmed
+working end-to-end on the target host. Deployment: add `cactus-needle` to the
+add-on image; no C toolchain needed.
+
+**Future optimisation (not now):** the `cactus` C engine
+(https://github.com/cactus-compute/cactus) also runs Needle, exposes `confidence`
+in its `cactus_complete` result, and its native SSE kernels would likely cut the
+2–4 s latency substantially. It's a drop-in `NeedleBackend` swap (menu/router/
+config unchanged) — revisit only if the pip-path latency proves annoying. Its
+cost is build-from-source packaging in the Dockerfile.
