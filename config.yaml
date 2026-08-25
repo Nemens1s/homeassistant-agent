@@ -40,6 +40,12 @@ options:
   recursion_limit: 15
   max_rows: 50
   enable_tool_subsetting: true
+  needle_enabled: false
+  needle_model_path: ""
+  needle_confidence_threshold: 0.0
+  needle_menu_ttl_s: 60
+  needle_backend: "cactus"
+  needle_sidecar_url: ""
   person_name_map: []
   person_name_exclude: []
 schema:
@@ -60,6 +66,12 @@ schema:
   recursion_limit: "int(2,50)"
   max_rows: "int(5,500)"
   enable_tool_subsetting: "bool"
+  needle_enabled: "bool"
+  needle_model_path: "str"
+  needle_confidence_threshold: "float(0,1)"
+  needle_menu_ttl_s: "int(1,3600)"
+  needle_backend: "list(cactus|sidecar)"
+  needle_sidecar_url: "str?"
   person_name_map:
     - ha_name: str
       name: str

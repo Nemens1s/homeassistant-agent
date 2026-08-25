@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.agent.factory import build_agent
 from app.audit import AuditSink
+from app.needle.factory import build_fast_path_router
 from app.config import Settings, load_settings
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
@@ -70,6 +71,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.rest = rest
             app.state.ws = ws
             app.state.agent = build_agent(cfg, ctx)
+            app.state.fast_path = None
+            try:
+                app.state.fast_path = build_fast_path_router(cfg, rest, ctx)
+            except Exception:
+                log.exception("needle fast path failed to build; running agent-only")
             yield
         finally:
             await _teardown(rest, ws, audit=audit)
@@ -78,6 +84,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(req: ChatRequest) -> ChatResponse:
+        router = getattr(app.state, "fast_path", None)
+        if router is not None:
+            reply = await router.try_fast_path(req.message, req.thread_id)
+            if reply is not None:
+                return ChatResponse(reply=reply)
         try:
             result = await app.state.agent.ainvoke(
                 {"messages": [{"role": "user", "content": req.message}]},
