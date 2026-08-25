@@ -43,6 +43,23 @@ async def test_confident_hit_fires_and_returns_reply():
     assert tool.calls[0][1]["configurable"]["thread_id"] == "t1"
 
 
+async def test_trust_the_call_fires_on_zero_confidence():
+    # Fine-tuned weights report confidence None -> 0.0. At threshold 0.0 the
+    # router fires whenever a call is emitted, and still falls through on no call.
+    tool = RecordingTool({"status": "ok", "data": {"entity_id": "automation.ai_goodnight"}})
+    router = _router(FakeBackend(Decision("automation.ai_goodnight", 0.0)), tool, threshold=0.0)
+    reply = await router.try_fast_path("goodnight", "t1")
+    assert reply is not None and "automation.ai_goodnight" in reply
+    assert tool.calls[0][0] == {"entity_id": "automation.ai_goodnight"}
+
+
+async def test_trust_the_call_falls_through_when_no_call():
+    tool = RecordingTool({"status": "ok"})
+    router = _router(FakeBackend(Decision(None, 0.0)), tool, threshold=0.0)
+    assert await router.try_fast_path("what's the temperature", "t1") is None
+    assert tool.calls == []
+
+
 async def test_below_threshold_falls_through():
     tool = RecordingTool({"status": "ok"})
     router = _router(FakeBackend(Decision("automation.ai_goodnight", 0.5)), tool)

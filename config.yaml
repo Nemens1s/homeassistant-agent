@@ -42,7 +42,7 @@ options:
   enable_tool_subsetting: true
   needle_enabled: false
   needle_model_path: ""
-  needle_confidence_threshold: 0.85
+  needle_confidence_threshold: 0.0
   needle_menu_ttl_s: 60
   needle_backend: "cactus"
   needle_sidecar_url: ""

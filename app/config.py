@@ -64,7 +64,11 @@ class Settings(BaseSettings):
     # ai_* automation directly, bypassing the agent. See docs spec 2026-08-25.
     needle_enabled: bool = False
     needle_model_path: str = ""          # path to the .cact binary
-    needle_confidence_threshold: float = 0.85  # fire only at/above this (>=)
+    # Fire only when confidence >= this. Default 0.0 = "trust the call" (fire on
+    # any emitted tool call): fine-tuned Needle weights report confidence as None
+    # (the head is not tuned), so a nonzero threshold would block EVERYTHING with
+    # a tuned model. Raise it only if running the calibrated BASE model.
+    needle_confidence_threshold: float = 0.0
     needle_menu_ttl_s: int = 60          # menu/grammar cache TTL
     needle_backend: str = "cactus"       # "cactus" (in-process) or "sidecar"
     needle_sidecar_url: str = ""         # used only when needle_backend == "sidecar"
