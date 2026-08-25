@@ -16,6 +16,7 @@ from langgraph.errors import GraphRecursionError
 
 from app.agent.factory import build_agent
 from app.audit import AuditSink
+from app.needle.factory import build_fast_path_router
 from app.config import load_settings
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
@@ -82,6 +83,11 @@ async def main(save_conversations: bool = False) -> None:
 
     ctx = ToolContext(settings=settings, rest=rest, ws=ws, audit=audit)
     agent = build_agent(settings, ctx)
+    fast_path = None
+    try:
+        fast_path = build_fast_path_router(settings, rest, ctx)
+    except Exception as exc:
+        print(f"warning: needle fast path unavailable ({exc})")
     config = {
         "configurable": {"thread_id": "cli"},
         "recursion_limit": settings.recursion_limit,
@@ -90,7 +96,8 @@ async def main(save_conversations: bool = False) -> None:
     conv_file: IO[str] | None = (
         _open_conv_file(Path(".conversations")) if save_conversations else None
     )
-    print(f"\nAgent ready ({settings.llm_model} via {settings.llm_provider}). Ctrl+C to quit.\n")
+    needle_note = "  [needle fast path ON]" if fast_path is not None else ""
+    print(f"\nAgent ready ({settings.llm_model} via {settings.llm_provider}).{needle_note} Ctrl+C to quit.\n")
     try:
         while True:
             try:
@@ -120,6 +127,15 @@ async def main(save_conversations: bool = False) -> None:
             if conv_file:
                 conv_file.write(f"{_ts()} You: {user_input}\n")
                 conv_file.flush()
+            # Needle fast path: if it handles the turn (emits a trigger), skip the agent.
+            if fast_path is not None:
+                fp_reply = await fast_path.try_fast_path(user_input, "cli")
+                if fp_reply is not None:
+                    print(f"Agent (fast path): {fp_reply}")
+                    if conv_file:
+                        conv_file.write(f"{_ts()} Agent (fast path): {fp_reply}\n")
+                        conv_file.flush()
+                    continue
             print("Agent: ", end="", flush=True)
             t0 = time.monotonic()
             try:
