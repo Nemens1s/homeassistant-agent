@@ -166,15 +166,56 @@ model load: 3.56s
 - Confidence calibration matches arm64: correct→high, and the sub-threshold
   `movie` case correctly falls through.
 
+## Proxmox CPU-type gotcha (IMPORTANT for future-you)
+
+The HA OS VM's exposed CPU is governed by the **Proxmox VM CPU *type***, NOT the
+physical chip. The default (`kvm64`) presents only x86-64-v1 (SSE2) — no SSE4.2,
+no POPCNT, no AVX — even though the Mac mini is Sandy Bridge (2011) which has
+SSE4.2 **and** AVX1. Symptoms this caused during the spike:
+
+- `grep avx /proc/cpuinfo` returned **empty**.
+- numpy (X86_V2-baseline wheel) refused to import:
+  `RuntimeError: NumPy was built with baseline optimizations (X86_V2) but your
+  machine doesn't support (X86_V2)`.
+
+**Fix:** Proxmox → HAOS VM → Hardware → Processor → **Type = `host`** (exposes
+everything incl. AVX1; needs a VM restart, brief HA downtime). Verify:
+
+```bash
+grep -o -m1 'sse4_2\|popcnt\|avx[0-9]*' /proc/cpuinfo | sort -u
+# -> avx  popcnt  sse4_2
+```
+
+Tradeoff: `host` breaks live-migration portability — irrelevant on a single
+host. This unblocked numpy, but note it did **not** speed up JAX (below).
+
+## Host results after CPU=host (2026-08-25)
+
+- **JAX path: no change** — still 1.7–4.2 s (`goodnight` 2930ms, movie 4231ms,
+  temperature 1736ms). AVX1 alone doesn't help XLA; its fast kernels want AVX2,
+  which Sandy Bridge lacks → scalar fallback regardless. **The JAX path is stuck
+  at ~2–4 s; no CPU config fixes it.**
+- **C engine: build FAILS on x86.** `cactus build --python` feeds an ARM march
+  flag to the x86 compiler:
+  `cc1plus: error: bad value 'armv8.2-a+fp16+simd+dotprod+i8mm' for '-march='`.
+  Cactus's kernel CMake is hardcoded for ARM (mobile-first) and doesn't build for
+  x86-64 out of the box. Making it build would require patching upstream CMake —
+  out of scope. (A prebuilt x86 engine binary, if they ever publish one, would
+  be the alternative.)
+
 ## Decision
 
-**Approach A, via the `cactus-needle` pip/JAX backend, in-process.** Confirmed
-working end-to-end on the target host. Deployment: add `cactus-needle` to the
-add-on image; no C toolchain needed.
+**Approach A, via the `cactus-needle` pip/JAX backend, in-process, on a Debian
+(glibc) add-on base.** It is the only runtime that runs end-to-end on the target.
+Latency ~2–4 s — accepted (beats the >10 s agent). Deployment: switch
+`build.yaml` to the HA `-base-debian` image, `Dockerfile` apk→apt, add
+`cactus-needle` to `requirements.txt`. `CactusBackend` (in-process) is already
+implemented + tested.
 
-**Future optimisation (not now):** the `cactus` C engine
-(https://github.com/cactus-compute/cactus) also runs Needle, exposes `confidence`
-in its `cactus_complete` result, and its native SSE kernels would likely cut the
-2–4 s latency substantially. It's a drop-in `NeedleBackend` swap (menu/router/
-config unchanged) — revisit only if the pip-path latency proves annoying. Its
-cost is build-from-source packaging in the Dockerfile.
+**C engine: parked, not viable now** — blocked on upstream x86-64 build support
+(ARM-only kernel march). Revisit only if they publish x86 binaries or fix the
+build; it stays a drop-in `NeedleBackend` swap if so.
+
+**Possible future latency lever:** the 1.7–4.2 s variance looks like XLA
+recompiles per input shape. Padding the prompt to a fixed length so XLA compiles
+once (plus a warm-up call at startup) may lower steady-state latency — untested.

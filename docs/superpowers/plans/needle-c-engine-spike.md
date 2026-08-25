@@ -1,5 +1,13 @@
 # Cactus C-engine spike
 
+> **OUTCOME (2026-08-25): build FAILS on x86-64 — parked.** `cactus build
+> --python` feeds an ARM march flag to the x86 compiler:
+> `cc1plus: error: bad value 'armv8.2-a+fp16+simd+dotprod+i8mm' for '-march='`.
+> The kernel CMake is hardcoded for ARM (mobile-first); no x86 build path out of
+> the box. Would need upstream CMake patching (or a prebuilt x86 engine binary).
+> Decision: ship the JAX/pip path instead — see `needle-spike-notes.md`. Recipe
+> kept below in case they add x86 support later.
+
 Goal: does the C/C++ cactus engine **build**, **run on the no-AVX host**, expose
 **confidence**, and at **what latency** vs the JAX path (which was ~2–4 s).
 
