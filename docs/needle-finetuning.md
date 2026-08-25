@@ -21,8 +21,10 @@ confidence threshold. Instead it uses **trust-the-call**:
 - Model emits a tool call  → fire that automation.
 - Model emits no call      → fall through to the full agent.
 
-Reads must therefore be trained to emit **no call** (`answers: []`). Safety is
-bounded structurally regardless: the pick is grammar-constrained to your
+Reads must therefore be trained to emit **no call** (`answers: []`). (Why the
+confidence can't just be re-enabled — and the real options if you ever need it —
+is documented in `docs/needle-confidence.md`.) Safety is bounded structurally
+regardless: the pick is grammar-constrained to your
 `automation.ai_*` menu, every trigger passes the adapter's `ai_actions_switch`
 gate, and each automation also self-gates on `input_boolean.ai_triggered_actions`.
 The residual risk is a *mis-pick* firing the wrong one of your own automations —
