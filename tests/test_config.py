@@ -48,6 +48,16 @@ def test_ws_url_direct():
     assert s.ws_url == "ws://192.168.1.10:8123/api/websocket"
 
 
+def test_needle_defaults_are_off_and_safe():
+    s = Settings(_env_file=None)
+    assert s.needle_enabled is False
+    assert s.needle_confidence_threshold == 0.85
+    assert s.needle_menu_ttl_s == 60
+    assert s.needle_backend == "cactus"
+    assert s.needle_model_path == ""
+    assert s.needle_sidecar_url == ""
+
+
 def test_load_settings_from_options_json(tmp_path, monkeypatch):
     options = tmp_path / "options.json"
     options.write_text(json.dumps({"llm_model": "llama3.1:8b", "num_ctx": 4096}))

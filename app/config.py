@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     audit_db_path: str = ""
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
 
+    # Needle fast path (optional low-latency automation triggering). Off by
+    # default: when enabled AND max_tier >= 2, a local model may trigger an
+    # ai_* automation directly, bypassing the agent. See docs spec 2026-08-25.
+    needle_enabled: bool = False
+    needle_model_path: str = ""          # path to the .cact binary
+    needle_confidence_threshold: float = 0.85  # fire only at/above this (>=)
+    needle_menu_ttl_s: int = 60          # menu/grammar cache TTL
+    needle_backend: str = "cactus"       # "cactus" (in-process) or "sidecar"
+    needle_sidecar_url: str = ""         # used only when needle_backend == "sidecar"
+
     # Person display names: list of {ha_name: "<HA friendly_name>", name: "<shown name>"}
     # ha_name is the lookup key (what HA reports); name is what the agent sees.
     person_name_map: list[dict[str, str]] = []
