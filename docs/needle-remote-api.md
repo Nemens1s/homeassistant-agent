@@ -111,7 +111,7 @@ async def classify(req: ClassifyRequest):
 
 ```
 NEEDLE_BACKEND=remote
-NEEDLE_REMOTE_URL=http://192.168.1.x:8765
+NEEDLE_REMOTE_URL=http://ollama.home:8765
 NEEDLE_ENABLED=true
 MAX_TIER=2
 ```
