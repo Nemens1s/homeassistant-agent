@@ -55,7 +55,7 @@ def test_needle_defaults_are_off_and_safe():
     assert s.needle_menu_ttl_s == 60
     assert s.needle_backend == "cactus"
     assert s.needle_model_path == ""
-    assert s.needle_sidecar_url == ""
+    assert s.needle_remote_url == ""
 
 
 def test_load_settings_from_options_json(tmp_path, monkeypatch):

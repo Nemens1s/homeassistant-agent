@@ -70,8 +70,8 @@ class Settings(BaseSettings):
     # a tuned model. Raise it only if running the calibrated BASE model.
     needle_confidence_threshold: float = 0.0
     needle_menu_ttl_s: int = 60          # menu/grammar cache TTL
-    needle_backend: str = "cactus"       # "cactus" (in-process) or "sidecar"
-    needle_sidecar_url: str = ""         # used only when needle_backend == "sidecar"
+    needle_backend: str = "cactus"       # "cactus" (in-process) or "remote"
+    needle_remote_url: str = ""          # used only when needle_backend == "remote"
 
     # Person display names: list of {ha_name: "<HA friendly_name>", name: "<shown name>"}
     # ha_name is the lookup key (what HA reports); name is what the agent sees.
