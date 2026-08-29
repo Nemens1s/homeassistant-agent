@@ -29,5 +29,6 @@ class RemoteNeedleBackend:
         ]
         payload = {"message": message, "tools": tools, "signature": menu.signature}
         response = await self._client.post(self._url, json=payload)
+        print(f"Needle response {response}")
         response.raise_for_status()
         return _decision_from_result(response.json(), name_to_id)

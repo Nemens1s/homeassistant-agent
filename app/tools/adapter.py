@@ -75,7 +75,7 @@ async def _invoke_handler(defn, params_model, ctx, kwargs) -> ToolResult:
             entity_id = str(kwargs.get("entity_id", ""))
             data = (
                 {"did_you_mean": await _did_you_mean(ctx, entity_id)}
-                if entity_id
+                if entity_id and defn.tier < 2
                 else None
             )
             return ToolResult.error("entity_not_found", f"No entity {entity_id!r}.", data=data)

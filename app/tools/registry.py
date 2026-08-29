@@ -60,8 +60,10 @@ def tools_for_tier(max_tier: int) -> list[ToolDefinition]:
 
 
 def load_all(modules: tuple[str, ...] = _DEFAULT_MODULES) -> None:
-    """Import every tool module so its register() call runs. Reload if already
-    imported, so tests that reset the registry can re-trigger registration."""
+    """Import every tool module so its register() call runs. Clears first so
+    it is safe to call even when side-effect imports have already registered
+    some tools (e.g. trigger_automation via needle/menu.py)."""
+    _REGISTRY.clear()
     for mod in modules:
         existing = sys.modules.get(mod)
         if existing is not None:

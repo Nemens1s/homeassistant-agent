@@ -249,8 +249,7 @@ def build_middleware(settings: Settings, guard: LoopGuard, base_prompt: str, bud
 
 
 def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None):
-    if not registry.tools_for_tier(2):  # nothing registered yet
-        registry.load_all()
+    registry.load_all()
     llm = build_llm(settings)
     guard = LoopGuard()
     tools = build_tools(ctx, settings.max_tier, guard=guard)

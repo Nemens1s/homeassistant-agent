@@ -24,6 +24,7 @@ class FastPathRouter:
             if not menu.items:
                 return None
             decision = await self._backend.classify(message, menu)
+            print(f"Needle's decision {decision}")
             if decision.entity_id is None or decision.confidence < self._threshold:
                 return None
             raw = await self._trigger_tool.ainvoke(

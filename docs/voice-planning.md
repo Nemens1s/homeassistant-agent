@@ -179,3 +179,78 @@ and the app.
   for always-on it'd move to a box that's always up (ties into the deferred
   deployment question).
 - Response localization: LLM answering directly in RU vs translate-back for TTS.
+
+## Decisions made (2026-08-28)
+
+Resolved during review of the pipeline plan against HA's actual voice
+plumbing.
+
+### STT: standalone container, not the HA App
+
+Do **not** install the Whisper App (add-on) in HA. It runs on the HA host
+(Proxmox VM on the Mac Mini — Sandy Bridge, no AVX2) and will be slow.
+
+Instead, run **`wyoming-faster-whisper` as a standalone Docker container on
+the ASUS box** (i5-8250U, AVX2, CPU, int8). HA connects to it via the
+**Wyoming Protocol integration** (Settings → Devices & Services → Add →
+Wyoming Protocol → `192.168.1.4:10300`).
+
+```bash
+docker run -d \
+  --name wyoming-whisper \
+  -p 10300:10300 \
+  -v whisper-data:/data \
+  rhasspy/wyoming-whisper \
+  --model small-int8 --language ru --whisper-task translate
+```
+
+Same approach for **Piper TTS** — standalone `wyoming-piper` container on
+the ASUS box, Russian voice, added to HA the same way.
+
+### Whisper variant: wyoming-faster-whisper, not WhisperLive
+
+**`wyoming-faster-whisper`** (OHF-Voice) speaks the Wyoming protocol that
+HA natively expects. WhisperLive (Collabora) uses its own WebSocket
+protocol — HA can't talk to it without a custom STT integration bridge.
+No reason to build that.
+
+Other variants noted for reference:
+- **whisper.cpp** — has a Wyoming wrapper (`wyoming-whisper-cpp`), could
+  benchmark against faster-whisper on this CPU later.
+- Original PyTorch Whisper, whisper-jax, distil-whisper — no Wyoming
+  wrappers, no advantage here.
+
+### Conversation agent: dev bridge via OpenAI-compat endpoint
+
+End goal remains a **custom HA `ConversationEntity` integration** (thin
+`custom_components/` package that POSTs to `/api/chat`). Not built yet.
+
+For development: add an **OpenAI-compatible `/v1/chat/completions`
+endpoint** to the agent app's FastAPI. HA's built-in **OpenAI Conversation
+integration** points at it (base URL `http://<dev-machine-ip>:8099/v1`,
+dummy API key, model `local-agent`). This slots directly into the Assist
+pipeline as the conversation agent.
+
+Key design notes for the shim:
+- **Ignore HA's message history** in the request — the agent manages its
+  own context via `MemorySaver` / `thread_id`. Extract only the last user
+  message from the `messages` array and pass to `ask()`.
+- Use a fixed `thread_id="voice"` to separate voice conversations from the
+  UI chat thread (`"default"`).
+- Add a `/v1/models` stub returning `local-agent` — HA may probe it on
+  setup.
+- For dev, the app runs on the MacBook. `ha_client.py` needs `HA_BASE_URL`
+  pointed at HA's actual URL (not `http://supervisor/core`) and a
+  long-lived access token in `SUPERVISOR_TOKEN`.
+
+### Pipeline assembly
+
+Once all three pieces are running, create an **Assist pipeline** in HA:
+
+Settings → Voice assistants → Add pipeline:
+- **STT:** Wyoming Whisper (ASUS box)
+- **Conversation agent:** OpenAI Conversation (pointing at agent app)
+- **TTS:** Wyoming Piper (ASUS box)
+
+Test with the **phone Companion app** (push-to-talk) before buying any
+satellite hardware.
