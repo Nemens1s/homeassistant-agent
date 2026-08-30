@@ -196,7 +196,7 @@ the ASUS box** (i5-8250U, AVX2, CPU, int8). HA connects to it via the
 Wyoming Protocol → `192.168.1.4:10300`).
 
 ```bash
-docker run -d \
+docker run -d --restart always \
   --name wyoming-whisper \
   -p 10300:10300 \
   -v whisper-data:/data \

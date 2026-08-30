@@ -136,6 +136,8 @@ async def main(save_conversations: bool = False) -> None:
                         conv_file.write(f"{_ts()} Agent (fast path): {fp_reply}\n")
                         conv_file.flush()
                     continue
+                print("Stopping here for test")
+                continue
             print("Agent: ", end="", flush=True)
             t0 = time.monotonic()
             try:

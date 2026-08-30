@@ -89,8 +89,7 @@ needle finetune train.jsonl --epochs 20 --val-split 0.12 --out checkpoints/needl
 ## Step 4 — build the deployable `.cact`
 
 ```bash
-needle build checkpoints/needle2.pkl --lora checkpoints/needle_lora.pkl \
-  --out needle_home.cact --bits 4
+needle build checkpoints/needle2.pkl --lora checkpoints/needle_lora.pkl --out needle_home.cact --bits 4
 ```
 
 - **Use `--bits 4`, not `--bits 2`.** 2-bit measurably hurt accuracy in testing
@@ -100,8 +99,7 @@ needle build checkpoints/needle2.pkl --lora checkpoints/needle_lora.pkl \
 
 ```bash
 # from the repo root
-python -m tests.evals.run_needle --threshold 0.0 \
-  --cases finetune/cases.yaml --model-path finetune/needle_home.cact
+python -m tests.evals.run_needle --threshold 0.0 --cases finetune/cases.yaml --model-path finetune/needle_home.cact
 ```
 
 - **`--threshold 0.0` is required** for tuned weights: confidence is `None`
