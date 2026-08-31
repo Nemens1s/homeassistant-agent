@@ -39,6 +39,6 @@ def build_fast_path_router(cfg, rest, ctx):
     else:
         log.warning("needle_backend=%r not supported; fast path off", cfg.needle_backend)
         return None
-    menu_provider = MenuProvider(rest, ttl_s=cfg.needle_menu_ttl_s)
+    menu_provider = MenuProvider(rest, ttl_s=cfg.needle_menu_ttl_s, ws=ctx.ws)
     return FastPathRouter(backend, menu_provider, trigger_tool,
                           cfg.needle_confidence_threshold)
