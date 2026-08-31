@@ -2,7 +2,7 @@ import difflib
 
 from pydantic import BaseModel, Field
 
-from app.tools.action.trigger_automation import AI_AUTOMATION_PREFIX
+from app.constants import AI_AUTOMATION_PREFIX
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows
 from app.tools.registry import register
 

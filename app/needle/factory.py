@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from app.constants import AI_AUTOMATION_PREFIX_ACTION
 from app.needle.menu import MenuProvider
 from app.needle.remote_backend import RemoteNeedleBackend
 from app.needle.router import FastPathRouter
@@ -11,9 +12,6 @@ from app.tools import registry
 from app.tools.adapter import LoopGuard, to_structured_tool
 
 log = logging.getLogger("needle")
-
-# Filter out only real automations, skip test automations
-AI_AUTOMATION_PREFIX_ACTION = "automation.ai_action"
 
 def build_fast_path_router(cfg, rest, ctx):
     """Return a FastPathRouter, or None when the fast path should not run.

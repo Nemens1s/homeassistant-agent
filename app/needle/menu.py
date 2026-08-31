@@ -9,7 +9,7 @@ import hashlib
 import time
 from dataclasses import dataclass
 
-from app.tools.action.trigger_automation import AI_AUTOMATION_PREFIX
+from app.constants import AI_AUTOMATION_PREFIX
 
 
 @dataclass(frozen=True)

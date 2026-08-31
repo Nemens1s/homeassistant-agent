@@ -1,12 +1,8 @@
 from pydantic import BaseModel, Field
 
+from app.constants import AI_AUTOMATION_PREFIX
 from app.tools.base import Tier, ToolDefinition, ToolResult
 from app.tools.registry import register
-
-# The AI menu marker. An automation is triggerable by the agent only when its
-# entity_id starts with this prefix. Single source of truth (imported by
-# get_automations for the ai_controllable flag).
-AI_AUTOMATION_PREFIX = "automation.ai_"
 
 
 class Params(BaseModel):
