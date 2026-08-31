@@ -1,4 +1,4 @@
-from app.needle.menu import Menu, MenuItem, MenuProvider
+from app.needle.menu import MenuProvider
 
 
 class FakeRest:
