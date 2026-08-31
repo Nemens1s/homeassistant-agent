@@ -1,17 +1,15 @@
 """HTTP backend: delegates classify() to a remote needle inference server.
 
 The remote server owns the needle runtime and the model weights; this backend
-sends a JSON request and maps the response back to a Decision using the same
-helpers as CactusBackend. The router's try/except handles any network error and
-degrades to the agent.
+sends a JSON request and maps the response back to a Decision. The router's
+try/except handles any network error and degrades to the agent.
 """
 
 from __future__ import annotations
 
 import httpx
 
-from app.needle.backend import Decision
-from app.needle.cactus_backend import _build_name_map, _decision_from_result
+from app.needle.backend import Decision, _build_name_map, _decision_from_result
 from app.needle.menu import Menu
 
 

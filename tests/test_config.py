@@ -53,8 +53,6 @@ def test_needle_defaults_are_off_and_safe():
     assert s.needle_enabled is False
     assert s.needle_confidence_threshold == 0.0  # trust-the-call (tuned weights have no confidence)
     assert s.needle_menu_ttl_s == 60
-    assert s.needle_backend == "cactus"
-    assert s.needle_model_path == ""
     assert s.needle_remote_url == ""
 
 
