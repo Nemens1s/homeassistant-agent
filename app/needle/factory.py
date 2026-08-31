@@ -12,6 +12,8 @@ from app.tools.adapter import LoopGuard, to_structured_tool
 
 log = logging.getLogger("needle")
 
+# Filter out only real automations, skip test automations
+AI_AUTOMATION_PREFIX_ACTION = "automation.ai_action"
 
 def build_fast_path_router(cfg, rest, ctx):
     """Return a FastPathRouter, or None when the fast path should not run.
@@ -30,6 +32,6 @@ def build_fast_path_router(cfg, rest, ctx):
         return None
     trigger_tool = to_structured_tool(trigger_defn, ctx, LoopGuard())
     backend = RemoteNeedleBackend(cfg.needle_remote_url)
-    menu_provider = MenuProvider(rest, ttl_s=cfg.needle_menu_ttl_s, ws=ctx.ws)
+    menu_provider = MenuProvider(rest, ttl_s=cfg.needle_menu_ttl_s, prefix=AI_AUTOMATION_PREFIX_ACTION, ws=ctx.ws)
     return FastPathRouter(backend, menu_provider, trigger_tool,
                           cfg.needle_confidence_threshold)
