@@ -175,9 +175,12 @@ and the app.
   accuracy on the i5-8250U CPU.
 - Whisper **`translate` quality** (if using path (a)) on terse RU commands (proper
   nouns like "Concorde" surviving translation).
-- Where the **app (Needle + agent) runs** in the voice setup — currently the Mac;
-  for always-on it'd move to a box that's always up (ties into the deferred
-  deployment question).
+- Where the **agent app runs** in the voice setup. Resolved since this was
+  written: the app is packaged as an HA **App** on the HA host, and **Needle is
+  decoupled** — it runs as a `remote` backend (`needle_backend: remote`,
+  `needle_remote_url`) on a separate always-on machine to minimise latency. So
+  no heavy inference sits on the HA host: the LLM goes to Ollama and Needle to
+  its remote sidecar, both off-host.
 - Response localization: LLM answering directly in RU vs translate-back for TTS.
 
 ## Decisions made (2026-08-28)
