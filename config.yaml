@@ -15,7 +15,7 @@ panel_title: "HA Agent"
 watchdog: "http://[HOST]:[PORT:8099]/api/health"
 options:
   llm_provider: "ollama"
-  ollama_url: "http://192.168.1.50:11434"
+  llm_url: "http://192.168.1.50:11434"
   llm_model: "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
   api_key: ""
   system_prompt: >-
@@ -54,7 +54,7 @@ options:
   person_name_exclude: []
 schema:
   llm_provider: "str"
-  ollama_url: "url"
+  llm_url: "url"
   llm_model: "str"
   api_key: "password"
   system_prompt: "str"

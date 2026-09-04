@@ -33,8 +33,11 @@ class Settings(BaseSettings):
     ws_connect_timeout: float = 10.0
 
     # LLM backend
-    llm_provider: str = "ollama"  # "ollama" or a litellm provider, e.g. "anthropic"
-    ollama_url: str = "http://localhost:11434"
+    llm_provider: str = "ollama"  # "ollama" or a litellm provider, e.g. "openai" for llama.cpp
+    llm_url: str = Field(
+        "http://localhost:11434",
+        validation_alias=AliasChoices("LLM_URL", "OLLAMA_URL"),
+    )
     llm_model: str = "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
     api_key: str = ""  # cloud provider key, used only by litellm providers
 

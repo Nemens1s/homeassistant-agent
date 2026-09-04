@@ -15,7 +15,7 @@ this path.
 2. Settings → Add-ons → Add-on Store → ⋮ (top right) → **Check for updates**.
    The add-on appears under **Local add-ons**.
 3. Install, then on the **Configuration** tab set at minimum:
-   - `ollama_url`: `http://<laptop-ip>:11434`
+   - `llm_url`: `http://<laptop-ip>:11434` (Ollama) or your llama.cpp base URL
    - `llm_model`: a model pulled on that server (e.g. `qwen3.5:4b`)
    Everything else has sane defaults; the Supervisor writes your choices to
    `/data/options.json`, which the app reads at startup.
@@ -56,7 +56,7 @@ To smoke-test the server against a real HA instance instead:
 docker run --rm -p 8099:8099 \
   -e HA_BASE_URL=http://<ha-ip>:8123 \
   -e SUPERVISOR_TOKEN=<long-lived-access-token> \
-  -e OLLAMA_URL=http://<laptop-ip>:11434 \
+  -e LLM_URL=http://<laptop-ip>:11434 \
   -e LLM_MODEL=qwen3.5:4b \
   --entrypoint sh ollama-agent \
   -c "cd /app && uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8099"
@@ -72,7 +72,7 @@ that this stays true.
 
 ```bash
 venv/bin/pip install -r requirements.txt -r requirements-dev.txt
-cp .env.example .env   # or create .env: HA_BASE_URL, HA_TOKEN, OLLAMA_URL, LLM_MODEL
+cp .env.example .env   # or create .env: HA_BASE_URL, HA_TOKEN, LLM_URL, LLM_MODEL
 venv/bin/python -m app.cli                      # capability-testing REPL
 venv/bin/uvicorn app.main:create_app --factory --port 8099   # web UI at localhost:8099
 venv/bin/python -m tests.evals.run              # tool-selection scoring

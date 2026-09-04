@@ -7,7 +7,7 @@ from app.config import Settings
 def test_ollama_provider_builds_chat_ollama_with_options():
     s = Settings(
         _env_file=None,
-        llm_provider="ollama", ollama_url="http://laptop:11434",
+        llm_provider="ollama", llm_url="http://laptop:11434",
         llm_model="qwen3:8b", temperature=0.0, seed=7, reasoning=False,
         num_predict=1024, num_ctx=4096, keep_alive=-1,
     )

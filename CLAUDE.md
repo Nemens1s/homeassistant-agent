@@ -20,8 +20,8 @@ is merged; specs and plans for iterations 2 (control + audit) and 3
 ## Dev environment
 
 `.env` keys: `HA_BASE_URL`, `HA_TOKEN` (or `SUPERVISOR_TOKEN` — alias),
-`OLLAMA_URL`, `LLM_MODEL`. Beware: the legacy key `OLLAMA_MODEL` is ignored
-by `Settings` — only `LLM_MODEL` counts. Config is one pydantic-settings
+`LLM_URL` (alias `OLLAMA_URL` still works), `LLM_MODEL`. Beware: the legacy
+key `OLLAMA_MODEL` is ignored by `Settings` — only `LLM_MODEL` counts. Config is one pydantic-settings
 class in `app/config.py`; in the addon container it reads
 `/data/options.json` instead (keys must match Settings field names exactly).
 

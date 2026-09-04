@@ -148,22 +148,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/health")
     async def health() -> dict:
         ha_ok = False
-        ollama_ok = False
+        llm_ok = False
         try:
             ha_ok = await app.state.rest.ping()
         except Exception:
             pass
         try:
+            s = app.state.settings
+            if s.llm_provider == "ollama":
+                health_url = f"{s.llm_url}/api/version"
+            else:
+                health_url = f"{s.llm_url}/health"
             async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{app.state.settings.ollama_url}/api/version")
-                ollama_ok = resp.status_code == 200
+                resp = await client.get(health_url)
+                llm_ok = resp.status_code == 200
         except Exception:
             pass
         ws_ok = app.state.ws is not None and app.state.ws.connected
         return {
-            "status": "ok" if (ha_ok and ollama_ok) else "degraded",
+            "status": "ok" if (ha_ok and llm_ok) else "degraded",
             "ha": ha_ok,
-            "ollama": ollama_ok,
+            "llm": llm_ok,
             "websocket": ws_ok,
         }
 

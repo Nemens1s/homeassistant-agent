@@ -13,7 +13,7 @@ def _settings():
         _env_file=None,
         ha_base_url="http://127.0.0.1:59999",
         ha_token="t",
-        ollama_url="http://127.0.0.1:59998",
+        llm_url="http://127.0.0.1:59998",
         ws_connect_timeout=0.5,
     )
 
@@ -76,7 +76,7 @@ def test_health_degraded_without_backends():
     assert resp.status_code == 200
     assert body["status"] == "degraded"
     assert body["ha"] is False
-    assert body["ollama"] is False
+    assert body["llm"] is False
     assert body["websocket"] is False
 
 

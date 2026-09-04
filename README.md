@@ -27,7 +27,7 @@ Create `.env` (never committed):
 ```
 HA_BASE_URL=http://homeassistant.local:8123
 HA_TOKEN=<long-lived token>
-OLLAMA_URL=http://192.168.1.50:11434
+LLM_URL=http://192.168.1.50:11434
 LLM_MODEL=qwen2.5:7b
 ```
 
@@ -62,7 +62,7 @@ venv/bin/python -m tests.evals.run
 1. Copy this folder to `/addons/local/local_ha_agent` on your HA host.
 2. In HA: Settings → Add-ons → Add-on Store → ⋮ → Check for updates.
 3. Install, then go to Configuration and set at minimum:
-   - `ollama_url`, `llm_model`, and optionally `api_key` for cloud providers.
+   - `llm_url`, `llm_model`, and optionally `api_key` for cloud providers.
 4. Start — ingress opens the chat UI directly in the HA sidebar.
 
 ## Key Options (`/data/options.json` → `Settings` fields)
@@ -70,7 +70,7 @@ venv/bin/python -m tests.evals.run
 | Key | Default | Notes |
 |---|---|---|
 | `llm_provider` | `ollama` | `ollama` or LiteLLM provider name |
-| `ollama_url` | `http://192.168.1.50:11434` | Ignored for cloud providers |
+| `llm_url` | `http://192.168.1.50:11434` | Ollama URL, or llama.cpp/OpenAI-compat base URL |
 | `llm_model` | `qwen2.5:7b` | Model tag |
 | `api_key` | `` | Cloud provider key (stored as password) |
 | `max_tier` | `1` | `1` = read-only; `2` = control tools (iteration 2) |
