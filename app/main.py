@@ -18,6 +18,7 @@ from langgraph.errors import GraphRecursionError
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.agent.checkpointer import open_checkpointer
 from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.needle.factory import build_fast_path_router
@@ -107,16 +108,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.warning("websocket unavailable (%s) — area/automation tools degraded", exc)
                 ws = None
             ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
-            app.state.settings = cfg
-            app.state.rest = rest
-            app.state.ws = ws
-            app.state.agent = build_agent(cfg, ctx)
-            app.state.fast_path = None
-            try:
-                app.state.fast_path = build_fast_path_router(cfg, rest, ctx)
-            except Exception:
-                log.exception("needle fast path failed to build; running agent-only")
-            yield
+            async with open_checkpointer(cfg) as checkpointer:
+                app.state.settings = cfg
+                app.state.rest = rest
+                app.state.ws = ws
+                app.state.agent = build_agent(cfg, ctx, checkpointer=checkpointer)
+                app.state.fast_path = None
+                try:
+                    app.state.fast_path = build_fast_path_router(cfg, rest, ctx)
+                except Exception:
+                    log.exception("needle fast path failed to build; running agent-only")
+                yield
         finally:
             await _teardown(rest, ws, audit=audit)
 
@@ -187,14 +189,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # multi-pipeline scenarios, derive thread_id from something else.
 
         router = getattr(app.state, "fast_path", None)
-        log.info("User message", user_msg)
-        id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        response_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         if router is not None:
             reply = await router.try_fast_path(user_msg, thread_id=f"voice-{uuid.uuid4().hex[:8]}")
             if reply is not None:
                 # return ChatResponse(reply=reply)
                 return OAIChatResponse(
-                    id=id,
+                    id=response_id,
                     created=int(time.time()),
                     model=req.model,
                     choices=[
@@ -212,7 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
             return OAIChatResponse(
-                id=id,
+                id=response_id,
                 created=int(time.time()),
                 model=req.model,
                 choices=[
@@ -223,7 +224,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except GraphRecursionError:
             return OAIChatResponse(
-                id=id,
+                id=response_id,
                 created=int(time.time()),
                 model=req.model,
                 choices=[

@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     recursion_limit: int = 15
     max_rows: int = 50
     audit_db_path: str = ""
+    # Durable conversation memory. Empty = in-memory (lost on restart); set a
+    # path (e.g. /data/checkpoints.sqlite in the addon) to persist threads.
+    checkpoint_db_path: str = ""
+    # Per-thread history cap: after each run, prune stored history to the last N
+    # messages (rounded to a human-turn boundary). 0 = keep full history. This
+    # bounds unbounded per-thread growth, especially with a durable checkpointer.
+    max_history_messages: int = 0
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
 
     # Needle fast path (optional low-latency automation triggering). Off by

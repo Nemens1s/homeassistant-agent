@@ -129,6 +129,29 @@ def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     assert captured["rest"]._allowed_write_domains == ("light", "switch", "fan", "automation")
 
 
+def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    captured = {}
+
+    def fake_build_agent(settings, ctx, checkpointer=None):
+        captured["checkpointer"] = checkpointer
+        class A:
+            async def ainvoke(self, *a, **k):
+                return {"messages": []}
+        return A()
+
+    from app import main as main_mod
+    monkeypatch.setattr(main_mod, "build_agent", fake_build_agent)
+    settings = _settings()
+    db = tmp_path / "checkpoints.sqlite"
+    settings.checkpoint_db_path = str(db)
+    app = create_app(settings)
+    with TestClient(app):
+        pass
+    assert isinstance(captured["checkpointer"], AsyncSqliteSaver)
+
+
 async def test_lifespan_teardown_survives_rest_close_failure():
     # ws.stop must run even if rest.aclose raises
     from app import main as main_mod

@@ -14,6 +14,7 @@ from typing import IO
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.errors import GraphRecursionError
 
+from app.agent.checkpointer import open_checkpointer
 from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.needle.factory import build_fast_path_router
@@ -82,7 +83,9 @@ async def main(save_conversations: bool = False) -> None:
         ws = None
 
     ctx = ToolContext(settings=settings, rest=rest, ws=ws, audit=audit)
-    agent = build_agent(settings, ctx)
+    checkpointer_cm = open_checkpointer(settings)
+    checkpointer = await checkpointer_cm.__aenter__()
+    agent = build_agent(settings, ctx, checkpointer=checkpointer)
     fast_path = None
     try:
         fast_path = build_fast_path_router(settings, rest, ctx)
@@ -136,8 +139,8 @@ async def main(save_conversations: bool = False) -> None:
                         conv_file.write(f"{_ts()} Agent (fast path): {fp_reply}\n")
                         conv_file.flush()
                     continue
-                print("Stopping here for test")
-                continue
+                # print("Stopping here for test")
+                # continue
             print("Agent: ", end="", flush=True)
             t0 = time.monotonic()
             try:
@@ -238,6 +241,7 @@ async def main(save_conversations: bool = False) -> None:
             print("Closing ws client")
             await ws.stop()
         audit.close()
+        await checkpointer_cm.__aexit__(None, None, None)
         if conv_file is not None:
             conv_file.close()
 

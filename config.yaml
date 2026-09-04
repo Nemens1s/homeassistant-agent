@@ -39,6 +39,10 @@ options:
   keep_alive: -1
   recursion_limit: 15
   max_rows: 50
+  # /data persists across addon restarts; empty string keeps memory in-RAM
+  checkpoint_db_path: "/data/checkpoints.sqlite"
+  # cap stored history per thread to the last N messages (0 = keep everything)
+  max_history_messages: 40
   enable_tool_subsetting: true
   needle_enabled: false
   needle_model_path: ""
@@ -65,6 +69,8 @@ schema:
   keep_alive: "int"
   recursion_limit: "int(2,50)"
   max_rows: "int(5,500)"
+  checkpoint_db_path: "str?"
+  max_history_messages: "int(0,10000)"
   enable_tool_subsetting: "bool"
   needle_enabled: "bool"
   needle_model_path: "str"
