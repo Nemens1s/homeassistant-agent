@@ -4,17 +4,30 @@
 
 **Goal:** HA Assist integration via a custom component, SSE streaming for the chat UI, a streaming-capable frontend, and optional SQLite conversation persistence, per `docs/superpowers/specs/2026-07-13-local-ha-agent-iteration-3-design.md`.
 
-**PREREQUISITE:** the iteration-2 plan is fully executed and merged (this plan builds on its `ToolContext.audit` wiring and factory changes).
+> **Revision note (2026-09-02):** aligned with reality since the draft.
+> Terminology follows HA 2026.2, which renamed **Add-ons → Apps**; the deliverable
+> is an **App** (formerly add-on), packaged as primary with a standalone-Docker
+> fallback documented. The **Needle fast-path** now front-runs `/api/chat` (Needle
+> runs as a `remote` backend on a separate machine, not on the HA host), so the
+> streaming endpoint must run it too (Task 3). The POC **OpenAI-compat `/v1` shim
+> is removed** this iteration (new Task 8) — the `ConversationEntity` + `/api/chat`
+> is the Assist path of record. The `memory` checkpointer is the existing
+> `BoundedMemorySaver`, not a plain `MemorySaver` (Task 1).
 
-**Architecture:** The agent core is untouched. A translator module converts `agent.astream(stream_mode="messages")` into a typed event protocol consumed by a new SSE endpoint; the frontend reads it with `fetch` + `ReadableStream`. The Assist path is a separate deliverable: `custom_components/local_ha_agent/` (installed into HA core, not the addon) whose conversation entity forwards to the addon's existing non-streaming `/api/chat`.
+**PREREQUISITE:** iteration 2 is **merged** — `ToolContext.audit`, adapter
+ACTION-tier gate, allowlist `call_service`, and `trigger_automation` are all in
+`main`. (The iteration-2 plan's checkboxes are stale bookkeeping; git history is
+the authority.)
+
+**Architecture:** The agent core is untouched. A translator module converts `agent.astream(stream_mode="messages")` into a typed event protocol consumed by a new SSE endpoint; the frontend reads it with `fetch` + `ReadableStream`. The Assist path is a separate deliverable: `custom_components/local_ha_agent/` (installed into HA core, not the App) whose conversation entity forwards to the App's existing non-streaming `/api/chat`.
 
 **Tech Stack:** additions: `langgraph-checkpoint-sqlite` (3.x), `aiohttp` (component's HTTP client — HA-native), dev-only `pytest-homeassistant-custom-component` (fallback: plain aiohttp test server).
 
 ## Global Constraints
 
 - Python: always `venv/bin/python`, `venv/bin/pip`, tests via `venv/bin/python -m pytest`.
-- Commit after every task; trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
-- Working directory: `/Users/ilniko/IdeaProjects/homeassistant-ollama-agent`, branch off `main` (e.g. `iteration-3`).
+- Commit after every task.
+- Working directory: `/Users/inikolski/IdeaProjects/Random/homeassistant-ollama-agent`, branch off `main` (e.g. `iteration-3`).
 - SSE event protocol (exact shapes — frontend, endpoint, and tests all depend on them):
   `{"type":"token","text":...}` · `{"type":"tool_call","name":...,"args":{...}}` · `{"type":"tool_result","name":...,"status":"ok"|"error"}` · `{"type":"done","reply":...}` · `{"type":"error","message":...}`. `done` and `error` are terminal and mutually exclusive.
 - `/api/chat` (non-streaming) must remain byte-compatible — it is the Assist component's contract.
@@ -31,7 +44,7 @@
 - Test: `tests/test_checkpoint.py`
 
 **Interfaces:**
-- Produces: `Settings.checkpointer: str = "memory"` and `Settings.checkpoint_db_path: str = ""`; `open_checkpointer(settings)` — an async context manager yielding a `MemorySaver` (default) or `AsyncSqliteSaver` (when `checkpointer=="sqlite"` and a path is set); `build_agent(settings, ctx, checkpointer=...)` already accepts the result. `main.py` lifespan and `cli.py` wrap agent construction in it.
+- Produces: `Settings.checkpointer: str = "memory"` and `Settings.checkpoint_db_path: str = ""`; `open_checkpointer(settings)` — an async context manager yielding a **`BoundedMemorySaver`** (default — the existing LRU saver from `app/agent/memory.py`, matching `build_agent`'s current default) or `AsyncSqliteSaver` (when `checkpointer=="sqlite"` and a path is set); `build_agent(settings, ctx, checkpointer=...)` already accepts the result. `main.py` lifespan and `cli.py` wrap agent construction in it.
 
 - [ ] **Step 1: Add dependency and failing tests**
 
@@ -46,6 +59,8 @@ from app.config import Settings
 
 
 async def test_default_is_memory_saver():
+    # BoundedMemorySaver subclasses MemorySaver, so this isinstance holds; the
+    # default matches build_agent's existing BoundedMemorySaver default.
     async with open_checkpointer(Settings(_env_file=None)) as saver:
         assert isinstance(saver, MemorySaver)
 
@@ -75,16 +90,15 @@ If `aput`'s checkpoint dict shape is rejected by the installed version, use the 
 - [ ] **Step 3: Implement `app/agent/checkpoint.py`**
 
 ```python
-"""Checkpointer selection: in-memory (default) or SQLite under /data so
-conversations survive addon restarts. Trimming middleware bounds what
+"""Checkpointer selection: bounded in-memory (default) or SQLite under /data so
+conversations survive App restarts. Trimming middleware bounds what
 reaches the model, so growth here is a disk concern only."""
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from langgraph.checkpoint.memory import MemorySaver
-
+from app.agent.memory import BoundedMemorySaver
 from app.config import Settings
 
 
@@ -96,18 +110,30 @@ async def open_checkpointer(settings: Settings):
         async with AsyncSqliteSaver.from_conn_string(settings.checkpoint_db_path) as saver:
             yield saver
     else:
-        yield MemorySaver()
+        yield BoundedMemorySaver()
 ```
+Use `BoundedMemorySaver` (the current `build_agent` default in
+`app/agent/memory.py`), not a plain `MemorySaver`, so the memory path keeps its
+LRU thread eviction and only the sqlite path changes behavior.
 
-`app/config.py`: add `checkpointer: str = "memory"` and `checkpoint_db_path: str = ""` under "Agent behavior".
+`app/config.py`: add `checkpointer: str = "memory"` and `checkpoint_db_path: str = ""` under "Agent behavior" (near `recursion_limit`/`audit_db_path`; verify current line numbers — the file has drifted since the draft).
 
-`app/main.py`: inside lifespan, wrap agent construction:
+`app/main.py`: inside the current lifespan (it builds `rest`, `audit`, `ws`, the `agent`, then `fast_path` — see `app/main.py:94-121`), wrap agent + fast-path construction so the sqlite connection lives for the app's whole lifetime:
 ```python
+            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
+            app.state.settings = cfg
+            app.state.rest = rest
+            app.state.ws = ws
             async with open_checkpointer(cfg) as saver:
                 app.state.agent = build_agent(cfg, ctx, checkpointer=saver)
+                app.state.fast_path = None
+                try:
+                    app.state.fast_path = build_fast_path_router(cfg, rest, ctx)
+                except Exception:
+                    log.exception("needle fast path failed to build; running agent-only")
                 yield
 ```
-(the `async with` must enclose the `yield` so the sqlite connection lives for the app's lifetime; keep the existing outer try/finally teardown). `app/cli.py`: wrap the REPL body equivalently.
+The `async with` must enclose the `yield`; keep the existing outer try/finally teardown. `app/cli.py`: wrap the REPL body equivalently.
 
 - [ ] **Step 4: Verify** — `venv/bin/python -m pytest tests/test_checkpoint.py -v`, then full suite (main/cli lifespan tests must still pass).
 
@@ -131,6 +157,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: an agent exposing `astream(payload, config=..., stream_mode="messages")` yielding `(message, metadata)` tuples.
 - Produces: `stream_events(agent, message: str, thread_id: str, recursion_limit: int) -> AsyncIterator[dict]` emitting protocol events (Global Constraints); terminal `done` carries the assembled reply; `GraphRecursionError` → terminal `error`.
+- **Scope:** `stream_events` translates the *agent* stream only. The Needle
+  fast-path lives in front of `/api/chat`, so handling it belongs to the
+  endpoint (Task 3), not this translator — keep this module fast-path-agnostic.
 
 - [ ] **Step 1: Write the failing tests** (`tests/test_streaming.py`)
 
@@ -278,8 +307,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Test: `tests/test_main.py`
 
 **Interfaces:**
-- Consumes: `stream_events` (Task 2).
-- Produces: `POST /api/chat/stream` accepting the same `ChatRequest` body, responding `text/event-stream` where each event is `data: <json>\n\n`; header `Cache-Control: no-cache`. `/api/chat` untouched.
+- Consumes: `stream_events` (Task 2) and `app.state.fast_path` (the Needle router).
+- Produces: `POST /api/chat/stream` accepting the same `ChatRequest` body, responding `text/event-stream` where each event is `data: <json>\n\n`; header `Cache-Control: no-cache`. Runs the Needle fast-path first (like `/api/chat`); a hit yields `token` + `done` with no agent stream. `/api/chat` untouched.
+- Optionally add a fast-path-hit test: stub `app.state.fast_path` with a fake whose `try_fast_path` returns a canned reply, and assert the events are exactly `token` then `done`.
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_main.py`)
 
@@ -332,14 +362,26 @@ def test_chat_stream_recursion_limit_is_error_event():
 ```python
     @app.post("/api/chat/stream")
     async def chat_stream(req: ChatRequest) -> StreamingResponse:
+        def _sse(event: dict) -> str:
+            return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+
         async def sse() -> AsyncIterator[str]:
+            # Mirror /api/chat: try the Needle fast-path first. A hit means no
+            # LLM ran, so there is nothing to stream — emit token + done.
+            router = getattr(app.state, "fast_path", None)
+            if router is not None:
+                reply = await router.try_fast_path(req.message, req.thread_id)
+                if reply is not None:
+                    yield _sse({"type": "token", "text": reply})
+                    yield _sse({"type": "done", "reply": reply})
+                    return
             async for event in stream_events(
                 app.state.agent,
                 req.message,
                 req.thread_id,
                 app.state.settings.recursion_limit,
             ):
-                yield f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+                yield _sse(event)
 
         return StreamingResponse(
             sse(),
@@ -347,7 +389,7 @@ def test_chat_stream_recursion_limit_is_error_event():
             headers={"Cache-Control": "no-cache"},
         )
 ```
-Imports: `json`, `AsyncIterator` from `collections.abc`, `StreamingResponse` from `fastapi.responses`, `stream_events` from `app.agent.streaming`.
+Imports: `json`, `AsyncIterator` from `collections.abc`, `StreamingResponse` from `fastapi.responses`, `stream_events` from `app.agent.streaming`. The fast-path mirrors `/api/chat` (`app/main.py:127-131`).
 
 - [ ] **Step 4: Verify** — `venv/bin/python -m pytest tests/test_main.py -v`, full suite green.
 
@@ -393,7 +435,7 @@ print("frontend static checks ok")
 EOF
 ```
 
-- [ ] **Step 3: Manual checklist** (record results in the task report; needs live HA+Ollama or the addon)
+- [ ] **Step 3: Manual checklist** (record results in the task report; needs live HA+Ollama or the App)
 
 - Tokens render incrementally; tool indicator appears then collapses.
 - "New conversation" resets context (agent forgets prior turn).
@@ -444,6 +486,12 @@ DOMAIN = "local_ha_agent"
 CONF_BASE_URL = "base_url"
 DEFAULT_BASE_URL = "http://local-ha-agent:8099"
 ```
+**Verify the default hostname.** For a *local* App the Supervisor host is
+typically `local-<slug>` and for a store App `<repo-hash>-<slug>`; the App slug
+is `local_ha_agent` (`config.yaml`), and Supervisor maps underscores to hyphens.
+Confirm the reachable hostname on the target install; it is only a default —
+because the component just needs a URL, a **standalone** deployment points this
+at the box running the container (e.g. `http://<ollama-box-ip>:8099`).
 
 `hacs.json` (repo root):
 ```json
@@ -452,7 +500,7 @@ DEFAULT_BASE_URL = "http://local-ha-agent:8099"
 
 `__init__.py`:
 ```python
-"""Local HA Agent: exposes the addon's agent as an Assist conversation agent."""
+"""Local HA Agent: exposes the App's agent as an Assist conversation agent."""
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -483,7 +531,7 @@ from custom_components.local_ha_agent.client import AgentApiClient, AgentApiErro
 
 
 @pytest.fixture
-async def fake_addon(aiohttp_server_factory=None):
+async def fake_app(aiohttp_server_factory=None):
     async def chat(request):
         body = await request.json()
         if body["message"] == "boom":
@@ -501,16 +549,16 @@ async def fake_addon(aiohttp_server_factory=None):
     await runner.cleanup()
 
 
-async def test_chat_roundtrip(fake_addon):
+async def test_chat_roundtrip(fake_app):
     async with aiohttp.ClientSession() as session:
-        client = AgentApiClient(fake_addon, session)
+        client = AgentApiClient(fake_app, session)
         reply = await client.chat("hello", "conv-1")
     assert reply == "echo:hello:conv-1"
 
 
-async def test_http_error_raises_agent_api_error(fake_addon):
+async def test_http_error_raises_agent_api_error(fake_app):
     async with aiohttp.ClientSession() as session:
-        client = AgentApiClient(fake_addon, session)
+        client = AgentApiClient(fake_app, session)
         with pytest.raises(AgentApiError):
             await client.chat("boom", "conv-1")
 
@@ -525,7 +573,7 @@ async def test_unreachable_raises_agent_api_error():
 - [ ] **Step 3: Run to verify failure**, then implement `client.py`
 
 ```python
-"""HTTP client for the addon API. Kept free of Home Assistant imports so it
+"""HTTP client for the App API. Kept free of Home Assistant imports so it
 is unit-testable without the HA harness."""
 
 from __future__ import annotations
@@ -536,7 +584,7 @@ import aiohttp
 
 
 class AgentApiError(Exception):
-    """Addon unreachable or returned an error."""
+    """App unreachable or returned an error."""
 
 
 class AgentApiClient:
@@ -553,11 +601,11 @@ class AgentApiClient:
                 timeout=self._timeout,
             ) as resp:
                 if resp.status != 200:
-                    raise AgentApiError(f"addon returned HTTP {resp.status}")
+                    raise AgentApiError(f"App returned HTTP {resp.status}")
                 data = await resp.json()
                 return data["reply"]
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-            raise AgentApiError(f"addon unreachable: {exc}") from exc
+            raise AgentApiError(f"App unreachable: {exc}") from exc
 ```
 
 - [ ] **Step 4: Verify** — `venv/bin/python -m pytest tests/test_component_client.py -v`; full suite green (the component's other files are not imported by any test yet, so the missing `homeassistant` package cannot break collection — confirm `pytest -q` collects cleanly).
@@ -566,7 +614,7 @@ class AgentApiClient:
 
 ```bash
 git add custom_components/ hacs.json requirements-dev.txt tests/test_component_client.py
-git commit -m "feat: custom component scaffold and HA-free addon API client
+git commit -m "feat: custom component scaffold and HA-free App API client
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -581,12 +629,12 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `AgentApiClient` (Task 5); HA's `conversation.ConversationEntity` API.
-- Produces: a conversation entity forwarding to the addon (`conversation_id` → `thread_id`), speaking errors instead of raising; a one-field config flow (base URL).
+- Produces: a conversation entity forwarding to the App (`conversation_id` → `thread_id`), speaking errors instead of raising; a one-field config flow (base URL).
 
 - [ ] **Step 1: Implement `conversation.py`**
 
 ```python
-"""Conversation entity: forwards Assist input to the addon agent."""
+"""Conversation entity: forwards Assist input to the App agent."""
 
 from __future__ import annotations
 
@@ -668,8 +716,8 @@ class LocalHaAgentConfigFlow(ConfigFlow, domain=DOMAIN):
   "config": {
     "step": {
       "user": {
-        "data": {"base_url": "Addon base URL"},
-        "description": "URL where the Local HA Agent addon API is reachable from Home Assistant."
+        "data": {"base_url": "App base URL"},
+        "description": "URL where the Local HA Agent App API is reachable from Home Assistant."
       }
     }
   }
@@ -684,7 +732,7 @@ Create `requirements-dev-ha.txt` containing `pytest-homeassistant-custom-compone
 
 - [ ] **Step 3: Tests — harness path OR fallback**
 
-Harness path (`tests/test_component_conversation.py`): use the harness's `hass` fixture; set up a config entry with `CONF_BASE_URL` pointing at the Task-5 fake addon server; call `conversation.async_converse(hass, "what's on?", None, Context(), agent_id=<entity id>)`; assert the speech equals the fake reply and that a second converse with the returned `conversation_id` sends the same `thread_id` to the fake server.
+Harness path (`tests/test_component_conversation.py`): use the harness's `hass` fixture; set up a config entry with `CONF_BASE_URL` pointing at the Task-5 fake App server; call `conversation.async_converse(hass, "what's on?", None, Context(), agent_id=<entity id>)`; assert the speech equals the fake reply and that a second converse with the returned `conversation_id` sends the same `thread_id` to the fake server.
 
 Fallback path (no HA install): unit-test `async_process` directly by stubbing the `homeassistant.*` modules in `sys.modules` before import is NOT acceptable (too brittle) — instead limit automated coverage to Task 5's client tests, add the entity to the manual checklist in Task 7, and record the downgrade prominently in the report. The entity file must still pass `venv/bin/python -m py_compile custom_components/local_ha_agent/conversation.py` (syntax gate) — note that py_compile does not validate the HA API names.
 
@@ -704,11 +752,13 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ### Task 7: Docs, packaging, end-to-end checklist
 
 **Files:**
-- Modify: `README.md`, `config.yaml` (version bump only), `docs/superpowers/specs/2026-07-13-local-ha-agent-iteration-3-design.md` (only if reality diverged — record deviations)
+- Modify: `README.md`, `config.yaml` (App options + version), `run.sh`, `docs/superpowers/specs/2026-07-13-local-ha-agent-iteration-3-design.md` (record any further deviations), `docs/voice-planning.md` (Assist pipeline uses the ConversationEntity, not the OpenAI-compat shim)
 
-**Interfaces:** none new — documentation and verification.
+**Interfaces:** none new — documentation, packaging, and verification.
 
-- [ ] **Step 1: README** — add an "Assist integration" section: copy `custom_components/local_ha_agent/` into HA's `config/custom_components/` (or add the repo as a HACS custom repository), restart HA, add the integration, set the addon URL, then select "Local HA Agent" as the conversation agent in a voice assistant pipeline. Add the "Assist wants a fast model" note (90 s component timeout; long questions belong in the chat UI/REPL). Add a "Streaming & persistence" paragraph: `checkpointer: sqlite` option, `/data/conversations.db`, and the SSE endpoint. Bump addon `version` in `config.yaml` to `"0.4.0"`.
+- [ ] **Step 1a: App packaging** — add `checkpointer` (`list(memory|sqlite)`, default `memory`) and `checkpoint_db_path` (`str`) to the `config.yaml` **options** *and* **schema** blocks (so they render in the App UI), mirroring the existing entries. In `run.sh`, export `CHECKPOINTER` and `CHECKPOINT_DB_PATH=/data/conversations.db` (default when `checkpointer: sqlite`) alongside the existing `AUDIT_DB_PATH=/data/audit.db` line, so persistence lands on the App's `/data` volume. Bump `config.yaml` `version` to `"0.4.0"`.
+
+- [ ] **Step 1b: README** — use **App** terminology throughout (note HA 2026.2 renamed Add-ons → Apps). Add an "Assist integration" section: install the companion component by copying `custom_components/local_ha_agent/` into HA's `config/custom_components/` (or add the repo as a HACS custom repository), restart HA, add the integration, set the App base URL, then select "Local HA Agent" as the conversation agent in a voice assistant pipeline. Include the security sentence (component→App hop is unauthenticated, LAN trust domain). Add the "Assist wants a fast model" note (90 s component timeout; long questions belong in the chat UI/REPL). Add a "Streaming & persistence" paragraph: `checkpointer: sqlite`, `/data/conversations.db`, the SSE endpoint. Add a **"Standalone (non-App) deployment"** subsection: run the same image as a plain Docker container (configured via `.env`, e.g. on the Ollama box), reachable over the LAN, and point the component's base URL at that host — a co-location/perf option (Needle already runs as a `remote` backend, so it is not the driver).
 
 - [ ] **Step 2: Full suite + factory smoke**
 
@@ -719,17 +769,49 @@ venv/bin/python -c "from app.main import create_app; create_app; print('factory 
 
 - [ ] **Step 3: End-to-end manual checklist** (record pass/fail/skipped per item in the report; requires live HA + Ollama)
 
-1. Addon rebuilt and started; `/api/health` ok.
+1. App rebuilt and started; `/api/health` ok.
 2. Chat UI streams tokens; tool indicator appears; >60 s generation survives.
-3. `checkpointer: sqlite` set → restart addon → follow-up question retains context.
+3. `checkpointer: sqlite` set → restart App → follow-up question retains context.
 4. Component installed in HA; config flow completes; Assist text chat answers via the agent; follow-up in the same Assist conversation shares context.
-5. Addon stopped → Assist replies with the spoken-friendly error, no traceback in HA logs.
+5. Needle fast-path: an `automation.ai_*` phrase triggers the automation via Assist (and via `/api/chat/stream`) without invoking the LLM.
+6. App stopped → Assist replies with the spoken-friendly error, no traceback in HA logs.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add README.md config.yaml docs/
-git commit -m "docs: Assist install guide, streaming and persistence notes; addon 0.4.0
+git add README.md config.yaml run.sh docs/
+git commit -m "docs: Assist install guide, streaming and persistence notes; App 0.4.0
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 8: Remove the POC OpenAI-compat shim
+
+**Files:**
+- Modify: `app/main.py`, `docs/voice-planning.md`, `README.md` (if it references the shim)
+- Test: `tests/test_main.py` (remove any `/v1` tests)
+
+**Interfaces:**
+- Removes: `POST /v1/chat/completions`, `GET /v1/models`, and the `OAIMessage`,
+  `OAIChatRequest`, `OAIChoice`, `OAIUsage`, `OAIChatResponse` models from
+  `app/main.py`. After this, `/api/chat` (+ `/api/chat/stream`) are the only chat
+  surfaces; the `ConversationEntity` (Tasks 5–6) is the Assist path.
+
+**Ordering:** independent of the streaming/component chains — can be done first or
+last, but do it in its own commit. It shares `app/main.py` with Tasks 1 and 3, so
+if done later, rebase/re-verify those edits still apply cleanly.
+
+- [ ] **Step 1** — delete the two `/v1` routes and the five `OAI*` Pydantic models from `app/main.py`. Grep for stragglers: `grep -n "v1\|OAI" app/main.py` should return nothing.
+- [ ] **Step 2** — remove any `/v1`/OpenAI tests from `tests/test_main.py`.
+- [ ] **Step 3** — update `docs/voice-planning.md`: the "Conversation agent: dev bridge via OpenAI-compat endpoint" and "Pipeline assembly" sections now say the Assist conversation agent is the custom `ConversationEntity` (component base URL → the App), **not** HA's built-in OpenAI Conversation integration. Note the shim was a POC and has been removed.
+- [ ] **Step 4: Verify** — `venv/bin/python -m pytest -q` green; `venv/bin/python -c "from app.main import create_app; create_app; print('factory ok')"`.
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/main.py tests/test_main.py docs/voice-planning.md README.md
+git commit -m "refactor: remove POC OpenAI-compat shim; ConversationEntity is the Assist path
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -738,7 +820,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ## Self-Review Notes (already applied)
 
-- **Spec coverage:** checkpointer option (T1), SSE protocol + translator (T2), endpoint (T3), UI incl. markdown-lite/thread/new-conversation/tool indicators (T4), component scaffold + HA-free client (T5), conversation entity + config flow + error shaping (T6), install docs + latency note + e2e checklist incl. >60 s SSE and restart-persistence (T7). Security note from the spec (unauthenticated component→addon hop) lands in the README section (T7 Step 1 — include the sentence).
+- **Spec coverage:** checkpointer option (T1, `BoundedMemorySaver` default), SSE protocol + translator (T2), endpoint incl. Needle fast-path (T3), UI incl. markdown-lite/thread/new-conversation/tool indicators (T4), component scaffold + HA-free client (T5), conversation entity + config flow + error shaping (T6), App packaging (checkpointer options + run.sh) + install docs + latency note + standalone fallback + e2e checklist incl. >60 s SSE and restart-persistence (T7), OpenAI-compat shim removal (T8). Security note from the spec (unauthenticated component→App hop) lands in the README section (T7 Step 1b — include the sentence).
 - **Type consistency:** event dict shapes identical in T2 implementation, T2 tests, T3 tests, and T4 frontend handling; `ChatRequest` reused by both endpoints; `AgentApiClient.chat(text, conversation_id)` identical in T5 tests and T6 entity.
 - **Known API risks, fallbacks stated inline:** checkpoint dict shape (T1: use `empty_checkpoint()`), HA conversation/config-flow surface (T6: verify against installed harness, record adjustments), harness-on-py3.14 (T6 Step 2/3 fallback), `FakeAgent` duck-typing for astream (T2/T3 tests own their fakes).
-- **Ordering:** T2→T3→T4 form the streaming chain; T5→T6 the component chain (independent of streaming); T1 first because main.py's lifespan changes twice otherwise.
+- **Ordering:** T2→T3→T4 form the streaming chain; T5→T6 the component chain (independent of streaming); T1 first because main.py's lifespan changes twice otherwise. T8 (shim removal) is independent but shares `app/main.py` with T1/T3 — doing it first keeps `main.py` smaller for those edits.
