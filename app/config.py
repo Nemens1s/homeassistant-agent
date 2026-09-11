@@ -17,7 +17,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are an assistant for this Home Assistant instance. "
     "Answer questions about the home using the available tools. "
     "Always look up real data with tools instead of guessing. "
-    "Be concise and factual."
+    "Once you got an answer from tool, do not overthink, present information as you found it"
     "Follow instructions precisely, do not do anything extra that wasn't asked"
 )
 
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     ws_connect_timeout: float = 10.0
 
     # LLM backend
-    llm_provider: str = "ollama"  # "ollama" or a litellm provider, e.g. "openai" for llama.cpp
+    llm_provider: str = "ollama"  # "ollama", "llamacpp" (llama-server HTTP API), or any litellm provider
     llm_url: str = Field(
         "http://localhost:11434",
         validation_alias=AliasChoices("LLM_URL", "OLLAMA_URL"),

@@ -38,6 +38,22 @@ def build_llm(settings: Settings) -> BaseChatModel:
 
     from langchain_litellm import ChatLiteLLM  # deferred: heavy import
 
+    if settings.llm_provider == "llamacpp":
+        log.info(
+            "ChatLiteLLM (llamacpp) params: model=%s url=%s temperature=%s seed=%s max_tokens=%s"
+            " — num_ctx/num_gpu/keep_alive/reasoning are server-startup flags, ignored here",
+            settings.llm_model, settings.llm_url, settings.temperature, settings.seed, settings.num_predict,
+        )
+        return ChatLiteLLM(
+            model=f"openai/{settings.llm_model or 'model'}",
+            temperature=settings.temperature,
+            api_key=settings.api_key or "llamacpp",  # dummy; server doesn't authenticate
+            api_base=settings.llm_url,
+            max_tokens=settings.num_predict,
+            streaming=True,
+            model_kwargs={"seed": settings.seed},
+        )
+
     return ChatLiteLLM(
         model=f"{settings.llm_provider}/{settings.llm_model}",
         temperature=settings.temperature,
