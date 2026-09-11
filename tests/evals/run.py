@@ -165,6 +165,8 @@ async def main() -> int:
     parser.add_argument("--save-results", action="store_true", help="Save test results to a file")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show thinking and all tool calls per case; always saves results")
+    parser.add_argument("--case-delay", type=float, default=3.0, metavar="SECONDS",
+                        help="Seconds to sleep between cases (default: 3)")
     args = parser.parse_args()
 
     settings = load_settings()
@@ -227,6 +229,8 @@ async def main() -> int:
         print(f"  {'PASS' if ok else 'FAIL'}  {case['id']}" + (f" — {reason}" if reason else ""))
         if verbose:
             _print_trace(trace)
+        if args.case_delay > 0 and case is not cases[-1]:
+            await asyncio.sleep(args.case_delay)
 
     elapsed = time.monotonic() - t0
     output["score"] = f"{passed}/{run}"
