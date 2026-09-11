@@ -1,12 +1,12 @@
 # Local HA Agent (Ollama)
 
 Chat agent for Home Assistant backed by a local Ollama server (or any cloud model via LiteLLM).
-Runs as a HA add-on with an ingress-based chat UI.
+Runs as a HA App with an ingress-based chat UI.
 
 ## Architecture
 
 ```
-HA Supervisor host (add-on container)
+HA Supervisor host (App container)
   ├─ FastAPI app (app/main.py) — chat UI + /api/chat + /api/health
   ├─ LangGraph ReAct agent (app/agent.py) — tool registry with tier gating
   ├─ Tool registry / tiers (app/tools/) — 8 read tools, tier 1 default
@@ -57,10 +57,10 @@ reliably calls tools instead of answering in prose.
 venv/bin/python -m tests.evals.run
 ```
 
-## Installing as a Local Add-on
+## Installing as a Local App
 
 1. Copy this folder to `/addons/local/local_ha_agent` on your HA host.
-2. In HA: Settings → Add-ons → Add-on Store → ⋮ → Check for updates.
+2. In HA: Settings → Apps → App Store → ⋮ → Check for updates.
 3. Install, then go to Configuration and set at minimum:
    - `llm_url`, `llm_model`, and optionally `api_key` for cloud providers.
 4. Start — ingress opens the chat UI directly in the HA sidebar.

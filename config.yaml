@@ -39,7 +39,7 @@ options:
   keep_alive: -1
   recursion_limit: 15
   max_rows: 50
-  # /data persists across addon restarts; empty string keeps memory in-RAM
+  # /data persists across App restarts; empty string keeps memory in-RAM
   checkpoint_db_path: "/data/checkpoints.sqlite"
   # cap stored history per thread to the last N messages (0 = keep everything)
   max_history_messages: 40

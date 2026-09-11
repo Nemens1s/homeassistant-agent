@@ -14,10 +14,12 @@
 > is the Assist path of record. The `memory` checkpointer is the existing
 > `BoundedMemorySaver`, not a plain `MemorySaver` (Task 1).
 
+> **Revision note (2026-09-11):** audit pass against main. **Task 1 (checkpointer) is LANDED** (commit 00a582a; tests in 8bc0616) — as-built differs from the draft below, corrected inline. Remaining chains unbuilt: T2→T3→T4 (streaming), T5→T6 (Assist component), T8 (/v1 shim removal). Line-number anchors refreshed.
+
 **PREREQUISITE:** iteration 2 is **merged** — `ToolContext.audit`, adapter
 ACTION-tier gate, allowlist `call_service`, and `trigger_automation` are all in
 `main`. (The iteration-2 plan's checkboxes are stale bookkeeping; git history is
-the authority.)
+the authority.) Task 1 (checkpointer) has since merged as well (commit 00a582a).
 
 **Architecture:** The agent core is untouched. A translator module converts `agent.astream(stream_mode="messages")` into a typed event protocol consumed by a new SSE endpoint; the frontend reads it with `fetch` + `ReadableStream`. The Assist path is a separate deliverable: `custom_components/local_ha_agent/` (installed into HA core, not the App) whose conversation entity forwards to the App's existing non-streaming `/api/chat`.
 
@@ -36,7 +38,9 @@ the authority.)
 
 ---
 
-### Task 1: Checkpointer option (memory | sqlite)
+### Task 1: Checkpointer option (memory | sqlite) — ✅ LANDED
+
+> **LANDED on main** (commit 00a582a; tests 8bc0616). Shipped design differs from the draft below — as-built notes inline; the draft steps are kept for history. Key differences: the module is **`app/agent/checkpointer.py`** (not `checkpoint.py`) and the test is **`tests/test_checkpointer.py`** (not `test_checkpoint.py`); there is **no `checkpointer` enum field** — selection toggles on `checkpoint_db_path` alone (empty ⇒ `BoundedMemorySaver`, a path ⇒ `AsyncSqliteSaver`); `langgraph-checkpoint-sqlite==3.1.1` is already pinned in `requirements.txt`; `config.yaml` already carries `checkpoint_db_path` (option and schema); lifespan (`app/main.py:111,115`) and `app/cli.py:86-88` are already wired.
 
 **Files:**
 - Modify: `requirements.txt`, `app/config.py`, `app/main.py`, `app/cli.py`
@@ -46,7 +50,7 @@ the authority.)
 **Interfaces:**
 - Produces: `Settings.checkpointer: str = "memory"` and `Settings.checkpoint_db_path: str = ""`; `open_checkpointer(settings)` — an async context manager yielding a **`BoundedMemorySaver`** (default — the existing LRU saver from `app/agent/memory.py`, matching `build_agent`'s current default) or `AsyncSqliteSaver` (when `checkpointer=="sqlite"` and a path is set); `build_agent(settings, ctx, checkpointer=...)` already accepts the result. `main.py` lifespan and `cli.py` wrap agent construction in it.
 
-- [ ] **Step 1: Add dependency and failing tests**
+- [x] **Step 1: Add dependency and failing tests**
 
 Append `langgraph-checkpoint-sqlite==3.1.0` to `requirements.txt`; `venv/bin/pip install -r requirements.txt`.
 
@@ -85,9 +89,9 @@ async def test_sqlite_without_path_falls_back_to_memory():
 ```
 If `aput`'s checkpoint dict shape is rejected by the installed version, use the library's own `langgraph.checkpoint.base.empty_checkpoint()` helper instead — adjust the test, not the module.
 
-- [ ] **Step 2: Run to verify failure** — `ImportError: app.agent.checkpoint`.
+- [x] **Step 2: Run to verify failure** — `ImportError: app.agent.checkpoint`.
 
-- [ ] **Step 3: Implement `app/agent/checkpoint.py`**
+- [x] **Step 3: Implement `app/agent/checkpoint.py`**
 
 ```python
 """Checkpointer selection: bounded in-memory (default) or SQLite under /data so
@@ -118,7 +122,7 @@ LRU thread eviction and only the sqlite path changes behavior.
 
 `app/config.py`: add `checkpointer: str = "memory"` and `checkpoint_db_path: str = ""` under "Agent behavior" (near `recursion_limit`/`audit_db_path`; verify current line numbers — the file has drifted since the draft).
 
-`app/main.py`: inside the current lifespan (it builds `rest`, `audit`, `ws`, the `agent`, then `fast_path` — see `app/main.py:94-121`), wrap agent + fast-path construction so the sqlite connection lives for the app's whole lifetime:
+`app/main.py`: inside the current lifespan (it builds `rest`, `audit`, `ws`, the `agent`, then `fast_path` — see `app/main.py:95-123`), wrap agent + fast-path construction so the sqlite connection lives for the app's whole lifetime:
 ```python
             ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
             app.state.settings = cfg
@@ -135,9 +139,9 @@ LRU thread eviction and only the sqlite path changes behavior.
 ```
 The `async with` must enclose the `yield`; keep the existing outer try/finally teardown. `app/cli.py`: wrap the REPL body equivalently.
 
-- [ ] **Step 4: Verify** — `venv/bin/python -m pytest tests/test_checkpoint.py -v`, then full suite (main/cli lifespan tests must still pass).
+- [x] **Step 4: Verify** — `venv/bin/python -m pytest tests/test_checkpoint.py -v`, then full suite (main/cli lifespan tests must still pass).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add requirements.txt app/config.py app/agent/checkpoint.py app/main.py app/cli.py tests/test_checkpoint.py
@@ -389,7 +393,7 @@ def test_chat_stream_recursion_limit_is_error_event():
             headers={"Cache-Control": "no-cache"},
         )
 ```
-Imports: `json`, `AsyncIterator` from `collections.abc`, `StreamingResponse` from `fastapi.responses`, `stream_events` from `app.agent.streaming`. The fast-path mirrors `/api/chat` (`app/main.py:127-131`).
+Imports: `json`, `AsyncIterator` from `collections.abc`, `StreamingResponse` from `fastapi.responses`, `stream_events` from `app.agent.streaming`. The fast-path mirrors `/api/chat` (`app/main.py:129-133`); it is built at `app/main.py:116-120`.
 
 - [ ] **Step 4: Verify** — `venv/bin/python -m pytest tests/test_main.py -v`, full suite green.
 
@@ -756,9 +760,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:** none new — documentation, packaging, and verification.
 
-- [ ] **Step 1a: App packaging** — add `checkpointer` (`list(memory|sqlite)`, default `memory`) and `checkpoint_db_path` (`str`) to the `config.yaml` **options** *and* **schema** blocks (so they render in the App UI), mirroring the existing entries. In `run.sh`, export `CHECKPOINTER` and `CHECKPOINT_DB_PATH=/data/conversations.db` (default when `checkpointer: sqlite`) alongside the existing `AUDIT_DB_PATH=/data/audit.db` line, so persistence lands on the App's `/data` volume. Bump `config.yaml` `version` to `"0.4.0"`.
+- [ ] **Step 1a: App packaging** — persistence packaging is **already in place**: the `checkpoint_db_path` option is already present in `config.yaml` (option line 43 `/data/checkpoints.sqlite`, schema line 72 `str?`), and `run.sh` delivers config via `config.yaml` options (written to `/data/options.json`), not env exports — so there is nothing to add here for persistence. There is **no `checkpointer` enum**; selection toggles on `checkpoint_db_path` alone (empty ⇒ `BoundedMemorySaver`, a path ⇒ `AsyncSqliteSaver`). The only remaining packaging work in this step is to bump `config.yaml` `version` to `"0.4.0"` (currently `0.3.0`).
 
-- [ ] **Step 1b: README** — use **App** terminology throughout (note HA 2026.2 renamed Add-ons → Apps). Add an "Assist integration" section: install the companion component by copying `custom_components/local_ha_agent/` into HA's `config/custom_components/` (or add the repo as a HACS custom repository), restart HA, add the integration, set the App base URL, then select "Local HA Agent" as the conversation agent in a voice assistant pipeline. Include the security sentence (component→App hop is unauthenticated, LAN trust domain). Add the "Assist wants a fast model" note (90 s component timeout; long questions belong in the chat UI/REPL). Add a "Streaming & persistence" paragraph: `checkpointer: sqlite`, `/data/conversations.db`, the SSE endpoint. Add a **"Standalone (non-App) deployment"** subsection: run the same image as a plain Docker container (configured via `.env`, e.g. on the Ollama box), reachable over the LAN, and point the component's base URL at that host — a co-location/perf option (Needle already runs as a `remote` backend, so it is not the driver).
+- [ ] **Step 1b: README** — use **App** terminology throughout (note HA 2026.2 renamed Add-ons → Apps). Add an "Assist integration" section: install the companion component by copying `custom_components/local_ha_agent/` into HA's `config/custom_components/` (or add the repo as a HACS custom repository), restart HA, add the integration, set the App base URL, then select "Local HA Agent" as the conversation agent in a voice assistant pipeline. Include the security sentence (component→App hop is unauthenticated, LAN trust domain). Add the "Assist wants a fast model" note (90 s component timeout; long questions belong in the chat UI/REPL). Add a "Streaming & persistence" paragraph: set `checkpoint_db_path` (e.g. `/data/checkpoints.sqlite`) to enable the SQLite checkpointer (empty ⇒ in-memory default), and the SSE endpoint. Add a **"Standalone (non-App) deployment"** subsection: run the same image as a plain Docker container (configured via `.env`, e.g. on the Ollama box), reachable over the LAN, and point the component's base URL at that host — a co-location/perf option (Needle already runs as a `remote` backend, so it is not the driver).
 
 - [ ] **Step 2: Full suite + factory smoke**
 
@@ -771,7 +775,7 @@ venv/bin/python -c "from app.main import create_app; create_app; print('factory 
 
 1. App rebuilt and started; `/api/health` ok.
 2. Chat UI streams tokens; tool indicator appears; >60 s generation survives.
-3. `checkpointer: sqlite` set → restart App → follow-up question retains context.
+3. `checkpoint_db_path` set (SQLite checkpointer) → restart App → follow-up question retains context.
 4. Component installed in HA; config flow completes; Assist text chat answers via the agent; follow-up in the same Assist conversation shares context.
 5. Needle fast-path: an `automation.ai_*` phrase triggers the automation via Assist (and via `/api/chat/stream`) without invoking the LLM.
 6. App stopped → Assist replies with the spoken-friendly error, no traceback in HA logs.
@@ -820,7 +824,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ## Self-Review Notes (already applied)
 
-- **Spec coverage:** checkpointer option (T1, `BoundedMemorySaver` default), SSE protocol + translator (T2), endpoint incl. Needle fast-path (T3), UI incl. markdown-lite/thread/new-conversation/tool indicators (T4), component scaffold + HA-free client (T5), conversation entity + config flow + error shaping (T6), App packaging (checkpointer options + run.sh) + install docs + latency note + standalone fallback + e2e checklist incl. >60 s SSE and restart-persistence (T7), OpenAI-compat shim removal (T8). Security note from the spec (unauthenticated component→App hop) lands in the README section (T7 Step 1b — include the sentence).
+- **Spec coverage:** checkpointer option (T1, LANDED — `checkpoint_db_path` toggle, `BoundedMemorySaver` default), SSE protocol + translator (T2), endpoint incl. Needle fast-path (T3), UI incl. markdown-lite/thread/new-conversation/tool indicators (T4), component scaffold + HA-free client (T5), conversation entity + config flow + error shaping (T6), App packaging (checkpointer options + run.sh) + install docs + latency note + standalone fallback + e2e checklist incl. >60 s SSE and restart-persistence (T7), OpenAI-compat shim removal (T8). Security note from the spec (unauthenticated component→App hop) lands in the README section (T7 Step 1b — include the sentence).
 - **Type consistency:** event dict shapes identical in T2 implementation, T2 tests, T3 tests, and T4 frontend handling; `ChatRequest` reused by both endpoints; `AgentApiClient.chat(text, conversation_id)` identical in T5 tests and T6 entity.
 - **Known API risks, fallbacks stated inline:** checkpoint dict shape (T1: use `empty_checkpoint()`), HA conversation/config-flow surface (T6: verify against installed harness, record adjustments), harness-on-py3.14 (T6 Step 2/3 fallback), `FakeAgent` duck-typing for astream (T2/T3 tests own their fakes).
-- **Ordering:** T2→T3→T4 form the streaming chain; T5→T6 the component chain (independent of streaming); T1 first because main.py's lifespan changes twice otherwise. T8 (shim removal) is independent but shares `app/main.py` with T1/T3 — doing it first keeps `main.py` smaller for those edits.
+- **Ordering:** T1 is complete. Remaining: T2→T3→T4 form the streaming chain; T5→T6 the component chain (independent of streaming). T8 (shim removal) is independent but shares `app/main.py` with T3 — doing it first keeps `main.py` smaller for those edits.

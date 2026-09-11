@@ -1,7 +1,7 @@
 # Local HA Agent — Iteration 3 Design Spec (Assist, Streaming, UI)
 
 **Date:** 2026-07-13 (revised 2026-09-02)
-**Status:** Approved design, pre-implementation
+**Status:** Approved design; **Task 1 (checkpointer) merged**, remainder pre-implementation
 **Builds on:** iteration 1 (merged) and iteration 2 (**merged** — control +
 audit: `ToolContext.audit`, ACTION-tier gate, allowlist `call_service`,
 `trigger_automation`; spec `2026-07-13-local-ha-agent-iteration-2-design.md`)
@@ -14,6 +14,11 @@ audit: `ToolContext.audit`, ACTION-tier gate, allowlist `call_service`,
 > `/v1` shim** used to test the voice pipeline against HA's built-in OpenAI
 > Conversation integration. The shim is being **removed** — the custom
 > `ConversationEntity` below + `/api/chat` is the Assist path of record.
+
+> **Revision note (2026-09-11):** audit pass against main. Component 4
+> (persistent memory) is **implemented and merged** (commit 00a582a) —
+> corrected below to as-built. The other components (Assist component, SSE
+> streaming, chat UI) remain pre-implementation.
 
 ## Overview
 
@@ -136,15 +141,18 @@ Still a single static page, no build step:
 - Errors surface inline in the chat (from `error` events / non-200s).
 - Relative paths throughout (ingress prefix), as today.
 
-## Component 4: Optional persistent memory
+## Component 4: Optional persistent memory (LANDED — commit 00a582a)
 
-- `checkpointer: "memory" | "sqlite"` App option (default `memory`). Note
-  `memory` is the existing **`BoundedMemorySaver`** (LRU thread eviction, in
-  `app/agent/memory.py`) — the current `build_agent` default — not a plain
-  `MemorySaver`; the sqlite option is the only behavioral change.
-- `sqlite` uses langgraph's `SqliteSaver` (async variant) writing to
-  `/data/conversations.db` (survives App restarts; `/data` is the App's
-  persistent volume). Dev CLI uses a local path from settings.
+- Selection toggles on the **`checkpoint_db_path`** `Settings` field, not a
+  `checkpointer` enum. Empty (the default) ⇒ the existing
+  **`BoundedMemorySaver`** (LRU thread eviction, in `app/agent/memory.py`) —
+  the `build_agent` default — not a plain `MemorySaver`. A non-empty path is
+  the only behavioral change.
+- A non-empty `checkpoint_db_path` selects langgraph's **`AsyncSqliteSaver`**
+  (wired in `app/agent/checkpointer.py` via `open_checkpointer`), writing to
+  that path (survives App restarts; `/data` is the App's persistent volume).
+  The sqlite default path in `config.yaml` is **`/data/checkpoints.sqlite`**.
+  Dev CLI uses a local path from settings.
 - Trimming middleware already bounds what reaches the model, so an
   ever-growing store is a disk concern, not a context concern; the spec
   accepts unbounded growth for now and documents where the file lives.
@@ -183,7 +191,7 @@ Still a single static page, no build step:
   Assist conversation shares context.
 - Chat UI shows tokens as they generate and a tool-activity indicator;
   a >60 s generation completes without proxy/keep-alive termination.
-- `checkpointer: sqlite` survives an App restart with conversation
-  context intact.
+- With `checkpoint_db_path` set (SQLite checkpointer), conversation context
+  survives an App restart intact.
 - Iterations 1–2 behavior unchanged when the component isn't installed and
   the UI is the old one (endpoints are additive).
