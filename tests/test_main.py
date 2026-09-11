@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
@@ -150,6 +152,46 @@ def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):
     with TestClient(app):
         pass
     assert isinstance(captured["checkpointer"], AsyncSqliteSaver)
+
+
+def _parse_sse(text):
+    return [json.loads(line[len("data: "):])
+            for line in text.splitlines() if line.startswith("data: ")]
+
+
+class FakeStreamAgent:
+    async def astream(self, payload, config=None, stream_mode=None):
+        from langchain_core.messages import AIMessageChunk
+        yield AIMessageChunk(content="hel"), {}
+        yield AIMessageChunk(content="lo"), {}
+
+
+def test_chat_stream_emits_protocol_events():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        client.app.state.agent = FakeStreamAgent()
+        resp = client.post("/api/chat/stream", json={"message": "hi"})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    events = _parse_sse(resp.text)
+    assert events[0] == {"type": "token", "text": "hel"}
+    assert events[-1] == {"type": "done", "reply": "hello"}
+
+
+def test_chat_stream_recursion_limit_is_error_event():
+    from langgraph.errors import GraphRecursionError
+
+    class Exploding:
+        async def astream(self, payload, config=None, stream_mode=None):
+            raise GraphRecursionError("limit")
+            yield  # pragma: no cover — makes this an async generator
+
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        client.app.state.agent = Exploding()
+        resp = client.post("/api/chat/stream", json={"message": "hi"})
+    events = _parse_sse(resp.text)
+    assert events[-1]["type"] == "error"
 
 
 async def test_lifespan_teardown_survives_rest_close_failure():

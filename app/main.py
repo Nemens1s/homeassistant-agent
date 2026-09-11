@@ -4,9 +4,11 @@ config-injected and testable (no import-time singletons)."""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,11 +16,13 @@ _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 import httpx
 from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import StreamingResponse
 from langgraph.errors import GraphRecursionError
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
+from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.needle.factory import build_fast_path_router
@@ -144,6 +148,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return ChatResponse(
                 reply=f"I stopped after {app.state.settings.recursion_limit} tool steps without reaching an answer. Try a more specific question."
             )
+
+    @app.post("/api/chat/stream")
+    async def chat_stream(req: ChatRequest) -> StreamingResponse:
+        def _sse(event: dict) -> str:
+            return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+
+        async def sse() -> AsyncIterator[str]:
+            # Mirror /api/chat: try the Needle fast-path first. A hit means no
+            # LLM ran, so there is nothing to stream — emit token + done.
+            router = getattr(app.state, "fast_path", None)
+            if router is not None:
+                reply = await router.try_fast_path(req.message, req.thread_id)
+                if reply is not None:
+                    yield _sse({"type": "token", "text": reply})
+                    yield _sse({"type": "done", "reply": reply})
+                    return
+            async for event in stream_events(
+                app.state.agent,
+                req.message,
+                req.thread_id,
+                app.state.settings.recursion_limit,
+            ):
+                yield _sse(event)
+
+        return StreamingResponse(
+            sse(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     @app.get("/api/health")
     async def health() -> dict:
