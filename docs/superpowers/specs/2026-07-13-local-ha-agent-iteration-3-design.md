@@ -195,3 +195,16 @@ Still a single static page, no build step:
   survives an App restart intact.
 - Iterations 1–2 behavior unchanged when the component isn't installed and
   the UI is the old one (endpoints are additive).
+
+## Implementation deviations (2026-09-11)
+
+- `supported_languages` had to be a concrete property on the
+  `ConversationEntity`; the `_attr_supported_languages = MATCH_ALL` shortcut
+  does not satisfy HA 2026.7.2's abstract property.
+- The HA end-to-end test (`conversation.async_converse` + `block_till_done`)
+  hangs under the Python 3.14 harness, so the entity test drives
+  `async_process` directly against real HA classes and is guarded by
+  `pytest.importorskip("homeassistant")` (skipped in the working venv).
+- `requirements.txt` fixed en route: the `httpx2`→`httpx` typo and
+  `websockets==17.0.1`→`>=15,<17` (the `==17` pin was unresolvable against
+  langgraph-sdk).

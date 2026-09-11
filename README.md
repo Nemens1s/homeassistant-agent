@@ -81,6 +81,45 @@ venv/bin/python -m tests.evals.run
 
 Setting `max_tier: 2` unlocks the `control_entity` and `trigger_automation` tools, letting the agent turn lights on/off, toggle switches, and fire automations. The `allowed_domains` list is the hard boundary — the REST client refuses writes to any domain not in it, so removing `automation` from the list disables that capability entirely. All tier-2 actions are logged to `/data/audit.db` (SQLite, append-only) so you have a durable record of what the agent changed.
 
+## Assist integration
+
+The agent can act as a conversation agent inside Home Assistant's Assist voice
+pipelines via a companion custom component.
+
+### Install the companion component
+
+1. Copy `custom_components/local_ha_agent/` into HA's `config/custom_components/`
+   (or add this repo as a HACS custom repository), then restart HA.
+2. In HA: Settings → Devices & Services → Add Integration → **Local HA Agent**.
+   Set the App base URL (default `http://local-ha-agent:8099`).
+3. In a voice assistant pipeline (Settings → Voice assistants), select
+   **Local HA Agent** as the conversation agent.
+
+**Security note:** the component→App hop is unauthenticated and assumes both sit
+in the same LAN trust domain; if the App port is ever published beyond the host,
+put an API token in front of it first.
+
+### Assist wants a fast model
+
+The component uses a 90 s HTTP timeout, and Assist pipelines favor fast
+responses (e.g. a small model on GPU) — a slow answer stalls the whole voice
+turn. Long-running questions belong in the chat UI or the REPL, not Assist.
+
+### Streaming & persistence
+
+The chat UI streams over Server-Sent Events from `POST /api/chat/stream`. Set
+`checkpoint_db_path` (e.g. `/data/checkpoints.sqlite`) to persist conversations
+across App restarts via SQLite; leave it empty to keep the in-memory default,
+which is reset whenever the App restarts.
+
+### Standalone (non-App) deployment
+
+The same image also runs as a plain Docker container configured via `.env`
+instead of the App options — for example on the Ollama box, reachable over the
+LAN. Point the component's base URL at that host. This is a co-location and
+performance option (Needle already runs as a `remote` backend, so it is not the
+driver), not a requirement.
+
 ## Iteration Roadmap
 
 - **Iteration 2:** Control tools (`call_service`, `control_entity`) behind `max_tier=2` + `allowed_domains` enforcement.

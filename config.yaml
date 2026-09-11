@@ -1,5 +1,5 @@
 name: "Local HA Agent (Ollama)"
-version: "0.3.0"
+version: "0.4.0"
 slug: local_ha_agent
 description: "Chat agent over Home Assistant state, powered by a local Ollama server (cloud models optional via LiteLLM)"
 url: "https://github.com/yourname/homeassistant-ollama-agent"
