@@ -1,5 +1,5 @@
 name: "Local HA Agent (Ollama)"
-version: "0.3.0"
+version: "0.4.0"
 slug: local_ha_agent
 description: "Chat agent over Home Assistant state, powered by a local Ollama server (cloud models optional via LiteLLM)"
 url: "https://github.com/yourname/homeassistant-ollama-agent"
@@ -39,7 +39,7 @@ options:
   keep_alive: -1
   recursion_limit: 15
   max_rows: 50
-  # /data persists across addon restarts; empty string keeps memory in-RAM
+  # /data persists across App restarts; empty string keeps memory in-RAM
   checkpoint_db_path: "/data/checkpoints.sqlite"
   # cap stored history per thread to the last N messages (0 = keep everything)
   max_history_messages: 40

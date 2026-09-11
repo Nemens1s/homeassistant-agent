@@ -2,64 +2,323 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>HA Local Agent</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; }
-  #log { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; height: 60vh; overflow-y: auto; }
-  .msg { margin: 0.5rem 0; white-space: pre-wrap; }
-  .user { font-weight: bold; }
-  .bot { color: #222; }
-  #row { display: flex; gap: 0.5rem; margin-top: 1rem; }
-  #input { flex: 1; padding: 0.5rem; font-size: 1rem; }
-  button { padding: 0.5rem 1rem; }
+  :root {
+    --bg: #fafafa;
+    --panel: #fff;
+    --border: #ccc;
+    --user: #1a1a1a;
+    --bot: #222;
+    --activity: #666;
+    --error: #b00020;
+    --code-bg: #f0f0f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--bot);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header h2 { margin: 0; font-size: 1.1rem; }
+  header small { color: var(--activity); font-weight: normal; }
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .turn { margin: 0 0 1rem 0; }
+  .role { font-weight: bold; margin-bottom: 0.2rem; }
+  .role.user { color: var(--user); }
+  .bubble { white-space: pre-wrap; word-wrap: break-word; }
+  .bubble.rendered { white-space: normal; }
+  .bubble.error { color: var(--error); }
+  .activity {
+    font-size: 0.85rem;
+    color: var(--activity);
+    margin: 0.15rem 0;
+  }
+  .activity.err { color: var(--error); }
+  .bubble code {
+    background: var(--code-bg);
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.9em;
+  }
+  .bubble pre {
+    background: var(--code-bg);
+    padding: 0.6rem 0.8rem;
+    border-radius: 6px;
+    overflow-x: auto;
+  }
+  .bubble pre code { background: none; padding: 0; }
+  .bubble ul { margin: 0.3rem 0; padding-left: 1.4rem; }
+  form {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  #input { flex: 1; padding: 0.55rem; font-size: 1rem; }
+  button { padding: 0.55rem 1rem; font-size: 1rem; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
 </style>
 </head>
 <body>
-  <h2>Home Assistant Agent <small>(read-only)</small></h2>
-  <div id="log"></div>
-  <div id="row">
-    <input id="input" placeholder="Ask about your home..." autofocus />
-    <button id="send">Send</button>
-  </div>
+  <header>
+    <h2>Home Assistant Agent <small>local agent</small></h2>
+  </header>
+  <main id="log"></main>
+  <form id="row">
+    <input id="input" placeholder="Ask about your home..." autocomplete="off" autofocus />
+    <button id="send" type="submit">Send</button>
+    <button id="reset" type="button">New conversation</button>
+  </form>
 
 <script>
 const log = document.getElementById('log');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
+const resetBtn = document.getElementById('reset');
+const form = document.getElementById('row');
 
-function addMsg(role, text) {
-  const div = document.createElement('div');
-  div.className = 'msg ' + role;
-  div.textContent = (role === 'user' ? 'You: ' : 'Agent: ') + text;
-  log.appendChild(div);
+// Thread id persists across page reloads within the browser session.
+let threadId = sessionStorage.getItem('thread');
+if (!threadId) {
+  threadId = crypto.randomUUID();
+  sessionStorage.setItem('thread', threadId);
+}
+
+// --- Markdown-lite renderer -------------------------------------------------
+// Escape HTML first, then render (in order): fenced code blocks, inline code,
+// bold, and simple bullet lists. Nothing else.
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderMarkdown(text) {
+  let out = escapeHtml(text);
+
+  // Fenced code blocks: ```...```
+  out = out.replace(/```([\s\S]*?)```/g, function (match, code) {
+    return '<pre><code>' + code.replace(/^\n/, '') + '</code></pre>';
+  });
+
+  // Inline code: `...`
+  out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+  // Bold: **...**
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Bullet lists: consecutive lines starting with "- "
+  const lines = out.split('\n');
+  const result = [];
+  let inList = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^- /.test(line)) {
+      if (!inList) {
+        result.push('<ul>');
+        inList = true;
+      }
+      result.push('<li>' + line.slice(2) + '</li>');
+    } else {
+      if (inList) {
+        result.push('</ul>');
+        inList = false;
+      }
+      result.push(line);
+    }
+  }
+  if (inList) {
+    result.push('</ul>');
+  }
+  return result.join('\n');
+}
+
+// --- Message rendering ------------------------------------------------------
+function addTurn(role, labelText) {
+  const turn = document.createElement('div');
+  turn.className = 'turn';
+  const label = document.createElement('div');
+  label.className = 'role ' + role;
+  label.textContent = labelText;
+  turn.appendChild(label);
+  log.appendChild(turn);
   log.scrollTop = log.scrollHeight;
-  return div;
+  return turn;
+}
+
+function addUserMsg(text) {
+  const turn = addTurn('user', 'You');
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  turn.appendChild(bubble);
+  log.scrollTop = log.scrollHeight;
+}
+
+function scrollDown() {
+  log.scrollTop = log.scrollHeight;
+}
+
+// --- Send / stream ----------------------------------------------------------
+let streaming = false;
+
+function setStreaming(on) {
+  streaming = on;
+  sendBtn.disabled = on;
+  input.disabled = on;
 }
 
 async function sendMessage() {
   const text = input.value.trim();
-  if (!text) return;
-  addMsg('user', text);
+  if (!text || streaming) return;
+  addUserMsg(text);
   input.value = '';
-  const pending = addMsg('bot', '…');
+  setStreaming(true);
+
+  // The assistant turn: activity lines (tool calls) sit above the bubble.
+  const turn = addTurn('bot', 'Agent');
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  turn.appendChild(bubble);
+
+  // Track activity lines per tool name so results can update them.
+  const activities = {};
+  let assistantText = '';
+
+  function ensureActivity(name) {
+    if (!activities[name]) {
+      const line = document.createElement('div');
+      line.className = 'activity';
+      line.textContent = '🔍 ' + name;
+      turn.insertBefore(line, bubble);
+      activities[name] = line;
+    }
+    return activities[name];
+  }
+
+  function showError(message) {
+    bubble.className = 'bubble error';
+    bubble.textContent = message;
+    scrollDown();
+  }
 
   try {
     // Relative path (no leading slash) — required to work correctly
     // behind Home Assistant's ingress path prefix.
-    const res = await fetch('api/chat', {
+    const resp = await fetch('api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, thread_id: threadId }),
     });
-    const data = await res.json();
-    pending.textContent = 'Agent: ' + data.reply;
+
+    if (!resp.ok || !resp.body) {
+      showError('(error) HTTP ' + resp.status);
+      setStreaming(false);
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let done = false;
+
+    while (!done) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      // SSE frames are separated by a blank line. Keep the trailing
+      // incomplete segment in the buffer across reads.
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop();
+
+      for (let i = 0; i < frames.length; i++) {
+        const frame = frames[i].trim();
+        if (!frame.startsWith('data:')) continue;
+        const payload = frame.slice(frame.indexOf('data:') + 5).trim();
+        if (!payload) continue;
+
+        let evt;
+        try {
+          evt = JSON.parse(payload);
+        } catch (parseErr) {
+          continue;
+        }
+
+        if (evt.type === 'token') {
+          assistantText += evt.text;
+          bubble.textContent = assistantText;
+          scrollDown();
+        } else if (evt.type === 'tool_call') {
+          ensureActivity(evt.name);
+          scrollDown();
+        } else if (evt.type === 'tool_result') {
+          if (evt.status === 'error') {
+            const line = ensureActivity(evt.name);
+            line.className = 'activity err';
+            line.textContent = '⚠️ ' + evt.name;
+          }
+        } else if (evt.type === 'done') {
+          const finalText = (evt.reply !== undefined && evt.reply !== null)
+            ? evt.reply
+            : assistantText;
+          bubble.className = 'bubble rendered';
+          bubble.innerHTML = renderMarkdown(finalText);
+          scrollDown();
+          done = true;
+          break;
+        } else if (evt.type === 'error') {
+          showError('(error) ' + evt.message);
+          done = true;
+          break;
+        }
+      }
+    }
   } catch (err) {
-    pending.textContent = 'Agent: (error) ' + err;
+    showError('(error) ' + err);
+  } finally {
+    setStreaming(false);
+    input.focus();
   }
 }
 
-sendBtn.addEventListener('click', sendMessage);
-input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+function newConversation() {
+  if (streaming) return;
+  threadId = crypto.randomUUID();
+  sessionStorage.setItem('thread', threadId);
+  log.innerHTML = '';
+  input.focus();
+}
+
+form.addEventListener('submit', function (e) {
+  e.preventDefault();
+  sendMessage();
+});
+resetBtn.addEventListener('click', newConversation);
 </script>
 </body>
 </html>

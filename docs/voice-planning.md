@@ -223,28 +223,32 @@ Other variants noted for reference:
 - Original PyTorch Whisper, whisper-jax, distil-whisper — no Wyoming
   wrappers, no advantage here.
 
-### Conversation agent: dev bridge via OpenAI-compat endpoint
+### Conversation agent: custom `ConversationEntity`
 
-End goal remains a **custom HA `ConversationEntity` integration** (thin
-`custom_components/` package that POSTs to `/api/chat`). Not built yet.
+The Assist conversation agent is a **custom HA `ConversationEntity`
+integration** shipped in `custom_components/local_ha_agent/`. It is
+configured with the App's base URL and forwards already-transcribed text to
+the App's **`/api/chat`** endpoint, returning the reply for HA to speak via
+TTS. This is the path of record — it slots directly into the Assist
+pipeline as the conversation agent, and does **not** use HA's built-in
+OpenAI Conversation integration.
 
-For development: add an **OpenAI-compatible `/v1/chat/completions`
-endpoint** to the agent app's FastAPI. HA's built-in **OpenAI Conversation
-integration** points at it (base URL `http://<dev-machine-ip>:8099/v1`,
-dummy API key, model `local-agent`). This slots directly into the Assist
-pipeline as the conversation agent.
+> **Removed this iteration:** an earlier POC exposed an OpenAI-compatible
+> `/v1/chat/completions` (+ `/v1/models`) shim so HA's built-in **OpenAI
+> Conversation** integration could point at the App for development. That
+> shim has been **removed** — the custom `ConversationEntity` → `/api/chat`
+> is now the only supported wiring. `/api/chat` (and `/api/chat/stream`)
+> are the App's only chat surfaces.
 
-Key design notes for the shim:
-- **Ignore HA's message history** in the request — the agent manages its
-  own context via `MemorySaver` / `thread_id`. Extract only the last user
-  message from the `messages` array and pass to `ask()`.
-- Use a fixed `thread_id="voice"` to separate voice conversations from the
-  UI chat thread (`"default"`).
-- Add a `/v1/models` stub returning `local-agent` — HA may probe it on
-  setup.
-- For dev, the app runs on the MacBook. `ha_client.py` needs `HA_BASE_URL`
-  pointed at HA's actual URL (not `http://supervisor/core`) and a
-  long-lived access token in `SUPERVISOR_TOKEN`.
+Design notes for the component:
+- **Ignore HA's message history** — the agent manages its own context via
+  the checkpointer / `thread_id`. Forward only the current user turn's
+  text to `/api/chat`.
+- Use a distinct `thread_id` for voice to separate voice conversations from
+  the UI chat thread (`"default"`).
+- For dev, the App runs on the MacBook. `HA_BASE_URL` must point at HA's
+  actual URL (not `http://supervisor/core`) with a long-lived access token
+  in `HA_TOKEN` / `SUPERVISOR_TOKEN`.
 
 ### Pipeline assembly
 
@@ -252,7 +256,9 @@ Once all three pieces are running, create an **Assist pipeline** in HA:
 
 Settings → Voice assistants → Add pipeline:
 - **STT:** Wyoming Whisper (ASUS box)
-- **Conversation agent:** OpenAI Conversation (pointing at agent app)
+- **Conversation agent:** the custom `Local HA Agent` `ConversationEntity`
+  (from `custom_components/local_ha_agent/`, configured with the App's base
+  URL → `/api/chat`)
 - **TTS:** Wyoming Piper (ASUS box)
 
 Test with the **phone Companion app** (push-to-talk) before buying any

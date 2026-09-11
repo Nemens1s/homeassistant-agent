@@ -1,0 +1,11 @@
+{
+  "domain": "local_ha_agent",
+  "name": "Local HA Agent",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["conversation"],
+  "documentation": "https://github.com/Nemens1s/homeassistant-ollama-agent",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "0.1.0"
+}

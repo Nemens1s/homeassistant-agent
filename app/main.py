@@ -4,21 +4,23 @@ config-injected and testable (no import-time singletons)."""
 
 from __future__ import annotations
 
+import json
 import logging
-import time
-import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 import httpx
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from langgraph.errors import GraphRecursionError
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
+from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.needle.factory import build_fast_path_router
@@ -43,43 +45,6 @@ async def _teardown(rest, ws, audit=None) -> None:
 
 
 # ---------- models ----------
-"""
-OpenAI models are required for local testing of voice pipeline until this app isn't wired up to the HA
-These can be cleared up later once I get there
-"""
-class OAIMessage(BaseModel):
-    role: str
-    content: str
-
-
-class OAIChatRequest(BaseModel):
-    model: str = "local-agent"
-    messages: list[OAIMessage]
-    temperature: float | None = None
-    max_tokens: int | None = None
-    # HA may send other fields (stream, etc.) — ignored
-
-
-class OAIChoice(BaseModel):
-    index: int = 0
-    message: OAIMessage
-    finish_reason: str = "stop"
-
-
-class OAIUsage(BaseModel):
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-
-
-class OAIChatResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: list[OAIChoice]
-    usage: OAIUsage = OAIUsage()
-
 class ChatRequest(BaseModel):
     message: str
     thread_id: str = "default"
@@ -145,6 +110,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 reply=f"I stopped after {app.state.settings.recursion_limit} tool steps without reaching an answer. Try a more specific question."
             )
 
+    @app.post("/api/chat/stream")
+    async def chat_stream(req: ChatRequest) -> StreamingResponse:
+        def _sse(event: dict) -> str:
+            return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+
+        async def sse() -> AsyncIterator[str]:
+            # Mirror /api/chat: try the Needle fast-path first. A hit means no
+            # LLM ran, so there is nothing to stream — emit token + done.
+            router = getattr(app.state, "fast_path", None)
+            if router is not None:
+                reply = await router.try_fast_path(req.message, req.thread_id)
+                if reply is not None:
+                    yield _sse({"type": "token", "text": reply})
+                    yield _sse({"type": "done", "reply": reply})
+                    return
+            async for event in stream_events(
+                app.state.agent,
+                req.message,
+                req.thread_id,
+                app.state.settings.recursion_limit,
+            ):
+                yield _sse(event)
+
+        return StreamingResponse(
+            sse(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
+
     @app.get("/api/health")
     async def health() -> dict:
         ha_ok = False
@@ -170,90 +164,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "ha": ha_ok,
             "llm": llm_ok,
             "websocket": ws_ok,
-        }
-
-    """
-    These endpoints are only meant for Voice pipeline during testing
-    """
-    @app.post("/v1/chat/completions", response_model=OAIChatResponse)
-    async def openai_chat_completions(req: OAIChatRequest, authorization: str | None = Header(default=None)):
-        # Extract the last user message — the agent manages its own history
-        # and system prompt via MemorySaver, so we ignore HA's conversation
-        # history and system prompt here.
-        user_msg = ""
-        for msg in reversed(req.messages):
-            if msg.role == "user":
-                user_msg = msg.content
-                break
-
-        if not user_msg:
-            raise HTTPException(status_code=400, detail="No user message found")
-
-        # Use a fixed thread_id for voice pipeline; the agent's MemorySaver
-        # handles conversation continuity within a session. For multi-user or
-        # multi-pipeline scenarios, derive thread_id from something else.
-
-        router = getattr(app.state, "fast_path", None)
-        response_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-        if router is not None:
-            reply = await router.try_fast_path(user_msg, thread_id=f"voice-{uuid.uuid4().hex[:8]}")
-            if reply is not None:
-                # return ChatResponse(reply=reply)
-                return OAIChatResponse(
-                    id=response_id,
-                    created=int(time.time()),
-                    model=req.model,
-                    choices=[
-                        OAIChoice(
-                            message=OAIMessage(role="assistant", content=reply),
-                        )
-                    ],
-                )
-        try:
-            reply = await app.state.agent.ainvoke(
-                {"messages": [{"role": "user", "content": user_msg}]},
-                config={
-                    "configurable": {"thread_id": f"voice-{uuid.uuid4().hex[:8]}"},
-                    "recursion_limit": app.state.settings.recursion_limit,
-                },
-            )
-            return OAIChatResponse(
-                id=response_id,
-                created=int(time.time()),
-                model=req.model,
-                choices=[
-                    OAIChoice(
-                        message=OAIMessage(role="assistant", content=reply["messages"][-1].content),
-                    )
-                ],
-            )
-        except GraphRecursionError:
-            return OAIChatResponse(
-                id=response_id,
-                created=int(time.time()),
-                model=req.model,
-                choices=[
-                    OAIChoice(
-                        message=OAIMessage(role="assistant", content=f"I stopped after {app.state.settings.recursion_limit} tool steps without reaching an answer. Try a more specific question."),
-                    )
-                ],
-            )
-
-
-
-    # HA's OpenAI integration may probe /v1/models on setup
-    @app.get("/v1/models")
-    async def list_models():
-        return {
-            "object": "list",
-            "data": [
-                {
-                    "id": "local-agent",
-                    "object": "model",
-                    "created": int(time.time()),
-                    "owned_by": "local",
-                }
-            ],
         }
 
     # Mounted last so /api/* wins. Frontend must use relative fetch paths
