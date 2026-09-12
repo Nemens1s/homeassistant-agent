@@ -1,7 +1,7 @@
 name: "Agent Gosling"
 version: "0.4.0"
 slug: local_ha_agent
-description: "Chat agent over Home Assistant state, powered by a local Ollama server (cloud models optional via LiteLLM)"
+description: "Chat agent over Home Assistant state, powered by a local models (cloud models optional via LiteLLM)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
 arch:
   - amd64
@@ -14,9 +14,9 @@ panel_icon: mdi:robot-outline
 panel_title: "Agent Gosling"
 watchdog: "http://[HOST]:[PORT:8099]/api/health"
 options:
-  llm_provider: "ollama"
-  llm_url: "http://192.168.1.50:11434"
-  llm_model: "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
+  llm_provider: "llamacpp"
+  llm_url: "http://ollama.home:11435"
+  llm_model: "openbmb/MiniCPM5-2B-GGUF:Q4_K_M"
   api_key: ""
   system_prompt: >-
     You are an assistant for this Home Assistant instance.
@@ -45,10 +45,8 @@ options:
   max_history_messages: 40
   enable_tool_subsetting: true
   needle_enabled: false
-  needle_model_path: ""
   needle_confidence_threshold: 0.0
   needle_menu_ttl_s: 60
-  needle_backend: "cactus"
   needle_remote_url: ""
   person_name_map: []
   person_name_exclude: []
@@ -73,11 +71,9 @@ schema:
   max_history_messages: "int(0,10000)"
   enable_tool_subsetting: "bool"
   needle_enabled: "bool"
-  needle_model_path: "str"
   needle_confidence_threshold: "float(0,1)"
   needle_menu_ttl_s: "int(1,3600)"
-  needle_backend: "list(cactus|remote)"
-  needle_remote_url: "str?"
+  needle_remote_url: "str"
   person_name_map:
     - ha_name: str
       name: str
