@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "data": {"base_url": "App base URL"},
-        "description": "URL where the Local HA Agent App API is reachable from Home Assistant."
+        "description": "URL where the Agent Gosling App API is reachable from Home Assistant."
       }
     }
   }

@@ -1,4 +1,4 @@
-"""Local HA Agent: exposes the App's agent as an Assist conversation agent."""
+"""Agent Gosling: exposes the App's agent as an Assist conversation agent."""
 
 # NOTE: the `homeassistant` imports are deferred into the function bodies (and
 # type hints are stringified via `from __future__ import annotations`) so that

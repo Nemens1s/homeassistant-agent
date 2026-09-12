@@ -256,7 +256,7 @@ Once all three pieces are running, create an **Assist pipeline** in HA:
 
 Settings → Voice assistants → Add pipeline:
 - **STT:** Wyoming Whisper (ASUS box)
-- **Conversation agent:** the custom `Local HA Agent` `ConversationEntity`
+- **Conversation agent:** the custom `Agent Gosling` `ConversationEntity`
   (from `custom_components/local_ha_agent/`, configured with the App's base
   URL → `/api/chat`)
 - **TTS:** Wyoming Piper (ASUS box)

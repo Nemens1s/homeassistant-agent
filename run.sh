@@ -4,7 +4,7 @@ export HA_BASE_URL="http://supervisor/core"
 # SUPERVISOR_TOKEN is injected automatically by the Supervisor when
 # homeassistant_api access is granted in config.yaml
 
-bashio::log.info "Starting Local HA Agent..."
+bashio::log.info "Starting Agent Gosling..."
 
 export AUDIT_DB_PATH=/data/audit.db
 

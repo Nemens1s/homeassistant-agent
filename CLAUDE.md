@@ -1,4 +1,4 @@
-# Local HA Agent — project guide
+# Agent Gosling — project guide
 
 Home Assistant add-on: a LangChain agent over HA state, powered by a local
 Ollama server (cloud models optional via LiteLLM). Iteration 1 (read-only)

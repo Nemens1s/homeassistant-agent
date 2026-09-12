@@ -36,11 +36,11 @@ updates and is included in HA backups.
 
 `Dockerfile` starts with `ARG BUILD_FROM` because the HA builder injects the
 per-architecture base image from `build.yaml`. Building outside HA you must
-supply it yourself — this is why a bare `docker build -t ollama-agent .`
+supply it yourself — this is why a bare `docker build -t ha-agent .`
 fails with "base name ($BUILD_FROM) should not be blank":
 
 ```bash
-docker build -t ollama-agent \
+docker build -t ha-agent \
   --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.19 .
 ```
 
@@ -58,7 +58,7 @@ docker run --rm -p 8099:8099 \
   -e SUPERVISOR_TOKEN=<long-lived-access-token> \
   -e LLM_URL=http://<laptop-ip>:11434 \
   -e LLM_MODEL=qwen3.5:4b \
-  --entrypoint sh ollama-agent \
+  --entrypoint sh ha-agent \
   -c "cd /app && uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8099"
 ```
 

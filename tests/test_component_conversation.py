@@ -36,8 +36,8 @@ from homeassistant.components import conversation  # noqa: E402
 from homeassistant.core import Context  # noqa: E402
 from homeassistant.helpers import intent  # noqa: E402
 
-from custom_components.local_ha_agent.client import AgentApiError  # noqa: E402
-from custom_components.local_ha_agent.conversation import (  # noqa: E402
+from custom_components.agent_gosling.client import AgentApiError  # noqa: E402
+from custom_components.agent_gosling.conversation import (  # noqa: E402
     LocalAgentConversationEntity,
 )
 
@@ -70,7 +70,7 @@ def _make_input(text, conversation_id):
         device_id=None,
         satellite_id=None,
         language="en",
-        agent_id="conversation.local_ha_agent",
+        agent_id="conversation.agent_gosling",
     )
 
 

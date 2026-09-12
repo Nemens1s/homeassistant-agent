@@ -2,7 +2,7 @@ import aiohttp
 import pytest
 from aiohttp import web
 
-from custom_components.local_ha_agent.client import AgentApiClient, AgentApiError
+from custom_components.agent_gosling.client import AgentApiClient, AgentApiError
 
 
 @pytest.fixture
