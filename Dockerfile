@@ -1,11 +1,15 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+ARG BUILD_ARCH=amd64
+FROM ghcr.io/home-assistant/${BUILD_ARCH}-base:3.19
 
 RUN apk add --no-cache python3 py3-pip
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+# sqlite-vec (pulled by langgraph-checkpoint-sqlite) has no musllinux wheel,
+# so it must compile from source — provide build tools and remove them after.
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev python3-dev \
+    && pip3 install --no-cache-dir --break-system-packages -r requirements.txt \
+    && apk del .build-deps
 
 COPY app ./app
 COPY frontend ./frontend
