@@ -5,6 +5,19 @@ const resetBtn = document.getElementById('reset');
 const form = document.getElementById('row');
 const thinkingToggle = document.getElementById('thinking-toggle');
 
+const LOADING_WORDS = [
+  'Cogitating', 'Reticulating', 'Percolating', 'Discombobulating',
+  'Noodling', 'Ruminating', 'Simmering', 'Crystallizing',
+  'Concocting', 'Bootstrapping', 'Cerebrating', 'Marinating',
+  'Flibbertigibbeting', 'Recombobulating', 'Spelunking', 'Wrangling',
+  'Transmuting', 'Orchestrating', 'Beaming', 'Fermenting',
+  'Kneading', 'Musing', 'Gallivanting', 'Lollygagging', 'Shenaniganing',
+];
+
+function randomLoadingWord() {
+  return LOADING_WORDS[Math.floor(Math.random() * LOADING_WORDS.length)] + '…';
+}
+
 thinkingToggle.addEventListener('click', function () {
   document.body.classList.toggle('show-thinking');
   thinkingToggle.classList.toggle('active');
@@ -156,11 +169,21 @@ async function sendMessage() {
   bubble.className = 'bubble';
   turn.appendChild(bubble);
 
+  bubble.textContent = randomLoadingWord();
+
   // Track activity lines per tool name so results can update them.
   const activities = {};
   let assistantText = '';
   let thinkingText = '';
   let thinkingDiv = null;
+  let placeholderActive = true;
+
+  function clearPlaceholder() {
+    if (placeholderActive) {
+      bubble.textContent = '';
+      placeholderActive = false;
+    }
+  }
 
   function ensureActivity(name) {
     if (!activities[name]) {
@@ -223,6 +246,7 @@ async function sendMessage() {
         }
 
         if (evt.type === 'thinking') {
+          clearPlaceholder();
           if (!thinkingDiv) {
             thinkingDiv = document.createElement('div');
             thinkingDiv.className = 'thinking';
@@ -232,10 +256,12 @@ async function sendMessage() {
           thinkingDiv.textContent = thinkingText;
           scrollDown();
         } else if (evt.type === 'token') {
+          clearPlaceholder();
           assistantText += evt.text;
           bubble.textContent = assistantText;
           scrollDown();
         } else if (evt.type === 'tool_call') {
+          clearPlaceholder();
           ensureActivity(evt.name);
           scrollDown();
         } else if (evt.type === 'tool_result') {
@@ -245,9 +271,12 @@ async function sendMessage() {
             line.textContent = '⚠️ ' + evt.name;
           }
         } else if (evt.type === 'done') {
-          const finalText = (evt.reply !== undefined && evt.reply !== null)
+          let finalText = (evt.reply !== undefined && evt.reply !== null)
             ? evt.reply
             : assistantText;
+          if (!finalText.trim()) {
+            finalText = 'The agent stopped without producing a response. Try rephrasing your question.';
+          }
           bubble.className = 'bubble rendered';
           bubble.innerHTML = renderMarkdown(finalText);
           saveEntry('bot', finalText);
