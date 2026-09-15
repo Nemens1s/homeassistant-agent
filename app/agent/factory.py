@@ -42,8 +42,8 @@ _TOOL_ROUTING = (
     "- The entities/sensors of ONE named device → list_entities(device=). "
     "Filtered fleets ('which lights are on') → list_entities with domain/state.\n"
     "- Battery questions → get_battery_status (already covers every device; no search first).\n"
-    "- 'What happened' / 'did X run' across the house → get_logbook; the state trend "
-    "of ONE entity over time → get_history.\n"
+    "- 'What happened' / 'did automation X fire' across the house → get_activity; "
+    "'did device X run?' / state timeline of ONE entity over time → get_history.\n"
     "- Automations (enabled? triggers? config?) → get_automations; diagnosing why "
     "one failed → load_skill."
 )

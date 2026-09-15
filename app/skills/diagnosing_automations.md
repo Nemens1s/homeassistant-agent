@@ -10,7 +10,7 @@ description: Playbook for finding out why an automation did not fire or misbehav
 2. Fetch the config (same call) and identify the trigger entities and conditions.
 3. Call `get_history` on each trigger entity over the window when the automation
    should have fired. Did the trigger condition actually occur?
-4. Call `get_logbook` around the expected time — did the automation appear
+4. Call `get_activity` around the expected time — did the automation appear
    (fired but wrong action) or is it absent (never triggered)?
 5. Call `get_error_log` and look for the automation's name or template errors.
 

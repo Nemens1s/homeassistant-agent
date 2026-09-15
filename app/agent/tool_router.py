@@ -50,11 +50,11 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
     "get_history": (
         "history", "trend", "over time", "time series", "timeseries", "graph", "chart",
         "past ", "yesterday", "last week", "last hour", "last 24", "last 7", "last 30",
-        "last month", "over the",
+        "last month", "over the", "did ", " ran", "when did", "last time",
     ),
-    "get_logbook": (
+    "get_activity": (
         "logbook", "happened", "what happened", "event", "activity", "occurred", "occur",
-        "recently", "log of", "did ", " ran", "run today",
+        "recently", "log of", "automation", "run today",
     ),
     "get_error_log": (
         "error", "healthy", "health", "crash", "warning", "broken", "not working", "problem",

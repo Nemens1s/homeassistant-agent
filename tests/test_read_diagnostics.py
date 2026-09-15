@@ -32,7 +32,7 @@ def load_tools():
     registry._reset_for_tests()
     registry.load_all((
         "app.tools.read.get_history",
-        "app.tools.read.get_logbook",
+        "app.tools.read.get_activity",
         "app.tools.read.get_error_log",
     ))
     yield
@@ -69,16 +69,16 @@ async def test_get_history_rejects_freetext_timestamp():
         defn.params_model(entity_id="light.kitchen", range="2026-07-12T00:00:00")
 
 
-async def test_get_logbook_rows():
-    defn = registry.get("get_logbook")
+async def test_get_activity_rows():
+    defn = registry.get("get_activity")
     result = await defn.handler(defn.params_model(range="last_hour"), _ctx())
     assert result.status == "ok"
     assert len(result.data["rows"]) == 2
     assert result.data["rows"][0]["entity_id"] == "light.kitchen"
 
 
-async def test_get_logbook_entity_filter():
-    defn = registry.get("get_logbook")
+async def test_get_activity_entity_filter():
+    defn = registry.get("get_activity")
     result = await defn.handler(
         defn.params_model(range="last_hour", entity_id="fan.air_purifier"), _ctx()
     )
@@ -131,7 +131,7 @@ async def test_get_history_open_range_passes_none_end_time():
     assert "T" in captured["start_time"]  # a resolved ISO8601 timestamp
 
 
-async def test_get_logbook_yesterday_passes_closed_window():
+async def test_get_activity_yesterday_passes_closed_window():
     """'yesterday' is a closed day, so end_time is a concrete timestamp, not None."""
     captured = {}
 
@@ -141,7 +141,7 @@ async def test_get_logbook_yesterday_passes_closed_window():
             captured["end_time"] = end_time
             return []
 
-    defn = registry.get("get_logbook")
+    defn = registry.get("get_activity")
     ctx = ToolContext(settings=Settings(_env_file=None), rest=CapturingRest(), ws=None)
     await defn.handler(defn.params_model(range="yesterday"), ctx)
     assert captured["end_time"] is not None

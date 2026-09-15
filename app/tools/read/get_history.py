@@ -35,7 +35,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_history",
-        description="The state-change timeline for ONE specific entity (e.g. temperature trend, battery %) over a time range. NOT for house-wide 'what happened?' activity across devices. entity_id must be a real entity id — wildcards rejected. 'today' = since midnight, 'last_24h' = rolling window.",
+        description="The state-change timeline for ONE specific entity over a time range: 'did the vacuum run yesterday?', 'what states did X go through?', 'show me the temperature trend', 'when did the purifier last turn on?'. NOT for house-wide activity across devices — use get_activity for that. entity_id must be a real entity id — wildcards rejected.",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

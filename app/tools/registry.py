@@ -19,7 +19,7 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.get_entity_state",
     "app.tools.read.list_entities",
     "app.tools.read.get_history",
-    "app.tools.read.get_logbook",
+    "app.tools.read.get_activity",
     "app.tools.read.get_error_log",
     "app.tools.read.get_areas",
     "app.tools.read.get_battery_status",

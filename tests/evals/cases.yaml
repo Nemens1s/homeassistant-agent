@@ -31,7 +31,7 @@
 
 - id: logbook_range_last_hour
   prompt: "What happened in the house in the last hour?"
-  expect_tool: get_logbook
+  expect_tool: get_activity
   expect_params:
     range: last_hour
 
@@ -120,7 +120,7 @@
 
 - id: logbook_clean_away_today
   prompt: "Did the clean when away automation run today?"
-  expect_tool: get_logbook
+  expect_tool: get_activity
 
 - id: troubleshoot_automation_timing
   prompt: "The automation.ai_test_soundbar_night_mode didn't activate last night at the scheduled time — why might that be?"

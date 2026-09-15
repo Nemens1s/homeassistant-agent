@@ -10,7 +10,7 @@ from app.agent.tool_router import CORE_TOOLS, select_tool_names, select_tools
 ALL_TOOLS = {
     "search_entities", "get_entity_state", "list_entities", "load_skill",
     "trigger_automation", "get_battery_status", "get_vacuum_state",
-    "get_weather", "get_person_locations", "get_history", "get_logbook",
+    "get_weather", "get_person_locations", "get_history", "get_activity",
     "get_error_log", "get_automations", "get_areas", "list_devices",
 }
 
@@ -45,7 +45,7 @@ def test_room_mention_exposes_area_tool():
 def test_subsetting_is_a_strict_narrowing():
     selected = select_tool_names(ALL_TOOLS, "What happened in the house last hour?")
     assert selected <= ALL_TOOLS
-    assert "get_logbook" in selected
+    assert "get_activity" in selected
 
 
 def test_never_returns_empty():

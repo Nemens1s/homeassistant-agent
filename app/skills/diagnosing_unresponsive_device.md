@@ -15,7 +15,7 @@ description: Playbook for a device that stopped responding, went unavailable, or
 3. Call `get_battery_status`. A dead or low battery is the most common cause for a
    sensor, remote, or lock going quiet. If the device is on that list and low,
    that is very likely the answer.
-4. Call `get_logbook` (range `last_24h`, `entity_id` set to the device) to see if
+4. Call `get_activity` (range `last_24h`, `entity_id` set to the device) to see if
    it flapped between available and unavailable, or changed just before going
    quiet.
 5. Call `get_error_log` and look for the device or integration name — connectivity
