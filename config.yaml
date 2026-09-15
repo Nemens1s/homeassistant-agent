@@ -1,5 +1,5 @@
 name: "Agent Gosling"
-version: "0.4.3"
+version: "0.4.4"
 slug: local_ha_agent
 description: "Chat agent over Home Assistant state, powered by a local models (cloud models optional via LiteLLM)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
@@ -35,7 +35,8 @@ options:
   seed: 42
   reasoning: false
   num_predict: 2048
-  num_ctx: 8192
+  num_ctx: 16384
+  num_gpu: 36
   keep_alive: -1
   recursion_limit: 15
   max_rows: 50
@@ -64,6 +65,7 @@ schema:
   reasoning: "bool"
   num_predict: "int(128,32768)"
   num_ctx: "int(1024,131072)"
+  num_gpu: "int(-1,999)"
   keep_alive: "int"
   recursion_limit: "int(2,50)"
   max_rows: "int(5,500)"
