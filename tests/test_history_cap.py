@@ -4,7 +4,7 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
 
 from app.agent import factory as factory_mod
-from app.agent.factory import history_removals
+from app.agent.middleware.history_cap_middleware import history_removals
 from app.config import Settings
 from app.tools import registry
 from app.tools.context import ToolContext

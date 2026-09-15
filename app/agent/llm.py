@@ -8,6 +8,7 @@ import logging
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_ollama import ChatOllama
 
+from app.agent.reasoning_chat_openai import ReasoningChatOpenAI
 from app.config import Settings
 
 log = logging.getLogger("agent.llm")
@@ -36,14 +37,12 @@ def build_llm(settings: Settings) -> BaseChatModel:
             client_kwargs={"timeout": OLLAMA_HTTP_TIMEOUT},
         )
 
-    from langchain_openai import ChatOpenAI  # deferred: keep import cost off the ollama path
-
     log.info(
         "ChatOpenAI params: model=%s url=%s temperature=%s seed=%s max_tokens=%s"
         " — num_ctx/num_gpu/keep_alive/reasoning are Ollama-only, ignored here",
         settings.llm_model, settings.llm_url, settings.temperature, settings.seed, settings.num_predict,
     )
-    return ChatOpenAI(
+    return ReasoningChatOpenAI(
         model=settings.llm_model or "model",
         temperature=settings.temperature,
         api_key=settings.api_key or "none",  # some local servers require a non-empty dummy

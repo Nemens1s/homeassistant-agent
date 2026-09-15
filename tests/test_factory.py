@@ -2,15 +2,10 @@ from datetime import datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from app.agent.factory import (
-    LoopGuardResetMiddleware,
-    ToolSubsetMiddleware,
-    build_agent,
-    build_system_prompt,
-    latest_human_text,
-    timestamped_system,
-    trim_history,
-)
+from app.agent.middleware.context_window_middleware import timestamped_system, trim_history
+from app.agent.factory import build_agent, build_system_prompt
+from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
+from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware, latest_human_text
 from app.tools.adapter import LoopGuard
 from app.config import Settings
 from app.tools import registry
