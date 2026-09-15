@@ -75,6 +75,7 @@ class in `app/config.py`; in the addon container it reads
   verify API details against the installed venv (`inspect`), don't trust
   training data — this has bitten before.
 - Use regular branches. DO not use worktrees
+- No direct commits or pushes to `main` — they are rejected by branch protection. All changes go through a feature branch and a PR.
 - Prefer plain, readable Python: regular `for` loops over comprehensions,
   explicit steps over clever one-liners. Optimize for readability, not
   brevity.
