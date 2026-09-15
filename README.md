@@ -47,7 +47,7 @@ The chat UI streams over Server-Sent Events from `POST /api/chat/stream`. Set `c
 
 ## Standalone (non-App) deployment
 
-The same image runs as a plain Docker container configured via `.env` — for example on the Ollama box, reachable over the LAN. Point the component's base URL at that host.
+The same image runs as a plain Docker container configured via `.env` — for example on the PC, reachable over the LAN. Point the component's base URL at that host.
 
 ## Dev Setup
 
