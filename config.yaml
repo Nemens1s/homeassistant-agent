@@ -1,5 +1,5 @@
 name: "Agent Gosling"
-version: "0.4.4"
+version: "0.4.5"
 slug: local_ha_agent
 description: "Chat agent over Home Assistant state, powered by a local models (cloud models optional via LiteLLM)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
