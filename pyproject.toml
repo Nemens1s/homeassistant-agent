@@ -1,0 +1,41 @@
+[project]
+name = "agent-gosling"
+version = "0.4.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]",
+    "httpx",
+    "langchain==1.3.16",
+    "langchain-core>=1.6.0",
+    "langchain-ollama==1.1.0",
+    "langchain-litellm==0.7.0",
+    "langchain-openai==1.6.2",
+    "langgraph==1.2.11",
+    "langgraph-checkpoint-sqlite",
+    "aiosqlite>=0.20",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.15.0",
+    "python-dotenv",
+    "websockets>=15,<17",
+    "pyyaml",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "aiohttp",
+]
+ha = [
+    # homeassistant requires Python >=3.14.2; marker keeps the lockfile resolvable on older Pythons
+    "pytest-homeassistant-custom-component==0.13.346 ; python_full_version >= '3.14.2'",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

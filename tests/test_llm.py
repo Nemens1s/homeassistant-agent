@@ -1,4 +1,5 @@
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 
 from app.agent.llm import build_llm
 from app.config import Settings
@@ -22,44 +23,38 @@ def test_ollama_provider_builds_chat_ollama_with_options():
     assert llm.keep_alive == -1
 
 
-def test_litellm_provider_builds_chat_litellm():
-    from langchain_litellm import ChatLiteLLM
-
+def test_cloud_provider_builds_chat_openai():
     s = Settings(
         _env_file=None,
         llm_provider="anthropic", llm_model="claude-haiku-4-5-20251001",
         api_key="sk-test", seed=7,
     )
     llm = build_llm(s)
-    assert isinstance(llm, ChatLiteLLM)
-    assert llm.model == "anthropic/claude-haiku-4-5-20251001"
-    assert llm.model_kwargs == {"seed": 7}
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name == "claude-haiku-4-5-20251001"
+    assert llm.seed == 7
 
 
-def test_llamacpp_provider_uses_openai_compat_endpoint():
-    from langchain_litellm import ChatLiteLLM
-
+def test_openai_compat_provider_uses_base_url():
     s = Settings(
         _env_file=None,
         llm_provider="llamacpp", llm_url="http://192.168.1.4:8080",
         llm_model="qwen3-8b-q6_k", temperature=0.2, seed=42, num_predict=2048,
     )
     llm = build_llm(s)
-    assert isinstance(llm, ChatLiteLLM)
-    assert llm.model == "openai/qwen3-8b-q6_k"
-    assert llm.api_base == "http://192.168.1.4:8080"
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name == "qwen3-8b-q6_k"
+    assert str(llm.openai_api_base) == "http://192.168.1.4:8080"
     assert llm.max_tokens == 2048
-    assert llm.model_kwargs.get("seed") == 42
+    assert llm.seed == 42
 
 
-def test_llamacpp_provider_defaults_model_name_when_unset():
-    from langchain_litellm import ChatLiteLLM
-
+def test_openai_compat_provider_defaults_model_name_when_unset():
     s = Settings(
         _env_file=None,
         llm_provider="llamacpp", llm_url="http://192.168.1.4:8080",
         llm_model="",
     )
     llm = build_llm(s)
-    assert isinstance(llm, ChatLiteLLM)
-    assert llm.model == "openai/model"
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.model_name  # non-empty fallback

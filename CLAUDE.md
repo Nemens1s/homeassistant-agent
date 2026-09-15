@@ -7,15 +7,17 @@ is merged; specs and plans for iterations 2 (control + audit) and 3
 
 ## Commands
 
-- **Python: ALWAYS `venv/bin/python` / `venv/bin/pip`** (Python 3.14 venv at
-  repo root; never system python).
-- Tests: `venv/bin/python -m pytest -q` — fast, no HA/Ollama needed.
-  Exactly 2 known third-party warnings (langchain pydantic-v1 shim,
-  starlette TestClient deprecation) are expected; new warnings are findings.
-- Capability REPL: `venv/bin/python -m app.cli` (needs `.env` + live HA + Ollama).
-- Tool-selection evals: `venv/bin/python -m tests.evals.run` (needs live
+- **Python: ALWAYS `uv run python` / `uv pip`** (`uv sync` creates `.venv` at
+  repo root with Python 3.14; never system python).
+- Tests: `uv run pytest -q` — fast, no HA/Ollama needed.
+  Exactly 1 known third-party warning (starlette TestClient deprecation) is
+  expected; new warnings are findings.
+- Capability REPL: `uv run python -m app.cli` (needs `.env` + live HA + Ollama).
+- Tool-selection evals: `uv run python -m tests.evals.run` (needs live
   Ollama; deliberately NOT collected by pytest).
-- Server (dev): `venv/bin/uvicorn app.main:create_app --factory --port 8099`.
+- Server (dev): `uv run uvicorn app.main:create_app --factory --port 8099`.
+- HA custom-component tests: `uv sync --group ha && uv run pytest` (needs
+  Python >=3.14.2; installs the full HA stack).
 
 ## Dev environment
 
@@ -51,7 +53,8 @@ class in `app/config.py`; in the addon container it reads
   `ctx.ws is None` (degraded mode → `ws_unavailable` envelope).
 - `agent/llm.py` — `build_llm`: ChatOllama (with num_ctx/num_predict/seed/
   reasoning/keep_alive knobs — small-model tuning is a first-class concern)
-  or ChatLiteLLM for cloud.
+  or ChatOpenAI for any OpenAI-compatible cloud endpoint (Baseten, llamacpp,
+  etc.) — set LLM_PROVIDER to anything other than "ollama".
 - `agent/factory.py` — `build_agent`: langchain v1 `create_agent` + custom
   middleware (per-call history trimming + current-time injection into the
   system prompt; never mutate checkpointed state) + per-run loop-guard reset.

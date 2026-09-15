@@ -1,6 +1,6 @@
 # Agent Gosling
 
-Chat agent for Home Assistant backed by a local Ollama server (or any cloud model via LiteLLM).
+Chat agent for Home Assistant backed by a local Ollama server (or any OpenAI-compatible cloud model).
 Runs as a HA App with an ingress-based chat UI and optionally as a voice assistant via Assist.
 
 ## Install
@@ -28,8 +28,8 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 
 | Key | Default | Notes |
 |---|---|---|
-| `llm_provider` | `ollama` | `ollama` or LiteLLM provider name |
-| `llm_url` | — | Ollama URL, or llama.cpp/OpenAI-compat base URL |
+| `llm_provider` | `ollama` | `ollama` for local; anything else uses ChatOpenAI |
+| `llm_url` | — | Ollama URL, or any OpenAI-compatible base URL |
 | `llm_model` | — | Model tag served by the LLM backend |
 | `api_key` | `` | Cloud provider key (stored as password) |
 | `max_tier` | `1` | `1` = read-only; `2` = control tools |
@@ -52,7 +52,7 @@ The same image runs as a plain Docker container configured via `.env` — for ex
 ## Dev Setup
 
 ```bash
-python -m venv venv && venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+uv sync        # creates .venv and installs all deps from uv.lock
 ```
 
 Create `.env` (never committed):
@@ -65,9 +65,9 @@ LLM_MODEL=qwen2.5:7b
 ```
 
 ```bash
-venv/bin/python -m app.cli                   # capability REPL
-venv/bin/python -m tests.evals.run           # tool-selection scoring
-uvicorn app.main:create_app --factory --port 8099  # local server
+uv run python -m app.cli                          # capability REPL
+uv run python -m tests.evals.run                  # tool-selection scoring
+uv run uvicorn app.main:create_app --factory --port 8099  # local server
 ```
 
 Deploy to HA during dev (needs SSH access):
@@ -85,6 +85,6 @@ HA Supervisor host (App container)
   ├─ Tool registry / tiers (app/tools/) — read + control tools
   ├─ Skills loader (app/skills/*.md) — Markdown prompt fragments injected at runtime
   ├─ WS client (app/ha/websocket.py) — WebSocket connection to HA, cached registries
-  ├─ LLM factory (app/agent/llm.py) — ChatOllama or LiteLLM, model knobs forwarded
+  ├─ LLM factory (app/agent/llm.py) — ChatOllama or ChatOpenAI, model knobs forwarded
   └─ REST adapter (app/ha/rest.py) — GET-only (+ allowlisted writes at tier 2)
 ```
