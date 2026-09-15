@@ -3,7 +3,7 @@ FROM ghcr.io/home-assistant/${BUILD_ARCH}-base:3.19
 
 COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
 
-RUN apk add --no-cache python3
+RUN apk add --no-cache python3 gcc musl-dev
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
