@@ -60,7 +60,7 @@ Create `.env` (never committed):
 ```
 HA_BASE_URL=http://homeassistant.local:8123
 HA_TOKEN=<long-lived token>
-LLM_URL=http://192.168.1.50:11434
+LLM_URL=http://llm_url:llm_port
 LLM_MODEL=qwen2.5:7b
 ```
 
