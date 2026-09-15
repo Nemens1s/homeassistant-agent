@@ -7,7 +7,7 @@ Three ways to run the agent, from most to least common.
 The Supervisor builds the image itself — you never run `docker build` for
 this path.
 
-1. Copy the repo to your HA host at `/addons/local/local_ha_agent/`
+1. Copy the repo to your HA host at `/addons/local/agent_gosling/`
    (Samba App, SSH, or the Studio Code Server App). Only the App
    files matter: `app/`, `frontend/`, `config.yaml`, `build.yaml`,
    `Dockerfile`, `run.sh`, `requirements.txt` — `venv/`, `tests/`, `docs/`

@@ -17,7 +17,7 @@ Runs as a HA App with an ingress-based chat UI and optionally as a voice assista
 Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 
 1. HACS → Custom repositories → add `https://github.com/Nemens1s/homeassistant-agent` → category: Integration → Install, then restart HA.
-2. Settings → Devices & Services → Add Integration → **Agent Gosling**. Set the App base URL (default `http://local-ha-agent:8099`).
+2. Settings → Devices & Services → Add Integration → **Agent Gosling**. Set the App base URL (default `http://agent-gosling:8099`).
 3. Settings → Voice assistants → select **Agent Gosling** as the conversation agent.
 
 **Security note:** the component→App hop is unauthenticated and assumes both sit in the same LAN trust domain. If the App port is ever exposed beyond the host, put an API token in front of it first.
