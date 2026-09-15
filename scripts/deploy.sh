@@ -37,7 +37,7 @@ HA_BASE_URL="${HA_BASE_URL:-http://homeassistant.local:8123}"
 HA_TOKEN="${HA_TOKEN:-}"
 HA_CONFIG_DIR="${HA_CONFIG_DIR:-/homeassistant}"
 HA_ADDONS_DIR="${HA_ADDONS_DIR:-/addons/local}"
-ADDON_SLUG="local_ha_agent"      # add-on directory name (matches config.yaml slug)
+ADDON_SLUG="agent_gosling"        # add-on directory name (matches config.yaml slug)
 COMPONENT_SLUG="agent_gosling"   # custom component domain (matches manifest.json)
 
 DEPLOY_COMPONENT=false
