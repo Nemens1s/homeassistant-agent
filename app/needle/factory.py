@@ -20,6 +20,7 @@ def build_fast_path_router(cfg, rest, ctx):
     invokes the EXISTING trigger_automation StructuredTool, so the ai_actions
     gate + audit apply unchanged."""
     if not cfg.needle_enabled or cfg.max_tier < 2:
+        log.warning(f"needle status {cfg.needle_enabled}; max-tier {cfg.max_tier}")
         return None
     if not cfg.needle_remote_url:
         log.warning("needle enabled but needle_remote_url is empty; fast path off")
