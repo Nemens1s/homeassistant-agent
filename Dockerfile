@@ -1,9 +1,10 @@
 ARG BUILD_ARCH=amd64
-FROM ghcr.io/home-assistant/${BUILD_ARCH}-base:3.19
+FROM ghcr.io/home-assistant/${BUILD_ARCH}-base-debian:bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
 
-RUN apk add --no-cache python3 gcc musl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
