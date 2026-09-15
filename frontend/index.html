@@ -101,11 +101,24 @@ const resetBtn = document.getElementById('reset');
 const form = document.getElementById('row');
 
 // Thread id persists across page reloads within the browser session.
+// crypto.randomUUID() requires a secure context (HTTPS); fall back to
+// Math.random()-based UUID v4 when running over plain HTTP (e.g. local HA).
+function newUUID() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 let threadId = sessionStorage.getItem('thread');
 if (!threadId) {
-  threadId = crypto.randomUUID();
+  threadId = newUUID();
   sessionStorage.setItem('thread', threadId);
 }
+console.log('[agent] thread', threadId);
 
 // --- Markdown-lite renderer -------------------------------------------------
 // Escape HTML first, then render (in order): fenced code blocks, inline code,
@@ -194,6 +207,7 @@ function setStreaming(on) {
 
 async function sendMessage() {
   const text = input.value.trim();
+  console.log('[agent] sendMessage', { text, streaming });
   if (!text || streaming) return;
   addUserMsg(text);
   input.value = '';

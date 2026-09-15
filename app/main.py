@@ -91,6 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(req: ChatRequest) -> ChatResponse:
+        log.info("chat thread=%s len=%d", req.thread_id, len(req.message))
         router = getattr(app.state, "fast_path", None)
         if router is not None:
             reply = await router.try_fast_path(req.message, req.thread_id)
@@ -112,6 +113,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/chat/stream")
     async def chat_stream(req: ChatRequest) -> StreamingResponse:
+        log.info("chat/stream thread=%s len=%d", req.thread_id, len(req.message))
+
         def _sse(event: dict) -> str:
             return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
 
