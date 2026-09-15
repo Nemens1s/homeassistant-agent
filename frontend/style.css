@@ -291,3 +291,39 @@ form {
 
 #send:hover:not(:disabled) { opacity: 0.8; }
 #send:disabled { opacity: 0.35; cursor: default; }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .layout {
+    flex-direction: column-reverse;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+  }
+
+  .sidebar-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  main {
+    padding: 1rem;
+  }
+
+  .turn:has(.role.user) {
+    padding-left: 1.5rem;
+  }
+
+  .turn:has(.role.bot) {
+    padding-right: 1.5rem;
+  }
+
+  form {
+    padding: 0.65rem 0.75rem 0.85rem;
+  }
+}
