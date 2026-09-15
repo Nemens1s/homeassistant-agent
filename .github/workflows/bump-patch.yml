@@ -1,0 +1,53 @@
+name: Bump Patch Version
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          NEW=$(python3 - <<'EOF'
+          import re
+
+          def bump(path, pattern, tpl):
+              text = open(path).read()
+              m = re.search(pattern, text)
+              major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
+              old = f"{major}.{minor}.{patch}"
+              new = f"{major}.{minor}.{patch + 1}"
+              open(path, 'w').write(text.replace(tpl.format(old), tpl.format(new), 1))
+              return new
+
+          v = bump("pyproject.toml", r'version = "(\d+)\.(\d+)\.(\d+)"', 'version = "{}"')
+          bump("config.yaml",   r'version: "(\d+)\.(\d+)\.(\d+)"',  'version: "{}"')
+          print(v)
+          EOF
+          )
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+
+      - run: uv lock
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml config.yaml uv.lock
+          git commit -m "chore: bump patch version to ${{ steps.bump.outputs.version }}"
+          git push
