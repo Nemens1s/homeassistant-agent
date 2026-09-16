@@ -27,10 +27,6 @@ dev = [
     "pytest-asyncio",
     "aiohttp",
 ]
-ha = [
-    # homeassistant requires Python >=3.14.2; marker keeps the lockfile resolvable on older Pythons
-    "pytest-homeassistant-custom-component==0.13.346 ; python_full_version >= '3.14.2'",
-]
 
 [tool.uv]
 package = false
