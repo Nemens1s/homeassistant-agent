@@ -93,5 +93,3 @@ class in `app/config.py`; in the addon container it reads
   needs `--build-arg BUILD_FROM=...` — see build.yaml).
 - Addon packaging: `config.yaml` (options schema mirrors Settings),
   `run.sh` (bashio, uvicorn --factory), `build.yaml` (base images).
-- The mylo project (`/Users/ilniko/IdeaProjects/mylo`) is the heavyweight
-  inspiration for the tool registry — reference only, don't copy complexity.
