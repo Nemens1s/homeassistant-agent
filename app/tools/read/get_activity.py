@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows
 from app.tools.registry import register
-from app.tools.helpers.timerange import TimeRange, resolve_range
+from app.tools.helpers.timerange import TimeRange, resolve_range, to_local_iso
 
 
 class Params(BaseModel):
@@ -22,7 +22,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     rows = []
     for e in entries:
         rows.append({
-            "at": e.get("when", ""),
+            "at": to_local_iso(e.get("when", "")),
             "name": e.get("name", ""),
             "message": e.get("message", ""),
             "entity_id": e.get("entity_id", ""),

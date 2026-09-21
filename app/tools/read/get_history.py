@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows
 from app.tools.registry import register
-from app.tools.helpers.timerange import TimeRange, resolve_range
+from app.tools.helpers.timerange import TimeRange, resolve_range, to_local_iso
 
 
 class Params(BaseModel):
@@ -25,7 +25,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     changes = data[0] if data else []
     rows = []
     for c in changes:
-        rows.append({"state": c.get("state"), "at": c.get("last_changed", "")})
+        rows.append({"state": c.get("state"), "at": to_local_iso(c.get("last_changed", ""))})
     return ToolResult.ok(
         bound_rows(rows, max_rows=ctx.settings.max_rows,
                    hint="Narrow the time range to see the rest.")

@@ -7,7 +7,7 @@ relative windows and resolve it here, so the model never constructs a timestamp.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Literal, get_args
 
 # Advertised to the LLM as a Literal (JSON-schema enum). Keep this list short:
@@ -19,6 +19,29 @@ RANGE_VALUES: tuple[str, ...] = get_args(TimeRange)
 
 def _iso(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds")
+
+
+def to_local_iso(value: str, tz: tzinfo | None = None) -> str:
+    """Convert an ISO8601 timestamp to local wall-clock time.
+
+    HA's logbook/history endpoints return timestamps in UTC (a trailing +00:00),
+    but the agent's injected "current time" is local. Feeding the model rows in a
+    different zone forces it to do timezone arithmetic just to decide whether a row
+    is within the window it asked for — exactly the arithmetic small models fumble.
+    Converting rows to local keeps both sides in the same zone.
+
+    tz defaults to the system local zone. A naive timestamp is assumed to be UTC.
+    Empty or unparseable values are passed through unchanged (never crash a handler).
+    """
+    if not value:
+        return value
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(tz).isoformat(timespec="seconds")
 
 
 def resolve_range(value: str, now: datetime | None = None) -> tuple[str, str | None]:

@@ -3,6 +3,7 @@ import pytest
 from app.config import Settings
 from app.tools import registry
 from app.tools.context import ToolContext
+from app.tools.helpers.timerange import to_local_iso
 
 
 class FakeRest:
@@ -50,9 +51,11 @@ async def test_get_history_compacts_rows():
         _ctx(),
     )
     assert result.status == "ok"
+    # UTC rows from HA are converted to the local zone so they match the agent's
+    # injected current time (which is local).
     assert result.data["rows"] == [
-        {"state": "off", "at": "2026-07-12T20:00:00+00:00"},
-        {"state": "on", "at": "2026-07-12T21:00:00+00:00"},
+        {"state": "off", "at": to_local_iso("2026-07-12T20:00:00+00:00")},
+        {"state": "on", "at": to_local_iso("2026-07-12T21:00:00+00:00")},
     ]
 
 
@@ -75,6 +78,8 @@ async def test_get_activity_rows():
     assert result.status == "ok"
     assert len(result.data["rows"]) == 2
     assert result.data["rows"][0]["entity_id"] == "light.kitchen"
+    # UTC 'when' from HA is converted to local zone.
+    assert result.data["rows"][0]["at"] == to_local_iso("2026-07-12T21:00:00+00:00")
 
 
 async def test_get_activity_entity_filter():
