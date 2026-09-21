@@ -49,6 +49,31 @@ def test_openai_compat_provider_uses_base_url():
     assert llm.seed == 42
 
 
+def test_openai_compat_forwards_sampling_params_via_extra_body():
+    s = Settings(
+        _env_file=None,
+        llm_provider="llamacpp", llm_url="http://192.168.1.4:8080",
+        llm_model="qwen3-8b-q6_k", top_p=0.9, min_p=0.03, top_k=20, repeat_penalty=1.15,
+    )
+    llm = build_llm(s)
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.top_p == 0.9  # native OpenAI field
+    assert llm.extra_body == {"min_p": 0.03, "top_k": 20, "repeat_penalty": 1.15}
+
+
+def test_cloud_provider_omits_llamacpp_only_sampling_params():
+    # min_p/top_k/repeat_penalty are non-OpenAI params; strict cloud APIs 400 on them.
+    s = Settings(
+        _env_file=None,
+        llm_provider="anthropic", llm_model="claude-haiku-4-5-20251001", api_key="sk-test",
+        top_p=0.9, min_p=0.03, top_k=20, repeat_penalty=1.15,
+    )
+    llm = build_llm(s)
+    assert isinstance(llm, ChatOpenAI)
+    assert llm.top_p == 0.9  # top_p is OpenAI-spec, still passed
+    assert llm.extra_body is None
+
+
 def test_openai_compat_provider_defaults_model_name_when_unset():
     s = Settings(
         _env_file=None,
