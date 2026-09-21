@@ -1,6 +1,7 @@
-"""The single area/room tool. Consolidates what used to be three overlapping tools
-(get_areas, get_area_devices, get_areas_and_devices) — a small model could not
-reliably route among them. One tool, three modes selected by the arguments."""
+"""The area/room-structure tool: room names, or the whole-home room→device map.
+Consolidates what used to be several overlapping topology tools. The devices in
+ONE specific room are list_devices' job — get_areas deliberately does not take a
+room name, so a small model never has to choose between the two for that query."""
 
 from pydantic import BaseModel, Field
 
@@ -10,11 +11,8 @@ from app.tools.registry import register
 
 
 class Params(BaseModel):
-    name: str = Field(
-        default="", description="A specific room/area name to inspect, e.g. 'Kitchen'. Empty = all areas."
-    )
     include_devices: bool = Field(
-        default=False, description="When no name is given, set true to return every room's devices instead of just names."
+        default=False, description="Set true to return every room's devices (the whole-home map) instead of just room names."
     )
 
 
@@ -27,7 +25,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     areas = await ctx.ws.request_cached("config/area_registry/list")
 
     # Mode 1: just the names — no device/entity walk needed.
-    if not params.name and not params.include_devices:
+    if not params.include_devices:
         names = []
         for a in areas:
             names.append(a["name"])
@@ -39,35 +37,7 @@ async def handler(params: Params, ctx) -> ToolResult:
         if not d.get("disabled_by"):
             devices.append(d)
 
-    # Mode 2: one specific room → its DEVICES (hardware) only. Room questions stay
-    # device-level here (and in list_devices); entity-level detail is only for
-    # drilling into one device via list_entities(device=).
-    if params.name:
-        area = None
-        for a in areas:
-            if a["name"].lower() == params.name.lower():
-                area = a
-                break
-        if area is None:
-            available = []
-            for a in areas:
-                available.append(a["name"])
-            return ToolResult.error(
-                "area_not_found",
-                f"No area named {params.name!r}.",
-                data={"available_areas": available},
-            )
-        area_id = area["area_id"]
-        room_devices = []
-        for d in devices:
-            if d.get("area_id") == area_id:
-                room_devices.append(device_name(d))
-        return ToolResult.ok({
-            "area": area["name"],
-            "devices": room_devices,
-        })
-
-    # Mode 3: full topology — every room with its device names. No entity IDs;
+    # Mode 2: full topology — every room with its device names. No entity IDs;
     # those are too numerous and overflow the context window for large installs.
     area_names = {}
     for a in areas:
@@ -89,10 +59,10 @@ register(
     ToolDefinition(
         name="get_areas",
         description=(
-            "Room/area names and hardware device names only — no HA entity_ids, no live states. "
-            "No args → all room names. name='Kitchen' → devices in that room. "
-            "include_devices=true → full home map. "
-            "Stop here for a room overview; individual entity_ids and states are a separate, narrower lookup."
+            "Room/area STRUCTURE only — no HA entity_ids, no live states. "
+            "No args → all room names. include_devices=true → the whole-home map "
+            "(every room with its hardware device names). "
+            "For the devices in ONE specific room, use list_devices(area=...) instead."
         ),
         params_model=Params,
         tier=Tier.READ,

@@ -14,7 +14,10 @@
 
 - id: list_area
   prompt: "What devices are in the Living room?"
-  expect_any_tool: [list_devices, get_areas]
+  # Devices in ONE room → list_devices(area=). get_areas no longer takes a room.
+  expect_tool: list_devices
+  expect_params:
+    area: Living room
 
 - id: history_needs_timestamps
   prompt: "Show me the temperature history of sensor.mt6000_temperature for the last 24 hours."
@@ -45,24 +48,28 @@
 
 - id: topology_single_room
   prompt: "What devices are in the bedroom?"
-  expect_tool: get_areas
-  # name is checked case-insensitively (see runner) — "bedroom"/"Bedroom" both fine.
+  # Devices in ONE room → list_devices(area=). get_areas is room-structure only now.
+  expect_tool: list_devices
+  # area is checked case-insensitively (see runner) — "bedroom"/"Bedroom" both fine.
   expect_params:
-    name: bedroom
+    area: bedroom
 
 - id: room_contents
   prompt: "What do I have in my bedroom?"
-  # A room overview stays DEVICE-level: list_devices (preferred) or get_areas.
-  # list_entities is for narrow device/domain queries — entity lists (purifier lamp,
-  # PM2.5 sensor, ...) are too noisy to answer "what's in my bedroom".
-  expect_any_tool: [list_devices, get_areas]
+  # A room overview stays DEVICE-level: list_devices(area=). list_entities is for
+  # narrow device/domain queries — entity lists (purifier lamp, PM2.5 sensor, ...)
+  # are too noisy to answer "what's in my bedroom".
   expect_tool: list_devices
   expect_params:
     area: bedroom
 
 - id: topology_full_map
   prompt: "Show me all rooms and what devices are in each."
+  # The whole-home map is get_areas' job — but only include_devices=true actually
+  # lists the devices per room; bare get_areas returns names and misses the ask.
   expect_tool: get_areas
+  expect_params:
+    include_devices: true
 
 - id: automations_list
   prompt: "List my automations and when they last ran."

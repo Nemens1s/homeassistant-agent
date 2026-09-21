@@ -24,9 +24,9 @@ CORE_TOOLS: frozenset[str] = frozenset({
     "trigger_automation",
 })
 
-# Room/area overview intents. Both device-level room tools are offered together so
-# the model can answer "what's in <room>" with names-only topology (get_areas) or the
-# flat device list (list_devices) — never with noisy entity lists. Keyed on intent
+# Room/area overview intents. Both room tools are offered together so the model has
+# list_devices for "what's in <room>" (device-level, one room) and get_areas for the
+# room names / whole-home map — never a noisy entity list. Keyed on intent
 # PHRASES, not the bare token "room" (which fires on entity_ids like
 # sensor.living_room_temperature and distracts the model).
 _ROOM_OVERVIEW: tuple[str, ...] = (
