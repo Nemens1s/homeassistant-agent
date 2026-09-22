@@ -48,7 +48,7 @@ def test_chat_returns_agent_reply():
         client.app.state.agent = FakeAgent()
         resp = client.post("/api/chat", json={"message": "hello"})
     assert resp.status_code == 200
-    assert resp.json() == {"reply": "hi there"}
+    assert resp.json()["reply"] == "hi there"
 
 
 def test_chat_returns_graceful_reply_on_recursion_limit():
@@ -71,7 +71,7 @@ def test_frontend_served_at_root():
 def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
         captured["audit"] = ctx.audit
         captured["rest"] = ctx.rest
         class A:
@@ -96,7 +96,7 @@ def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
         captured["checkpointer"] = checkpointer
         class A:
             async def ainvoke(self, *a, **k):
@@ -135,7 +135,11 @@ def test_chat_stream_emits_protocol_events():
     assert resp.headers["content-type"].startswith("text/event-stream")
     events = _parse_sse(resp.text)
     assert events[0] == {"type": "token", "text": "hel"}
-    assert events[-1] == {"type": "done", "reply": "hello"}
+    last = events[-1]
+    assert last["type"] == "done"
+    assert last["reply"] == "hello"
+    # request_id is present (may be all-zeros with no-op tracer, but must be a key)
+    assert "request_id" in last
 
 
 def test_chat_stream_recursion_limit_is_error_event():

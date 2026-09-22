@@ -22,6 +22,12 @@ current_step: contextvars.ContextVar[int] = contextvars.ContextVar(
     "gosling_step", default=0
 )
 
+# Set to True when the first chat step is a fast-path hit.  The invoke_agent
+# gosling root span in main.py reads this to set gosling.path = "fast_path".
+fast_path_seen: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "gosling_fast_path_seen", default=False
+)
+
 _MAX_RESULT_BYTES = 64 * 1024  # 64 KB cap for GOSLING_TOOL_RESULT
 
 
@@ -79,7 +85,11 @@ class TelemetryMiddleware(AgentMiddleware):
             ai_msg = _extract_ai_message(result)
             if ai_msg is not None:
                 _safe_set(span, C.GEN_AI_RESPONSE_MODEL, lambda: ai_msg.response_metadata.get("model_name"))
-                _safe_set(span, C.GOSLING_FAST_PATH, lambda: bool(ai_msg.response_metadata.get("fast_path", False)))
+                is_fast_path = bool(ai_msg.response_metadata.get("fast_path", False))
+                _safe_set(span, C.GOSLING_FAST_PATH, lambda: is_fast_path)
+                # Propagate fast_path hit to the root span via contextvar (step 1 only).
+                if is_fast_path and current_step.get() == 1:
+                    fast_path_seen.set(True)
                 _safe_set_thinking_content(span, ai_msg)
                 _safe_set(span, C.GEN_AI_USAGE_INPUT_TOKENS, lambda: (
                     ai_msg.usage_metadata.get("input_tokens")

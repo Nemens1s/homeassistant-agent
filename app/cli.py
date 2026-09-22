@@ -90,7 +90,15 @@ async def main(save_conversations: bool = False) -> None:
         fast_path = build_fast_path_backend(settings, rest, ctx)
     except Exception as exc:
         print(f"warning: needle fast path unavailable ({exc})")
-    agent = build_agent(settings, ctx, checkpointer=checkpointer, fast_path=fast_path)
+
+    # Initialise telemetry (no-op when disabled or DB unwritable).
+    from app.telemetry.setup import init_telemetry, shutdown_telemetry, get_tracer
+    telemetry_provider = init_telemetry(settings)
+    telemetry_arg = None
+    if telemetry_provider is not None:
+        telemetry_arg = (get_tracer(), None)
+
+    agent = build_agent(settings, ctx, checkpointer=checkpointer, fast_path=fast_path, telemetry=telemetry_arg)
     config = {
         "configurable": {"thread_id": "cli"},
         "recursion_limit": settings.recursion_limit,
@@ -134,6 +142,17 @@ async def main(save_conversations: bool = False) -> None:
             # the agent; no external router call needed here.
             print("Agent: ", end="", flush=True)
             t0 = time.monotonic()
+            from app.telemetry.setup import get_tracer
+            from app.telemetry import conventions as C
+            _tracer = get_tracer()
+            _span = _tracer.start_span(C.SPAN_INVOKE_AGENT)
+            try:
+                _span.set_attribute(C.GOSLING_CHANNEL, "cli")
+                _span.set_attribute(C.GOSLING_ENDPOINT, "cli")
+                _span.set_attribute(C.GOSLING_INPUT_TEXT, user_input)
+            except Exception:
+                pass
+            _cli_outcome = "ok"
             try:
                 content_buf: list[str] = []
                 think_buf: list[str] = []
@@ -204,22 +223,35 @@ async def main(save_conversations: bool = False) -> None:
                 visible = content_buf or (think_buf if not has_tool_calls else [])
                 if visible and not has_tool_calls:
                     print("".join(visible), end="", flush=True)
+                    try:
+                        _span.set_attribute(C.GOSLING_OUTPUT_TEXT, "".join(visible))
+                    except Exception:
+                        pass
                     if conv_file:
                         if think_buf and content_buf:  # thinking is separate from answer
                             conv_file.write(f"{_ts()} <think> {''.join(think_buf)} </think>\n")
                         conv_file.write(f"{_ts()} Agent: {''.join(visible)}\n")
                         conv_file.flush()
             except GraphRecursionError:
+                _cli_outcome = "recursion_limit"
                 msg = f"[stopped: hit the {settings.recursion_limit}-step limit without finishing]"
                 print(f"\n{msg}", end="")
                 if conv_file:
                     conv_file.write(f"{_ts()} {msg}\n")
                     conv_file.flush()
             except Exception as exc:
+                _cli_outcome = "error"
                 print(f"\n[error: {exc}]", end="")
                 if conv_file:
                     conv_file.write(f"{_ts()} [error: {exc}]\n")
                     conv_file.flush()
+            finally:
+                try:
+                    _span.set_attribute(C.GOSLING_OUTCOME, _cli_outcome)
+                    _span.set_attribute(C.GOSLING_PATH, "agent")
+                except Exception:
+                    pass
+                _span.end()
             elapsed = time.monotonic() - t0
             prompt_tok = last_response_meta.get("prompt_eval_count")
             gen_tok = last_response_meta.get("eval_count")
@@ -235,6 +267,8 @@ async def main(save_conversations: bool = False) -> None:
         await checkpointer_cm.__aexit__(None, None, None)
         if conv_file is not None:
             conv_file.close()
+        if telemetry_provider is not None:
+            shutdown_telemetry(telemetry_provider)
 
 
 if __name__ == "__main__":
