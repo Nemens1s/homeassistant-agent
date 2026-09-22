@@ -47,10 +47,18 @@ async def test_miss_calls_handler():
 @pytest.mark.asyncio
 async def test_step_after_fastpath_tool_returns_templated_reply():
     mw = FastPathMiddleware(FakeBackend(), _FakeMenu(_MENU), threshold=0.0)
+    call_id = FASTPATH_PREFIX + "abc"
     ok = json.dumps({"status": "ok"})
-    tm = ToolMessage(content=ok, tool_call_id=FASTPATH_PREFIX + "abc", name="trigger_automation")
-    tm.additional_kwargs["fastpath_entity_id"] = "automation.ai_action_night"
-    resp = await mw.awrap_model_call(_request([HumanMessage("x"), tm]), _fail_handler)
+    # The entity_id is now read from the preceding AIMessage's tool_calls args,
+    # not from ToolMessage.additional_kwargs (which LangGraph does not propagate).
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[{"name": "trigger_automation",
+                     "args": {"entity_id": "automation.ai_action_night"},
+                     "id": call_id}],
+    )
+    tm = ToolMessage(content=ok, tool_call_id=call_id, name="trigger_automation")
+    resp = await mw.awrap_model_call(_request([HumanMessage("x"), ai_msg, tm]), _fail_handler)
     assert isinstance(resp, AIMessage)
     assert "automation.ai_action_night" in resp.content
 

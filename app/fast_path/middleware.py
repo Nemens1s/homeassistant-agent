@@ -54,7 +54,13 @@ class FastPathMiddleware(AgentMiddleware):
 
         # Step after a fast-path tool call → templated reply.
         if isinstance(last, ToolMessage) and str(last.tool_call_id).startswith(FASTPATH_PREFIX):
-            entity_id = last.additional_kwargs.get("fastpath_entity_id", "")
+            # fastpath_entity_id does NOT survive onto the ToolMessage (LangGraph
+            # constructs it from the tool result only); read the entity_id from the
+            # preceding AIMessage's tool_calls args instead.
+            try:
+                entity_id = messages[-2].tool_calls[0]["args"]["entity_id"]
+            except (IndexError, KeyError, AttributeError, TypeError):
+                entity_id = ""
             return AIMessage(content=_reply_from_envelope(last.content, entity_id))
 
         # First step of a turn → classify.
