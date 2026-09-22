@@ -15,8 +15,10 @@ from pathlib import Path
 
 import yaml
 from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.utils.json import parse_partial_json
 
-from app.agent.factory import build_agent, build_system_prompt, timestamped_system
+from app.agent.factory import build_agent, build_system_prompt
+from app.agent.middleware.context_window_middleware import timestamped_system
 from app.agent.llm import build_llm
 from app.agent.tool_router import select_tools
 from app.config import load_settings
@@ -125,8 +127,12 @@ async def _agent_trace(settings, prompt: str) -> list[dict]:
                     pending[idx]["name"] += chunk["name"]
                 pending[idx]["args"] += chunk.get("args") or ""
             if pending:
+                # Ollama emits each tool call's args atomically, but OpenAI-compatible
+                # providers (llama.cpp, etc.) stream args incrementally — the first
+                # delta is often a lone "{". json.loads on that partial raises; use
+                # LangChain's streaming-tolerant parser (same one it uses internally).
                 current["calls"] = [
-                    {"name": v["name"], "args": json.loads(v["args"]) if v["args"] else {}}
+                    {"name": v["name"], "args": parse_partial_json(v["args"]) if v["args"] else {}}
                     for v in pending.values() if v["name"]
                 ]
 
@@ -167,9 +173,36 @@ async def main() -> int:
                         help="Show thinking and all tool calls per case; always saves results")
     parser.add_argument("--case-delay", type=float, default=3.0, metavar="SECONDS",
                         help="Seconds to sleep between cases (default: 3)")
+    # Sampling overrides — when given, they replace the configured values for this
+    # run and are recorded in the results file. min_p/top_k/repeat_penalty only
+    # reach the model on the llamacpp provider (see app/agent/llm.py).
+    parser.add_argument("--temp", type=float, default=None)
+    parser.add_argument("--top-p", type=float, default=None)
+    parser.add_argument("--min-p", type=float, default=None)
+    parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument("--repeat-penalty", type=float, default=None)
+    parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
     settings = load_settings()
+
+    # Apply any sampling overrides from the CLI, and note them for the output file.
+    sampling_overrides: dict = {}
+    if args.temp is not None:
+        sampling_overrides["temperature"] = args.temp
+    if args.top_p is not None:
+        sampling_overrides["top_p"] = args.top_p
+    if args.min_p is not None:
+        sampling_overrides["min_p"] = args.min_p
+    if args.top_k is not None:
+        sampling_overrides["top_k"] = args.top_k
+    if args.repeat_penalty is not None:
+        sampling_overrides["repeat_penalty"] = args.repeat_penalty
+    if args.seed is not None:
+        sampling_overrides["seed"] = args.seed
+    if sampling_overrides:
+        settings = settings.model_copy(update=sampling_overrides)
+
     max_tier = args.max_tier if args.max_tier is not None else settings.max_tier
     verbose = args.verbose
     save_results = args.save_results or verbose
@@ -187,6 +220,8 @@ async def main() -> int:
         "num_ctx": settings.num_ctx,
         "cases": {},
     }
+    if sampling_overrides:
+        output["sampling_overrides"] = sampling_overrides
 
     cases = yaml.safe_load(CASES_FILE.read_text())
     passed = 0

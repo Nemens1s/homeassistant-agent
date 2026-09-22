@@ -42,7 +42,21 @@ class Settings(BaseSettings):
     api_key: str = ""  # cloud provider key, used only by litellm providers
 
     # Model options — small-model tuning (spec: LLM factory & model settings)
-    temperature: float = 0.0
+    temperature: float = Field(
+        0.0, description="Sampling randomness; 0 = greedy/deterministic, higher = more varied."
+    )
+    top_p: float = Field(
+        0.95, description="Nucleus sampling: keep the smallest token set with cumulative prob >= this (1.0 = off)."
+    )
+    min_p: float = Field(
+        0.05, description="Drop tokens below this fraction of the top token's probability (0 = off). llamacpp path."
+    )
+    top_k: int = Field(
+        40, description="Sample only from the K most likely tokens (0 = off). llamacpp path."
+    )
+    repeat_penalty: float = Field(
+        1.1, description="Penalty on already-seen tokens to curb repetition (1.0 = none). llamacpp path."
+    )
     seed: int = 42
     reasoning: bool = False
     num_predict: int = 2048

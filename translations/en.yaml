@@ -1,0 +1,136 @@
+configuration:
+  llm_provider:
+    name: LLM provider
+    description: >-
+      Which backend serves the model. "ollama" talks to an Ollama server;
+      "llamacpp" (or any other value) uses the OpenAI-compatible HTTP API, e.g.
+      llama.cpp's llama-server or a cloud provider via LiteLLM.
+  llm_url:
+    name: LLM URL
+    description: >-
+      Base URL of the inference server (e.g. http://ollama.home:11435 for
+      Ollama, or http://host:8080 for llama-server).
+  llm_model:
+    name: Model
+    description: >-
+      Model name/tag to load. For Ollama this is the pull tag; for
+      OpenAI-compatible servers it is the model id (some local servers ignore it).
+  api_key:
+    name: API key
+    description: >-
+      API key for cloud providers. Leave blank for local servers (a dummy value
+      is sent automatically when the server requires a non-empty key).
+  system_prompt:
+    name: System prompt
+    description: Base instructions prepended to every conversation.
+  max_tier:
+    name: Max capability tier
+    description: >-
+      Highest tool tier the agent may use. 1 = read-only. 2 = allows the gated
+      action tools (still fail-closed behind the AI kill switch).
+  allowed_domains:
+    name: Allowed domains
+    description: Home Assistant entity domains the agent is permitted to see and act on.
+  ai_actions_switch:
+    name: AI actions kill switch
+    description: >-
+      input_boolean that must be ON for any action-tier tool to run. Empty
+      string disables the home-level kill switch (menu and domain guards still apply).
+  temperature:
+    name: Temperature
+    description: >-
+      Sampling randomness. 0 = deterministic/greedy; higher = more varied. Small
+      instruction models usually do best low (0–0.3).
+  top_p:
+    name: Top-p (nucleus sampling)
+    description: >-
+      Keep only the smallest set of tokens whose cumulative probability reaches
+      this value. 1.0 disables the cutoff. Lower = more focused output.
+  min_p:
+    name: Min-p
+    description: >-
+      Drop tokens whose probability is below this fraction of the most likely
+      token. A robust alternative to top-p; 0 disables it. Typical: 0.02–0.1.
+  top_k:
+    name: Top-k
+    description: >-
+      Sample only from the K most likely tokens. 0 disables the limit. Lower
+      values make output more focused. Typical: 20–40.
+  repeat_penalty:
+    name: Repeat penalty
+    description: >-
+      Penalizes tokens that already appeared, reducing loops/repetition. 1.0 =
+      no penalty; higher = stronger. Typical: 1.05–1.2.
+  seed:
+    name: Seed
+    description: Fixed RNG seed for reproducible sampling. Change it to vary outputs.
+  reasoning:
+    name: Reasoning
+    description: >-
+      Enable the model's thinking/reasoning mode (Ollama only). Off keeps
+      responses direct and faster.
+  num_predict:
+    name: Max output tokens
+    description: Upper bound on tokens generated per response.
+  num_ctx:
+    name: Context window
+    description: >-
+      Context length (tokens) the model is loaded with. Larger fits more history
+      but uses more memory (Ollama only).
+  num_gpu:
+    name: GPU layers
+    description: >-
+      Number of model layers offloaded to the GPU. -1 = as many as fit; 0 = CPU
+      only (Ollama only).
+  keep_alive:
+    name: Keep-alive
+    description: >-
+      How long (seconds) to keep the model loaded in memory after a request.
+      -1 = keep loaded indefinitely (Ollama only).
+  recursion_limit:
+    name: Recursion limit
+    description: Max reasoning/tool-call steps the agent may take before stopping a run.
+  max_rows:
+    name: Max rows
+    description: Cap on the number of rows a tool may return, to bound response size.
+  checkpoint_db_path:
+    name: Checkpoint DB path
+    description: >-
+      SQLite file for durable conversation memory across restarts. /data
+      persists across add-on restarts; empty string keeps memory in RAM.
+  max_history_messages:
+    name: Max history messages
+    description: >-
+      After each run, prune stored history to the last N messages (rounded to a
+      turn boundary). 0 = keep everything.
+  enable_tool_subsetting:
+    name: Tool subsetting
+    description: >-
+      Narrow the tool menu per query. Helps small models pick the right tool;
+      turn off to always expose the full tool set.
+  needle_enabled:
+    name: Needle fast path
+    description: >-
+      Enable the low-latency Needle service to trigger ai_* automations directly
+      (requires max tier >= 2). Off by default.
+  needle_confidence_threshold:
+    name: Needle confidence threshold
+    description: >-
+      Fire only when Needle confidence is at or above this. 0.0 fires on any
+      emitted call (correct for fine-tuned weights that report no confidence).
+  needle_menu_ttl_s:
+    name: Needle menu TTL
+    description: How long (seconds) to cache the Needle menu/grammar.
+  needle_remote_url:
+    name: Needle service URL
+    description: URL of the remote Needle inference service.
+  person_name_map:
+    name: Person name map
+    description: >-
+      Rename people for the agent. ha_name is the Home Assistant friendly_name
+      (the lookup key); name is what the agent sees.
+  person_name_exclude:
+    name: Person exclusions
+    description: >-
+      Hide person entities whose friendly_name contains any of these substrings
+      (case-insensitive) from location output.

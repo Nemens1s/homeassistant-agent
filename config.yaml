@@ -32,6 +32,10 @@ options:
   # empty string disables the home-level AI kill switch (menu + domain guards still apply)
   ai_actions_switch: "input_boolean.ai_triggered_actions"
   temperature: 0.0
+  top_p: 0.95
+  min_p: 0.05
+  top_k: 40
+  repeat_penalty: 1.1
   seed: 42
   reasoning: false
   num_predict: 2048
@@ -61,6 +65,10 @@ schema:
   allowed_domains: ["str"]
   ai_actions_switch: "str"
   temperature: "float(0,2)"
+  top_p: "float(0,1)"
+  min_p: "float(0,1)"
+  top_k: "int(0,1000)"
+  repeat_penalty: "float(0,2)"
   seed: "int"
   reasoning: "bool"
   num_predict: "int(128,32768)"

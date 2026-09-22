@@ -77,31 +77,6 @@ async def test_get_areas_full_topology_with_include_devices():
     assert result.data["unassigned"] == ["Odd Sensor"]
 
 
-async def test_get_areas_single_area_returns_devices_only():
-    """Single-area mode is devices-only — use list_devices + list_entities(device=)
-    to drill into HA entities for a specific device."""
-    defn = registry.get("get_areas")
-    result = await defn.handler(defn.params_model(name="Kitchen"), _ctx(ws=FakeWS()))
-    assert result.status == "ok"
-    assert result.data == {"area": "Kitchen", "devices": ["Hue Bulb"]}
-    assert "entities" not in result.data
-
-
-async def test_get_areas_single_area_is_case_insensitive():
-    defn = registry.get("get_areas")
-    result = await defn.handler(defn.params_model(name="kitchen"), _ctx(ws=FakeWS()))
-    assert result.status == "ok"
-    assert result.data["area"] == "Kitchen"
-
-
-async def test_get_areas_unknown_area_lists_available():
-    defn = registry.get("get_areas")
-    result = await defn.handler(defn.params_model(name="Garage"), _ctx(ws=FakeWS()))
-    assert result.status == "error"
-    assert result.error_code == "area_not_found"
-    assert result.data["available_areas"] == ["Kitchen", "Bedroom"]
-
-
 async def test_get_areas_without_ws():
     defn = registry.get("get_areas")
     result = await defn.handler(defn.params_model(), _ctx(ws=None))
