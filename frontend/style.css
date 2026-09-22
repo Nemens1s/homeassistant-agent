@@ -68,11 +68,101 @@ header {
   padding: 0.6rem 1rem;
 }
 
+header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
 header h2 {
   font-size: 0.875rem;
   font-weight: 700;
   color: var(--text);
   letter-spacing: 0.01em;
+}
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tab {
+  font-size: 0.72rem;
+  font-weight: 500;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.tab:hover { color: var(--text); }
+
+.tab.active {
+  color: var(--accent);
+  border-color: var(--border-accent);
+  background: var(--accent-soft);
+}
+
+/* ── Reply feedback (thumbs) ── */
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.feedback button {
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.feedback button:hover { color: var(--text); border-color: var(--text-dim); }
+.feedback button.chosen { color: var(--accent); border-color: var(--border-accent); background: var(--accent-soft); }
+.feedback .fb-status { font-size: 0.65rem; font-family: ui-monospace, monospace; color: var(--text-dim); }
+
+.fb-correction {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.fb-correction input {
+  flex: 1;
+  min-width: 8rem;
+  font-size: 0.72rem;
+  font-family: ui-monospace, monospace;
+  padding: 0.25rem 0.45rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.fb-correction input:focus { border-color: var(--border-accent); }
+
+.fb-correction button {
+  font-size: 0.68rem;
+  font-family: ui-monospace, monospace;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
 }
 
 /* ── Two-column layout ── */

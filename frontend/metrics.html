@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent Gosling — Metrics</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="metrics.css" />
+</head>
+<body class="metrics-body">
+  <header>
+    <h2>Agent Gosling</h2>
+    <nav class="tabs">
+      <a href="index.html" class="tab">Chat</a>
+      <a href="metrics.html" class="tab active">Metrics</a>
+    </nav>
+    <div class="header-controls">
+      <label for="days">Window</label>
+      <select id="days">
+        <option value="1">1 day</option>
+        <option value="7" selected>7 days</option>
+        <option value="30">30 days</option>
+        <option value="3650">All time</option>
+      </select>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <div id="disabled-banner" class="banner" hidden>
+    Telemetry is disabled — no dataset to show. Enable it in the add-on config.
+  </div>
+
+  <main class="metrics-main">
+    <section class="cards" id="stat-cards"></section>
+
+    <div class="panels">
+      <section class="panel">
+        <h3>Requests by path</h3>
+        <div class="bars" id="path-bars"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Outcomes</h3>
+        <div class="bars" id="outcome-bars"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Latency by path (ms)</h3>
+        <table class="metric-table" id="latency-table"></table>
+      </section>
+
+      <section class="panel">
+        <h3>Labels</h3>
+        <div class="bars" id="label-bars"></div>
+      </section>
+    </div>
+
+    <section class="panel wide">
+      <h3>Recent requests</h3>
+      <table class="metric-table requests" id="requests-table"></table>
+      <button id="load-more" type="button" hidden>Load more</button>
+    </section>
+  </main>
+
+  <script src="metrics.js"></script>
+</body>
+</html>

@@ -45,9 +45,9 @@ console.log('[agent] thread', threadId);
 
 function logKey() { return 'log_' + threadId; }
 
-function saveEntry(role, text) {
+function saveEntry(role, text, requestId) {
   const entries = JSON.parse(localStorage.getItem(logKey()) || '[]');
-  entries.push({ role, text });
+  entries.push({ role, text, request_id: requestId || null });
   localStorage.setItem(logKey(), JSON.stringify(entries));
 }
 
@@ -62,9 +62,91 @@ function loadHistory() {
       bubble.className = 'bubble rendered';
       bubble.innerHTML = renderMarkdown(entry.text);
       turn.appendChild(bubble);
+      if (entry.request_id) {
+        addFeedback(turn, entry.request_id);
+      }
       log.scrollTop = log.scrollHeight;
     }
   }
+}
+
+// --- Reply feedback (thumbs → POST api/labels) ------------------------------
+async function postLabel(payload) {
+  // Relative path (no leading slash) — required behind HA ingress.
+  try {
+    const resp = await fetch('api/labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return resp.ok;
+  } catch (err) {
+    return false;
+  }
+}
+
+function addFeedback(turn, requestId) {
+  const bar = document.createElement('div');
+  bar.className = 'feedback';
+
+  const up = document.createElement('button');
+  up.type = 'button';
+  up.textContent = '👍';
+  up.title = 'Good reply';
+
+  const down = document.createElement('button');
+  down.type = 'button';
+  down.textContent = '👎';
+  down.title = 'Bad reply';
+
+  const status = document.createElement('span');
+  status.className = 'fb-status';
+
+  bar.appendChild(up);
+  bar.appendChild(down);
+  bar.appendChild(status);
+  turn.appendChild(bar);
+
+  async function submit(rating, extra) {
+    const ok = await postLabel(Object.assign(
+      { request_id: requestId, source: 'ui', rating: rating },
+      extra || {},
+    ));
+    status.textContent = ok ? 'thanks!' : 'save failed';
+    up.classList.toggle('chosen', rating === 1);
+    down.classList.toggle('chosen', rating === -1);
+  }
+
+  up.addEventListener('click', function () {
+    submit(1);
+  });
+
+  down.addEventListener('click', function () {
+    // Offer a "should have been" correction on thumbs-down.
+    if (turn.querySelector('.fb-correction')) return;
+    submit(-1);
+    const form = document.createElement('div');
+    form.className = 'fb-correction';
+    const toolInput = document.createElement('input');
+    toolInput.placeholder = 'correct tool (optional)';
+    const entityInput = document.createElement('input');
+    entityInput.placeholder = 'correct entity_id (optional)';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = 'Save correction';
+    form.appendChild(toolInput);
+    form.appendChild(entityInput);
+    form.appendChild(saveBtn);
+    turn.appendChild(form);
+
+    saveBtn.addEventListener('click', async function () {
+      const extra = {};
+      if (toolInput.value.trim()) extra.correct_tool = toolInput.value.trim();
+      if (entityInput.value.trim()) extra.correct_entity_id = entityInput.value.trim();
+      await submit(-1, extra);
+      form.remove();
+    });
+  });
 }
 
 loadHistory();
@@ -279,7 +361,10 @@ async function sendMessage() {
           }
           bubble.className = 'bubble rendered';
           bubble.innerHTML = renderMarkdown(finalText);
-          saveEntry('bot', finalText);
+          saveEntry('bot', finalText, evt.request_id);
+          if (evt.request_id) {
+            addFeedback(turn, evt.request_id);
+          }
           scrollDown();
           done = true;
           break;
