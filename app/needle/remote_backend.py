@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import httpx
 
-from app.needle.backend import Decision, _build_name_map, _decision_from_result
+from app.fast_path.backend import Decision
+from app.needle.backend import _build_name_map, _decision_from_result
 from app.needle.menu import Menu
 
 
 class RemoteNeedleBackend:
+    name = "needle-remote"
+
     def __init__(self, base_url: str, timeout: float = 3.0):
         self._url = base_url.rstrip("/") + "/classify"
         self._client = httpx.AsyncClient(timeout=timeout)
@@ -27,6 +30,5 @@ class RemoteNeedleBackend:
         ]
         payload = {"message": message, "tools": tools, "signature": menu.signature}
         response = await self._client.post(self._url, json=payload)
-        print(f"Needle response {response}")
         response.raise_for_status()
         return _decision_from_result(response.json(), name_to_id)

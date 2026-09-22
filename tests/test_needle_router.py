@@ -1,7 +1,7 @@
 import json
 
 from app.config import Settings
-from app.needle.backend import Decision, FakeBackend
+from app.fast_path.backend import Decision, FakeBackend
 from app.needle.menu import Menu, MenuItem
 from app.needle.router import FastPathRouter
 from app.tools import registry
