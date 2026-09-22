@@ -138,8 +138,9 @@ def test_chat_stream_emits_protocol_events():
     last = events[-1]
     assert last["type"] == "done"
     assert last["reply"] == "hello"
-    # request_id is present (may be all-zeros with no-op tracer, but must be a key)
-    assert "request_id" in last
+    # Telemetry is disabled here (no-op tracer, trace_id == 0), so request_id
+    # is None — never the phantom all-zeros key that would collide in the label store.
+    assert last["request_id"] is None
 
 
 def test_chat_stream_recursion_limit_is_error_event():

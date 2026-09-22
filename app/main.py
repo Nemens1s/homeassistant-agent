@@ -168,7 +168,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:
                 pass
 
-            request_id = format(span.get_span_context().trace_id, "032x")
+            trace_id = span.get_span_context().trace_id
+            request_id = format(trace_id, "032x") if trace_id else None
 
             try:
                 result = await app.state.agent.ainvoke(
@@ -233,7 +234,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 except Exception:
                     pass
 
-                request_id = format(span.get_span_context().trace_id, "032x")
+                trace_id = span.get_span_context().trace_id
+                request_id = format(trace_id, "032x") if trace_id else None
                 outcome = "ok"
 
                 # Fast path is handled transparently by FastPathMiddleware inside the agent.

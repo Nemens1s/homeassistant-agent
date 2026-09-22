@@ -82,3 +82,39 @@ def test_chat_returns_request_id_when_telemetry_enabled(tmp_path, reset_otel_pro
     # request_id should be a 32-hex-char trace ID
     assert len(body["request_id"]) == 32
     assert all(c in "0123456789abcdef" for c in body["request_id"])
+    # Real span => non-zero trace_id.
+    assert int(body["request_id"], 16) != 0
+
+
+def test_chat_returns_null_request_id_when_telemetry_disabled():
+    """When telemetry is disabled (no-op tracer, trace_id == 0), the response
+    request_id must be None — NOT the phantom all-zeros key that would collide
+    across every disabled-telemetry response in the label store (Task 16)."""
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings(
+        _env_file=None,
+        ha_base_url="http://127.0.0.1:59999",
+        ha_token="t",
+        llm_url="http://127.0.0.1:59998",
+        ws_connect_timeout=0.5,
+        telemetry_enabled=False,
+    )
+
+    app = create_app(settings)
+
+    class FakeAgent:
+        async def ainvoke(self, payload, config=None):
+            return {"messages": [AIMessage(content="hello from agent")]}
+
+    with TestClient(app) as client:
+        client.app.state.agent = FakeAgent()
+        resp = client.post("/api/chat", json={"message": "what time is it?"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reply"] == "hello from agent"
+    assert body["request_id"] is None
