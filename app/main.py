@@ -4,8 +4,11 @@ config-injected and testable (no import-time singletons)."""
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
+import os
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,6 +33,44 @@ from app.ha.websocket import WebSocketClient
 from app.tools.context import ToolContext
 
 log = logging.getLogger("agent")
+
+
+def _assert_otlp_is_lan(endpoint: str) -> None:
+    """Refuse to start if the OTLP endpoint resolves to a public IP.
+
+    Parses the hostname from *endpoint* (a URL such as
+    ``http://otelcol.lan:4318``), resolves all of its addresses, and raises
+    ``RuntimeError`` if ANY resolved address is not an RFC-1918 private address
+    or loopback.  This is a hard guard — nothing leaves the LAN.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(endpoint)
+    host = parsed.hostname
+    if not host:
+        raise RuntimeError(
+            f"otlp_endpoint {endpoint!r}: cannot parse hostname — "
+            "must be a full URL like http://host:4318"
+        )
+
+    try:
+        results = socket.getaddrinfo(host, None)
+    except OSError as exc:
+        raise RuntimeError(
+            f"otlp_endpoint {endpoint!r}: failed to resolve {host!r}: {exc}"
+        ) from exc
+
+    for _family, _type, _proto, _canonname, sockaddr in results:
+        addr_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(addr_str)
+        except ValueError:
+            continue
+        if not (addr.is_private or addr.is_loopback):
+            raise RuntimeError(
+                f"otlp_endpoint {endpoint!r} resolved to public address "
+                f"{addr_str} — only LAN/loopback endpoints are allowed"
+            )
 
 
 async def _teardown(rest, ws, audit=None, telemetry_provider=None) -> None:
@@ -81,6 +122,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                           allowed_write_domains=write_domains)
         audit = AuditSink(cfg.audit_db_path)
         ws: WebSocketClient | None = WebSocketClient(cfg.ws_url, cfg.ha_token)
+
+        # Nothing leaves the LAN: kill LangSmith env vars and enforce a
+        # private-address-only constraint on the OTLP endpoint.
+        os.environ.pop("LANGSMITH_TRACING", None)
+        os.environ.pop("LANGCHAIN_TRACING_V2", None)
+        if cfg.otlp_endpoint:
+            _assert_otlp_is_lan(cfg.otlp_endpoint)
 
         # Initialise telemetry provider (None when disabled or DB unwritable).
         telemetry_provider = init_telemetry(cfg)
