@@ -73,7 +73,7 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     return prompt
 
 
-def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None):
+def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None):
     registry.load_all()
     llm = build_llm(settings)
     guard = LoopGuard()
@@ -83,6 +83,6 @@ def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None):
     return create_agent(
         model=llm,
         tools=tools,
-        middleware=build_middleware(settings, guard, base_prompt, budget),
+        middleware=build_middleware(settings, guard, base_prompt, budget, fast_path=fast_path),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )

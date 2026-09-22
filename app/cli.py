@@ -17,7 +17,7 @@ from langgraph.errors import GraphRecursionError
 from app.agent.checkpointer import open_checkpointer
 from app.agent.factory import build_agent
 from app.audit import AuditSink
-from app.needle.factory import build_fast_path_router
+from app.needle.factory import build_fast_path_backend
 from app.config import load_settings
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
@@ -85,12 +85,12 @@ async def main(save_conversations: bool = False) -> None:
     ctx = ToolContext(settings=settings, rest=rest, ws=ws, audit=audit)
     checkpointer_cm = open_checkpointer(settings)
     checkpointer = await checkpointer_cm.__aenter__()
-    agent = build_agent(settings, ctx, checkpointer=checkpointer)
     fast_path = None
     try:
-        fast_path = build_fast_path_router(settings, rest, ctx)
+        fast_path = build_fast_path_backend(settings, rest, ctx)
     except Exception as exc:
         print(f"warning: needle fast path unavailable ({exc})")
+    agent = build_agent(settings, ctx, checkpointer=checkpointer, fast_path=fast_path)
     config = {
         "configurable": {"thread_id": "cli"},
         "recursion_limit": settings.recursion_limit,
@@ -130,17 +130,8 @@ async def main(save_conversations: bool = False) -> None:
             if conv_file:
                 conv_file.write(f"{_ts()} You: {user_input}\n")
                 conv_file.flush()
-            # Needle fast path: if it handles the turn (emits a trigger), skip the agent.
-            if fast_path is not None:
-                fp_reply = await fast_path.try_fast_path(user_input, "cli")
-                if fp_reply is not None:
-                    print(f"Agent (fast path): {fp_reply}")
-                    if conv_file:
-                        conv_file.write(f"{_ts()} Agent (fast path): {fp_reply}\n")
-                        conv_file.flush()
-                    continue
-                # print("Stopping here for test")
-                # continue
+            # Needle fast path is handled transparently by FastPathMiddleware inside
+            # the agent; no external router call needed here.
             print("Agent: ", end="", flush=True)
             t0 = time.monotonic()
             try:

@@ -23,7 +23,7 @@ from app.agent.checkpointer import open_checkpointer
 from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
-from app.needle.factory import build_fast_path_router
+from app.needle.factory import build_fast_path_backend
 from app.config import Settings, load_settings
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
@@ -73,16 +73,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.warning("websocket unavailable (%s) — area/automation tools degraded", exc)
                 ws = None
             ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
+            fast_path = None
+            try:
+                fast_path = build_fast_path_backend(cfg, rest, ctx)
+            except Exception:
+                log.exception("needle fast path failed to build; running agent-only")
             async with open_checkpointer(cfg) as checkpointer:
                 app.state.settings = cfg
                 app.state.rest = rest
                 app.state.ws = ws
-                app.state.agent = build_agent(cfg, ctx, checkpointer=checkpointer)
-                app.state.fast_path = None
-                try:
-                    app.state.fast_path = build_fast_path_router(cfg, rest, ctx)
-                except Exception:
-                    log.exception("needle fast path failed to build; running agent-only")
+                app.state.agent = build_agent(cfg, ctx, checkpointer=checkpointer, fast_path=fast_path)
                 yield
         finally:
             await _teardown(rest, ws, audit=audit)
@@ -92,11 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(req: ChatRequest) -> ChatResponse:
         log.info("chat thread=%s len=%d", req.thread_id, len(req.message))
-        router = getattr(app.state, "fast_path", None)
-        if router is not None:
-            reply = await router.try_fast_path(req.message, req.thread_id)
-            if reply is not None:
-                return ChatResponse(reply=reply)
+        # Fast path is handled transparently by FastPathMiddleware inside the agent.
         try:
             result = await app.state.agent.ainvoke(
                 {"messages": [{"role": "user", "content": req.message}]},
@@ -119,15 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
 
         async def sse() -> AsyncIterator[str]:
-            # Mirror /api/chat: try the Needle fast-path first. A hit means no
-            # LLM ran, so there is nothing to stream — emit token + done.
-            router = getattr(app.state, "fast_path", None)
-            if router is not None:
-                reply = await router.try_fast_path(req.message, req.thread_id)
-                if reply is not None:
-                    yield _sse({"type": "token", "text": reply})
-                    yield _sse({"type": "done", "reply": reply})
-                    return
+            # Fast path is handled transparently by FastPathMiddleware inside the agent.
             async for event in stream_events(
                 app.state.agent,
                 req.message,
