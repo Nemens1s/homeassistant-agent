@@ -107,13 +107,46 @@ CREATE INDEX idx_labels_req ON labels(request_id);
 ]
 
 
-def open_store(path: str) -> sqlite3.Connection:
+def insert_label(
+    conn: sqlite3.Connection,
+    request_id: str,
+    source: str,
+    rating: int | None = None,
+    correct_tool: str | None = None,
+    correct_entity_id: str | None = None,
+    note: str | None = None,
+) -> int:
+    """Insert a row into the labels table and return its rowid.
+
+    ``ts`` is set to UTC now in ISO-8601 format (e.g. ``2026-09-17T12:34:56Z``).
+    The caller is responsible for ensuring ``request_id`` exists in the requests
+    table; a missing FK will raise an ``IntegrityError`` (FK enforcement is ON).
+    """
+    import datetime
+
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cur = conn.execute(
+        "INSERT INTO labels "
+        "(request_id, ts, source, rating, correct_tool, correct_entity_id, note) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (request_id, ts, source, rating, correct_tool, correct_entity_id, note),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def open_store(path: str, *, check_same_thread: bool = False) -> sqlite3.Connection:
     """Open (or create) the telemetry SQLite database.
 
     Returns a connection with WAL journal mode, foreign keys enabled,
     and all schema migrations applied up to SCHEMA_VERSION.
+
+    ``check_same_thread=False`` is the default because the telemetry store is
+    shared between the lifespan (async) thread and request handler threads in
+    the FastAPI app.  Callers that want strict per-thread ownership can pass
+    ``check_same_thread=True``.
     """
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, check_same_thread=check_same_thread)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     apply_migrations(conn)

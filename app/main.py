@@ -104,6 +104,15 @@ class ChatResponse(BaseModel):
     request_id: str | None = None
 
 
+class LabelRequest(BaseModel):
+    request_id: str
+    source: str
+    rating: int | None = None
+    correct_tool: str | None = None
+    correct_entity_id: str | None = None
+    note: str | None = None
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
 
@@ -134,14 +143,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         telemetry_provider = init_telemetry(cfg)
         app.state.telemetry = telemetry_provider
 
-        # Open a second conn for snapshot registration (snapshots write
-        # immediately; the exporter conn is owned by BatchSpanProcessor).
+        # Open a second conn for snapshot registration and the labels write path.
+        # (The exporter conn is owned by BatchSpanProcessor and is not reusable here.)
         snapshot_conn = None
         if telemetry_provider is not None and cfg.telemetry_db_path:
             try:
                 snapshot_conn = open_store(cfg.telemetry_db_path)
             except Exception:
                 log.warning("telemetry: could not open snapshot conn; skipping snapshot registration")
+
+        # Expose the labels/snapshot conn on app.state so POST /api/labels can
+        # write to the same DB.  None when telemetry is disabled or DB failed to open.
+        app.state.telemetry_store = snapshot_conn
 
         try:
             try:
@@ -351,6 +364,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "llm": llm_ok,
             "websocket": ws_ok,
         }
+
+    @app.post("/api/labels")
+    async def post_label(req: LabelRequest) -> dict:
+        from fastapi import HTTPException
+        from app.telemetry.store import insert_label
+
+        conn = getattr(app.state, "telemetry_store", None)
+        if conn is None:
+            raise HTTPException(status_code=503, detail="telemetry disabled")
+        label_id = insert_label(
+            conn,
+            request_id=req.request_id,
+            source=req.source,
+            rating=req.rating,
+            correct_tool=req.correct_tool,
+            correct_entity_id=req.correct_entity_id,
+            note=req.note,
+        )
+        return {"id": label_id}
 
     # Mounted last so /api/* wins. Frontend must use relative fetch paths
     # ("api/chat", not "/api/chat") — HA ingress serves us under a prefix.
