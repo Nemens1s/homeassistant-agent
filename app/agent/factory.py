@@ -73,16 +73,35 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     return prompt
 
 
-def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None):
+def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None, telemetry=None):
+    """Build the agent.
+
+    Args:
+        telemetry: Optional tuple ``(tracer, store_conn)``.  The tracer is
+            forwarded to ``TelemetryMiddleware`` (Task 12).  ``store_conn`` is
+            reserved for Task 15 (FastPathMiddleware persistence).
+    """
     registry.load_all()
     llm = build_llm(settings)
     guard = LoopGuard()
     tools = build_tools(ctx, settings.max_tier, guard=guard)
     base_prompt = build_system_prompt(settings, ctx.skills_dir)
     budget = max(1024, settings.num_ctx - settings.num_predict - _RESPONSE_AND_SCHEMA_MARGIN)
+
+    telemetry_tracer = None
+    if telemetry is not None:
+        telemetry_tracer, _store_conn = telemetry  # _store_conn reserved for Task 15
+
     return create_agent(
         model=llm,
         tools=tools,
-        middleware=build_middleware(settings, guard, base_prompt, budget, fast_path=fast_path),
+        middleware=build_middleware(
+            settings,
+            guard,
+            base_prompt,
+            budget,
+            fast_path=fast_path,
+            telemetry_tracer=telemetry_tracer,
+        ),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )

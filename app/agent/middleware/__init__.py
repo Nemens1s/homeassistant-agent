@@ -11,7 +11,14 @@ from app.fast_path.middleware import FastPathMiddleware
 from app.tools.adapter import LoopGuard
 
 
-def build_middleware(settings: Settings, guard: LoopGuard, base_prompt: str, budget: int, fast_path=None) -> list[AgentMiddleware]:
+def build_middleware(
+    settings: Settings,
+    guard: LoopGuard,
+    base_prompt: str,
+    budget: int,
+    fast_path=None,
+    telemetry_tracer=None,
+) -> list[AgentMiddleware]:
     middleware: list[AgentMiddleware] = [
         ContextWindowMiddleware(base_prompt, budget),
         LoopGuardResetMiddleware(guard),
@@ -21,7 +28,10 @@ def build_middleware(settings: Settings, guard: LoopGuard, base_prompt: str, bud
     if settings.enable_tool_subsetting:
         # First so it trims the menu before the model call is assembled.
         middleware.insert(0, ToolSubsetMiddleware())
-    # Task 12 will insert TelemetryMiddleware here (immediately before FastPath).
+    # TelemetryMiddleware is inserted immediately before FastPath (outer to it, inner to all else).
+    if telemetry_tracer is not None:
+        from app.telemetry.middleware import TelemetryMiddleware
+        middleware.append(TelemetryMiddleware(telemetry_tracer))
     # FastPath is always appended last (innermost) so it short-circuits first.
     if fast_path is not None and settings.max_tier >= 2:
         backend, menu_provider = fast_path
