@@ -156,6 +156,31 @@ def test_out_of_order_child_before_parent(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Column mappings pinned: conversation_id → requests.thread_id,
+# response.model → model_calls.model
+# ---------------------------------------------------------------------------
+
+def test_conversation_id_and_response_model_mappings(tmp_path):
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    tp = _provider(conn)
+    tracer = tp.get_tracer("test")
+    with tracer.start_as_current_span(c.SPAN_INVOKE_AGENT) as root:
+        root.set_attribute(c.GOSLING_INPUT_TEXT, "hello")
+        root.set_attribute(c.GOSLING_PATH, "agent")
+        root.set_attribute(c.GOSLING_OUTCOME, "ok")
+        root.set_attribute(c.GEN_AI_CONVERSATION_ID, "thread-abc")
+        with tracer.start_as_current_span(f"{c.SPAN_CHAT} step1") as chat:
+            chat.set_attribute(c.GOSLING_STEP, 1)
+            chat.set_attribute(c.GOSLING_TOOLS_OFFERED, "[]")
+            chat.set_attribute(c.GEN_AI_RESPONSE_MODEL, "qwen2.5:7b")
+    tp.shutdown()
+    thread = conn.execute("SELECT thread_id FROM requests").fetchone()
+    assert thread == ("thread-abc",)
+    model = conn.execute("SELECT model FROM model_calls").fetchone()
+    assert model == ("qwen2.5:7b",)
+
+
+# ---------------------------------------------------------------------------
 # execute_tool span → tool_calls
 # ---------------------------------------------------------------------------
 

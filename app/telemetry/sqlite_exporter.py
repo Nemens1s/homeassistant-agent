@@ -190,8 +190,8 @@ class SqliteSpanExporter(SpanExporter):
                 _attr(span, c.GOSLING_CHANNEL) or "",
                 _attr(span, c.GOSLING_ENDPOINT),
                 _attr(span, c.GOSLING_DEVICE_ID),
-                # thread_id: no convention key defined; leave NULL
-                None,
+                # thread_id from the OTel GenAI conversation id (set by Task 13)
+                _attr(span, c.GEN_AI_CONVERSATION_ID),
                 # input_text is NOT NULL
                 _attr(span, c.GOSLING_INPUT_TEXT) or "",
                 _attr(span, c.GOSLING_OUTPUT_TEXT),
@@ -239,7 +239,8 @@ class SqliteSpanExporter(SpanExporter):
                 _attr(span, c.GOSLING_STEP) or 0,
                 ts_start,
                 duration,
-                _attr(span, c.GEN_AI_REQUEST_MODEL),
+                # model_calls.model is the RESPONSE model (per design doc chat span)
+                _attr(span, c.GEN_AI_RESPONSE_MODEL),
                 _bool_to_int(fast_path_val) if fast_path_val is not None else 0,
                 _attr(span, c.GOSLING_TOOLS_OFFERED) or "[]",
                 _attr(span, c.GOSLING_MESSAGES_COUNT),
