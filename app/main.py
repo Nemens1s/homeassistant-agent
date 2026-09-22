@@ -365,6 +365,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "websocket": ws_ok,
         }
 
+    @app.get("/api/telemetry/summary")
+    async def get_telemetry_summary(days: int = 7) -> dict:
+        from fastapi import HTTPException
+        from app.telemetry.store import summary as store_summary
+
+        conn = getattr(app.state, "telemetry_store", None)
+        if conn is None:
+            raise HTTPException(status_code=503, detail="telemetry disabled")
+        return store_summary(conn, days=days)
+
+    @app.get("/api/telemetry/requests")
+    async def get_telemetry_requests(limit: int = 20, cursor: str | None = None) -> dict:
+        from fastapi import HTTPException
+        from app.telemetry.store import recent_requests as store_recent_requests
+
+        conn = getattr(app.state, "telemetry_store", None)
+        if conn is None:
+            raise HTTPException(status_code=503, detail="telemetry disabled")
+        return store_recent_requests(conn, limit=limit, cursor=cursor)
+
     @app.post("/api/labels")
     async def post_label(req: LabelRequest) -> dict:
         from fastapi import HTTPException

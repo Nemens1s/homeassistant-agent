@@ -9,7 +9,7 @@ Usage:
 
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Each entry is a SQL script to apply when upgrading to that schema version.
 # Index 0 = migration to version 1, index 1 = migration to version 2, etc.
@@ -104,7 +104,396 @@ CREATE INDEX idx_tool_calls_req ON tool_calls(request_id);
 CREATE INDEX idx_tool_calls_tool ON tool_calls(tool);
 CREATE INDEX idx_labels_req ON labels(request_id);
 """,
+    # Migration 2: derived views for the metrics UI and export CLI.
+    #
+    # fast_path_dataset — one row per classified request (those with a row in
+    # fast_path_decisions).  Columns:
+    #   request_id, ts_start, utterance (= input_text), backend, menu_hash,
+    #   prediction (= entity_id from fp decision), confidence, threshold,
+    #   accepted, latest_label_rating (rating from the most-recent label row,
+    #   NULL if none), agent_reference (entity_id from the first
+    #   trigger_automation tool call when path=agent, NULL for fast-path hits
+    #   or when none was called).
+    #
+    # tool_offer_stats — per toolset_hash, per tool: how often offered and
+    # chosen, chosen/offered ratio, error rate, repeated_call rate.
+    # Fast-path model_calls are excluded (fast_path = 1).
+    # "offered" = count of model_calls rows in which the JSON tools_offered
+    #   array contains the tool name.
+    # "chosen" = count of tool_calls rows for that tool in the same toolset.
+    # Columns: toolset_hash, tool, times_offered, times_chosen, chosen_ratio,
+    #          error_rate, repeated_call_rate.
+    #
+    # request_quality — per request: steps, total_thinking_chars,
+    # thinking_before_first_tool (chars of thinking_text in model_calls rows
+    # with step < the step of the first tool call, or all thinking if no tool
+    # calls), repeated_calls (count of tool_calls with error_code =
+    # 'repeated_call'), distinct_tools (count of distinct tool names used).
+    """
+CREATE VIEW IF NOT EXISTS fast_path_dataset AS
+SELECT
+    r.request_id,
+    r.ts_start,
+    r.input_text                                    AS utterance,
+    fp.backend,
+    fp.menu_hash,
+    fp.entity_id                                    AS prediction,
+    fp.confidence,
+    fp.threshold,
+    fp.accepted,
+    (
+        SELECT l.rating
+        FROM labels l
+        WHERE l.request_id = r.request_id
+        ORDER BY l.ts DESC
+        LIMIT 1
+    )                                               AS latest_label_rating,
+    CASE WHEN fp.accepted = 0 THEN (
+        SELECT tc.args_json
+        FROM tool_calls tc
+        WHERE tc.request_id = r.request_id
+          AND tc.tool = 'trigger_automation'
+          AND (tc.call_id IS NULL OR tc.call_id NOT LIKE 'fastpath-%')
+        ORDER BY tc.seq
+        LIMIT 1
+    ) ELSE NULL END                                 AS agent_reference
+FROM requests r
+JOIN fast_path_decisions fp ON fp.request_id = r.request_id;
+
+CREATE VIEW IF NOT EXISTS tool_offer_stats AS
+WITH offered_counts AS (
+    -- Count how many non-fast-path model_calls offered each tool.
+    -- We join requests to get toolset_hash, then expand tools_offered JSON.
+    SELECT
+        r.toolset_hash,
+        tool_name.value                             AS tool,
+        COUNT(*)                                    AS times_offered
+    FROM model_calls mc
+    JOIN requests r ON r.request_id = mc.request_id
+    JOIN json_each(mc.tools_offered) AS tool_name
+    WHERE mc.fast_path = 0
+      AND r.toolset_hash IS NOT NULL
+    GROUP BY r.toolset_hash, tool_name.value
+),
+chosen_counts AS (
+    SELECT
+        r.toolset_hash,
+        tc.tool,
+        COUNT(*)                                    AS times_chosen,
+        SUM(CASE WHEN tc.status = 'error' THEN 1 ELSE 0 END)
+                                                    AS times_error,
+        SUM(CASE WHEN tc.error_code = 'repeated_call' THEN 1 ELSE 0 END)
+                                                    AS times_repeated_call
+    FROM tool_calls tc
+    JOIN requests r ON r.request_id = tc.request_id
+    WHERE r.toolset_hash IS NOT NULL
+    GROUP BY r.toolset_hash, tc.tool
+)
+SELECT
+    oc.toolset_hash,
+    oc.tool,
+    oc.times_offered,
+    COALESCE(cc.times_chosen, 0)                    AS times_chosen,
+    CASE WHEN oc.times_offered > 0
+         THEN CAST(COALESCE(cc.times_chosen, 0) AS REAL) / oc.times_offered
+         ELSE NULL
+    END                                             AS chosen_ratio,
+    CASE WHEN COALESCE(cc.times_chosen, 0) > 0
+         THEN CAST(COALESCE(cc.times_error, 0) AS REAL) / cc.times_chosen
+         ELSE NULL
+    END                                             AS error_rate,
+    CASE WHEN COALESCE(cc.times_chosen, 0) > 0
+         THEN CAST(COALESCE(cc.times_repeated_call, 0) AS REAL) / cc.times_chosen
+         ELSE NULL
+    END                                             AS repeated_call_rate
+FROM offered_counts oc
+LEFT JOIN chosen_counts cc
+    ON cc.toolset_hash = oc.toolset_hash AND cc.tool = oc.tool;
+
+CREATE VIEW IF NOT EXISTS request_quality AS
+WITH first_tool_step AS (
+    -- Minimum step number of any tool call per request, derived from model_calls
+    -- that have a non-empty tool_calls JSON array.
+    SELECT
+        mc.request_id,
+        MIN(mc.step)                                AS first_tool_step
+    FROM model_calls mc
+    WHERE mc.tool_calls IS NOT NULL
+      AND mc.tool_calls != '[]'
+    GROUP BY mc.request_id
+),
+thinking_stats AS (
+    SELECT
+        mc.request_id,
+        SUM(COALESCE(LENGTH(mc.thinking_text), 0))  AS total_thinking_chars,
+        SUM(
+            CASE
+                WHEN ft.first_tool_step IS NULL
+                  OR mc.step < ft.first_tool_step
+                THEN COALESCE(LENGTH(mc.thinking_text), 0)
+                ELSE 0
+            END
+        )                                           AS thinking_before_first_tool
+    FROM model_calls mc
+    LEFT JOIN first_tool_step ft ON ft.request_id = mc.request_id
+    GROUP BY mc.request_id
+),
+tool_stats AS (
+    SELECT
+        tc.request_id,
+        SUM(CASE WHEN tc.error_code = 'repeated_call' THEN 1 ELSE 0 END)
+                                                    AS repeated_calls,
+        COUNT(DISTINCT tc.tool)                     AS distinct_tools
+    FROM tool_calls tc
+    GROUP BY tc.request_id
+)
+SELECT
+    r.request_id,
+    COALESCE(r.steps, 0)                            AS steps,
+    COALESCE(ts.total_thinking_chars, 0)            AS total_thinking_chars,
+    COALESCE(ts.thinking_before_first_tool, 0)      AS thinking_before_first_tool,
+    COALESCE(tl.repeated_calls, 0)                  AS repeated_calls,
+    COALESCE(tl.distinct_tools, 0)                  AS distinct_tools
+FROM requests r
+LEFT JOIN thinking_stats ts ON ts.request_id = r.request_id
+LEFT JOIN tool_stats tl ON tl.request_id = r.request_id;
+""",
 ]
+
+
+def summary(conn: sqlite3.Connection, days: int) -> dict:
+    """Return an aggregated summary dict for the last *days* days.
+
+    Shape::
+
+        {
+            "requests_by_path": {"fast_path": int, "agent": int, ...},
+            "outcome_counts":   {"ok": int, "error": int, ...},
+            "fast_path_hit_rate": float | None,   # None when 0 requests
+            "duration_p50_by_path": {"fast_path": float | None, ...},
+            "duration_p95_by_path": {"fast_path": float | None, ...},
+            "ttft_p50_by_path":    {"fast_path": float | None, ...},
+            "ttft_p95_by_path":    {"fast_path": float | None, ...},
+            "label_counts": {"total": int, "thumbs_up": int, "thumbs_down": int},
+        }
+
+    The *days* window is applied via ``ts_start >= datetime('now','-N days')``.
+    """
+    # SQLite does not have native percentile functions; we compute them via
+    # ordering and NTILE / row_number tricks using window functions (available
+    # since SQLite 3.25).
+
+    cutoff = f"-{days} days"
+
+    # ---- requests_by_path and outcome_counts --------------------------------
+    rows = conn.execute(
+        "SELECT path, outcome, COUNT(*) "
+        "FROM requests "
+        "WHERE datetime(ts_start) >= datetime('now', ?) "
+        "GROUP BY path, outcome",
+        (cutoff,),
+    ).fetchall()
+
+    requests_by_path: dict[str, int] = {}
+    outcome_counts: dict[str, int] = {}
+    for path, outcome, cnt in rows:
+        requests_by_path[path] = requests_by_path.get(path, 0) + cnt
+        outcome_counts[outcome] = outcome_counts.get(outcome, 0) + cnt
+
+    total = sum(requests_by_path.values())
+    fp_count = requests_by_path.get("fast_path", 0)
+    fast_path_hit_rate: float | None = (fp_count / total) if total else None
+
+    # ---- percentiles by path ------------------------------------------------
+    # For p50/p95 we fetch all values per path and compute in Python
+    # (avoids SQLite version concerns with window functions in NTILE queries).
+    def _percentiles(values: list[float | None], p: int) -> float | None:
+        clean = sorted(v for v in values if v is not None)
+        if not clean:
+            return None
+        idx = int(len(clean) * p / 100)
+        idx = min(idx, len(clean) - 1)
+        return clean[idx]
+
+    duration_rows = conn.execute(
+        "SELECT path, duration_ms "
+        "FROM requests "
+        "WHERE datetime(ts_start) >= datetime('now', ?)",
+        (cutoff,),
+    ).fetchall()
+
+    ttft_rows = conn.execute(
+        "SELECT path, ttft_ms "
+        "FROM requests "
+        "WHERE datetime(ts_start) >= datetime('now', ?)",
+        (cutoff,),
+    ).fetchall()
+
+    paths = set(requests_by_path.keys())
+
+    def _group_by_path(rows_list):
+        grouped: dict[str, list] = {p: [] for p in paths}
+        for path, val in rows_list:
+            grouped.setdefault(path, []).append(val)
+        return grouped
+
+    dur_by_path = _group_by_path(duration_rows)
+    ttft_by_path = _group_by_path(ttft_rows)
+
+    duration_p50_by_path = {p: _percentiles(dur_by_path[p], 50) for p in paths}
+    duration_p95_by_path = {p: _percentiles(dur_by_path[p], 95) for p in paths}
+    ttft_p50_by_path = {p: _percentiles(ttft_by_path[p], 50) for p in paths}
+    ttft_p95_by_path = {p: _percentiles(ttft_by_path[p], 95) for p in paths}
+
+    # ---- label counts -------------------------------------------------------
+    lc = conn.execute(
+        "SELECT "
+        "  COUNT(*) AS total, "
+        "  SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) AS thumbs_up, "
+        "  SUM(CASE WHEN rating = -1 THEN 1 ELSE 0 END) AS thumbs_down "
+        "FROM labels l "
+        "JOIN requests r ON r.request_id = l.request_id "
+        "WHERE datetime(r.ts_start) >= datetime('now', ?)",
+        (cutoff,),
+    ).fetchone()
+
+    label_counts = {
+        "total": lc[0] or 0,
+        "thumbs_up": lc[1] or 0,
+        "thumbs_down": lc[2] or 0,
+    }
+
+    return {
+        "requests_by_path": requests_by_path,
+        "outcome_counts": outcome_counts,
+        "fast_path_hit_rate": fast_path_hit_rate,
+        "duration_p50_by_path": duration_p50_by_path,
+        "duration_p95_by_path": duration_p95_by_path,
+        "ttft_p50_by_path": ttft_p50_by_path,
+        "ttft_p95_by_path": ttft_p95_by_path,
+        "label_counts": label_counts,
+    }
+
+
+def recent_requests(
+    conn: sqlite3.Connection,
+    limit: int,
+    cursor: str | None = None,
+) -> dict:
+    """Return a paginated list of recent requests with drill-down detail.
+
+    Results are sorted newest-first by ``ts_start``.  Pagination uses an
+    opaque cursor that encodes the ``ts_start`` of the last returned row.
+
+    Shape::
+
+        {
+            "rows": [
+                {
+                    "request_id": str,
+                    "ts_start": str,
+                    "channel": str,
+                    "path": str,
+                    "outcome": str,
+                    "duration_ms": int | None,
+                    "ttft_ms": int | None,
+                    "input_text": str,
+                    "output_text": str | None,
+                    "model_calls": [...],   # list of step dicts
+                    "tool_calls": [...],    # list of tool call dicts
+                },
+                ...
+            ],
+            "next_cursor": str | None,
+        }
+
+    Each **model_call** dict has keys: ``step``, ``model``, ``fast_path``,
+    ``tools_offered``, ``thinking_text``, ``content_text``, ``duration_ms``.
+
+    Each **tool_call** dict has keys: ``seq``, ``tool``, ``args_json``,
+    ``status``, ``error_code``, ``duration_ms``.
+    """
+    params: list = []
+    where = ""
+    if cursor is not None:
+        where = "WHERE r.ts_start < ?"
+        params.append(cursor)
+
+    # Fetch limit+1 to know whether there is a next page.
+    sql = (
+        "SELECT r.request_id, r.ts_start, r.channel, r.path, r.outcome, "
+        "       r.duration_ms, r.ttft_ms, r.input_text, r.output_text "
+        f"FROM requests r {where} "
+        "ORDER BY r.ts_start DESC "
+        "LIMIT ?"
+    )
+    params.append(limit + 1)
+    raw_rows = conn.execute(sql, params).fetchall()
+
+    has_more = len(raw_rows) > limit
+    raw_rows = raw_rows[:limit]
+
+    def _model_calls(request_id: str) -> list[dict]:
+        rows = conn.execute(
+            "SELECT step, model, fast_path, tools_offered, thinking_text, "
+            "       content_text, duration_ms "
+            "FROM model_calls WHERE request_id = ? ORDER BY step",
+            (request_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            result.append({
+                "step": row[0],
+                "model": row[1],
+                "fast_path": bool(row[2]),
+                "tools_offered": row[3],
+                "thinking_text": row[4],
+                "content_text": row[5],
+                "duration_ms": row[6],
+            })
+        return result
+
+    def _tool_calls(request_id: str) -> list[dict]:
+        rows = conn.execute(
+            "SELECT seq, tool, args_json, status, error_code, duration_ms "
+            "FROM tool_calls WHERE request_id = ? ORDER BY seq",
+            (request_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            result.append({
+                "seq": row[0],
+                "tool": row[1],
+                "args_json": row[2],
+                "status": row[3],
+                "error_code": row[4],
+                "duration_ms": row[5],
+            })
+        return result
+
+    result_rows = []
+    for row in raw_rows:
+        request_id = row[0]
+        result_rows.append({
+            "request_id": request_id,
+            "ts_start": row[1],
+            "channel": row[2],
+            "path": row[3],
+            "outcome": row[4],
+            "duration_ms": row[5],
+            "ttft_ms": row[6],
+            "input_text": row[7],
+            "output_text": row[8],
+            "model_calls": _model_calls(request_id),
+            "tool_calls": _tool_calls(request_id),
+        })
+
+    next_cursor = result_rows[-1]["ts_start"] if has_more and result_rows else None
+
+    return {
+        "rows": result_rows,
+        "next_cursor": next_cursor,
+    }
 
 
 def insert_label(

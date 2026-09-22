@@ -25,28 +25,6 @@ def test_chatresponse_has_optional_request_id():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def reset_otel_provider():
-    """Reset the OTel global TracerProvider before and after the test.
-
-    This keeps the full suite at exactly 1 warning (the starlette one).
-    The reset is done by setting the internal ``_TRACER_PROVIDER`` to None,
-    which is the documented / published reset path in opentelemetry-api.
-    """
-    from opentelemetry import trace as otel_trace
-
-    # Save whatever was set before (may be NoOpTracerProvider or real SDK provider).
-    _orig = otel_trace._TRACER_PROVIDER  # noqa: SLF001
-
-    # Reset before the test so init_telemetry can set a fresh one.
-    otel_trace._TRACER_PROVIDER = None  # noqa: SLF001
-
-    yield
-
-    # Restore after the test to avoid polluting other tests.
-    otel_trace._TRACER_PROVIDER = _orig  # noqa: SLF001
-
-
 def test_chat_returns_request_id_when_telemetry_enabled(tmp_path, reset_otel_provider):
     """POST /api/chat should return a non-null request_id in the JSON body
     when telemetry is enabled and the DB is writable."""

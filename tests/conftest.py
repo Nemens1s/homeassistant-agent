@@ -6,6 +6,30 @@ Settings(_env_file=None) get true defaults regardless of the developer's .env.
 
 import pytest
 
+
+@pytest.fixture()
+def reset_otel_provider():
+    """Reset the OTel global TracerProvider + set-once latch before/after a test.
+
+    Resets both ``_TRACER_PROVIDER`` and ``_TRACER_PROVIDER_SET_ONCE._done`` so
+    that ``trace.set_tracer_provider`` works even when a previous test already
+    set a real provider.  This keeps the full suite at exactly 1 warning (the
+    starlette deprecation warning).
+    """
+    from opentelemetry import trace as otel_trace
+
+    _orig = otel_trace._TRACER_PROVIDER  # noqa: SLF001
+    _orig_done = otel_trace._TRACER_PROVIDER_SET_ONCE._done  # noqa: SLF001
+
+    otel_trace._TRACER_PROVIDER = None  # noqa: SLF001
+    otel_trace._TRACER_PROVIDER_SET_ONCE._done = False  # noqa: SLF001
+
+    yield
+
+    otel_trace._TRACER_PROVIDER = _orig  # noqa: SLF001
+    otel_trace._TRACER_PROVIDER_SET_ONCE._done = _orig_done  # noqa: SLF001
+
+
 _SETTINGS_ENV_VARS = [
     "HA_BASE_URL",
     "HA_TOKEN",

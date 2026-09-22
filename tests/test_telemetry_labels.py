@@ -68,30 +68,6 @@ def test_insert_label_ts_is_set(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def reset_otel_provider():
-    """Reset the OTel global TracerProvider before and after the test.
-
-    Mirrors the fixture in test_telemetry_request_span.py but also resets
-    the ``_TRACER_PROVIDER_SET_ONCE`` latch, which is required when this file
-    runs before test_telemetry_request_span.py (alphabetically it does).
-    Without resetting the latch, subsequent ``trace.set_tracer_provider`` calls
-    silently no-op and the second test ends up with a no-op tracer.
-    """
-    from opentelemetry import trace as otel_trace
-
-    _orig = otel_trace._TRACER_PROVIDER  # noqa: SLF001
-    _orig_done = otel_trace._TRACER_PROVIDER_SET_ONCE._done  # noqa: SLF001
-
-    otel_trace._TRACER_PROVIDER = None  # noqa: SLF001
-    otel_trace._TRACER_PROVIDER_SET_ONCE._done = False  # noqa: SLF001
-
-    yield
-
-    otel_trace._TRACER_PROVIDER = _orig  # noqa: SLF001
-    otel_trace._TRACER_PROVIDER_SET_ONCE._done = _orig_done  # noqa: SLF001
-
-
 def _telemetry_settings(tmp_path):
     from app.config import Settings
 
