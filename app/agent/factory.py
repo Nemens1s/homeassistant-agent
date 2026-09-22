@@ -89,8 +89,9 @@ def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_pa
     budget = max(1024, settings.num_ctx - settings.num_predict - _RESPONSE_AND_SCHEMA_MARGIN)
 
     telemetry_tracer = None
+    telemetry_store_conn = None
     if telemetry is not None:
-        telemetry_tracer, _store_conn = telemetry  # _store_conn reserved for Task 15
+        telemetry_tracer, telemetry_store_conn = telemetry
 
     return create_agent(
         model=llm,
@@ -102,6 +103,7 @@ def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_pa
             budget,
             fast_path=fast_path,
             telemetry_tracer=telemetry_tracer,
+            telemetry_store_conn=telemetry_store_conn,
         ),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )

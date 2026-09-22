@@ -18,6 +18,7 @@ def build_middleware(
     budget: int,
     fast_path=None,
     telemetry_tracer=None,
+    telemetry_store_conn=None,
 ) -> list[AgentMiddleware]:
     middleware: list[AgentMiddleware] = [
         ContextWindowMiddleware(base_prompt, budget),
@@ -35,5 +36,11 @@ def build_middleware(
     # FastPath is always appended last (innermost) so it short-circuits first.
     if fast_path is not None and settings.max_tier >= 2:
         backend, menu_provider = fast_path
-        middleware.append(FastPathMiddleware(backend, menu_provider, settings.needle_confidence_threshold))
+        middleware.append(FastPathMiddleware(
+            backend,
+            menu_provider,
+            settings.needle_confidence_threshold,
+            tracer=telemetry_tracer,
+            store_conn=telemetry_store_conn,
+        ))
     return middleware
