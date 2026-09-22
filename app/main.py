@@ -365,6 +365,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "websocket": ws_ok,
         }
 
+    @app.get("/api/history")
+    async def get_history(thread_id: str) -> dict:
+        from app.agent.history import display_transcript
+
+        snap = await app.state.agent.aget_state(
+            {"configurable": {"thread_id": thread_id}}
+        )
+        messages = (snap.values or {}).get("messages", [])
+        return {"messages": display_transcript(messages)}
+
     @app.get("/api/telemetry/summary")
     async def get_telemetry_summary(days: int = 7) -> dict:
         from fastapi import HTTPException

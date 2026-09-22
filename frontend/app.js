@@ -43,17 +43,22 @@ if (!threadId) {
 }
 console.log('[agent] thread', threadId);
 
-function logKey() { return 'log_' + threadId; }
-
-function saveEntry(role, text, requestId) {
-  const entries = JSON.parse(localStorage.getItem(logKey()) || '[]');
-  entries.push({ role, text, request_id: requestId || null });
-  localStorage.setItem(logKey(), JSON.stringify(entries));
-}
-
-function loadHistory() {
-  const entries = JSON.parse(localStorage.getItem(logKey()) || '[]');
-  for (const entry of entries) {
+// The server (checkpointer) is the source of truth for conversation history.
+// We render whatever the server still remembers for this thread; localStorage
+// only holds the thread id (the key), never the transcript. This keeps the
+// display in step with the model's memory — a thread the server has forgotten
+// (evicted, wiped, or a restarted in-memory dev server) simply shows nothing.
+async function loadHistory() {
+  let data;
+  try {
+    // Relative path (no leading slash) — required behind HA ingress.
+    const resp = await fetch('api/history?thread_id=' + encodeURIComponent(threadId));
+    if (!resp.ok) return;
+    data = await resp.json();
+  } catch (err) {
+    return;
+  }
+  for (const entry of data.messages || []) {
     if (entry.role === 'user') {
       addUserMsg(entry.text);
     } else {
@@ -62,9 +67,6 @@ function loadHistory() {
       bubble.className = 'bubble rendered';
       bubble.innerHTML = renderMarkdown(entry.text);
       turn.appendChild(bubble);
-      if (entry.request_id) {
-        addFeedback(turn, entry.request_id);
-      }
       log.scrollTop = log.scrollHeight;
     }
   }
@@ -241,7 +243,6 @@ async function sendMessage() {
   console.log('[agent] sendMessage', { text, streaming });
   if (!text || streaming) return;
   addUserMsg(text);
-  saveEntry('user', text);
   input.value = '';
   setStreaming(true);
 
@@ -361,7 +362,6 @@ async function sendMessage() {
           }
           bubble.className = 'bubble rendered';
           bubble.innerHTML = renderMarkdown(finalText);
-          saveEntry('bot', finalText, evt.request_id);
           if (evt.request_id) {
             addFeedback(turn, evt.request_id);
           }
@@ -385,7 +385,6 @@ async function sendMessage() {
 
 function newConversation() {
   if (streaming) return;
-  localStorage.removeItem(logKey());
   threadId = newUUID();
   localStorage.setItem('thread', threadId);
   log.innerHTML = '';
