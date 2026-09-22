@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     needle_confidence_threshold: float = 0.0
     needle_menu_ttl_s: int = 60          # menu/grammar cache TTL
 
+    # Telemetry (OTel + local SQLite). Set telemetry_enabled=False to opt out.
+    # telemetry_db_path: local SQLite file; empty = telemetry disabled.
+    # telemetry_retention_days: 0 = keep forever (pruning is a future task).
+    # otlp_endpoint: OTLP HTTP exporter — Phase 2 only; ignored here.
+    telemetry_enabled: bool = True
+    telemetry_db_path: str = "/data/telemetry.sqlite"
+    telemetry_retention_days: int = 0
+    otlp_endpoint: str = ""
+
     # Person display names: list of {ha_name: "<HA friendly_name>", name: "<shown name>"}
     # ha_name is the lookup key (what HA reports); name is what the agent sees.
     person_name_map: list[dict[str, str]] = []
