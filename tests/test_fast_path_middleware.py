@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.fast_path.backend import Decision, FakeBackend
-from app.fast_path.middleware import FastPathMiddleware, FASTPATH_PREFIX
+from app.agent.middleware.fast_path_middleware import FastPathMiddleware, FASTPATH_PREFIX
 from app.needle.menu import Menu, MenuItem
 
 _MENU = Menu(items=(MenuItem("automation.ai_action_night", "Night", "goodnight"),), signature="s")

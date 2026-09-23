@@ -1,5 +1,5 @@
 from app.agent.middleware import build_middleware
-from app.fast_path.middleware import FastPathMiddleware
+from app.agent.middleware.fast_path_middleware import FastPathMiddleware
 from app.fast_path.backend import FakeBackend
 from app.tools.adapter import LoopGuard
 from app.config import Settings

@@ -1,6 +1,6 @@
 """Backend-agnostic fast-path inference seam. Any classifier that maps an
 utterance + menu to a Decision plugs in here; the middleware depends only on
-this protocol, never on Needle."""
+this protocol, never on a concrete backend."""
 
 from __future__ import annotations
 

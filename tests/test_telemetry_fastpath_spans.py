@@ -7,7 +7,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from app.fast_path.backend import Decision, FakeBackend
-from app.fast_path.middleware import FastPathMiddleware
+from app.agent.middleware.fast_path_middleware import FastPathMiddleware
 from app.needle.menu import Menu, MenuItem
 
 _MENU = Menu(items=(MenuItem("automation.ai_action_night", "Night", "goodnight"),), signature="s")

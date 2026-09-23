@@ -6,8 +6,8 @@ from app.agent.middleware.context_window_middleware import ContextWindowMiddlewa
 from app.agent.middleware.history_cap_middleware import HistoryCapMiddleware
 from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware
+from app.agent.middleware.fast_path_middleware import FastPathMiddleware
 from app.config import Settings
-from app.fast_path.middleware import FastPathMiddleware
 from app.tools.adapter import LoopGuard
 
 

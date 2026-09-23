@@ -106,7 +106,7 @@ async def test_tool_call_records_result_capped():
 def test_middleware_ordering_with_telemetry():
     """TelemetryMiddleware must sit immediately outside FastPathMiddleware."""
     from app.agent.middleware import build_middleware
-    from app.fast_path.middleware import FastPathMiddleware
+    from app.agent.middleware.fast_path_middleware import FastPathMiddleware
     from app.telemetry.middleware import TelemetryMiddleware
     from app.fast_path.backend import FakeBackend
     from app.tools.adapter import LoopGuard

@@ -78,8 +78,8 @@ def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_pa
 
     Args:
         telemetry: Optional tuple ``(tracer, store_conn)``.  The tracer is
-            forwarded to ``TelemetryMiddleware`` (Task 12).  ``store_conn`` is
-            reserved for Task 15 (FastPathMiddleware persistence).
+            forwarded to ``TelemetryMiddleware``.  ``store_conn`` is reserved
+            for fast-path persistence.
     """
     registry.load_all()
     llm = build_llm(settings)

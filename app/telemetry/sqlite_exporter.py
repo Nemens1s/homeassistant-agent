@@ -190,7 +190,7 @@ class SqliteSpanExporter(SpanExporter):
                 _attr(span, c.GOSLING_CHANNEL) or "",
                 _attr(span, c.GOSLING_ENDPOINT),
                 _attr(span, c.GOSLING_DEVICE_ID),
-                # thread_id from the OTel GenAI conversation id (set by Task 13)
+                # thread_id from the OTel GenAI conversation id
                 _attr(span, c.GEN_AI_CONVERSATION_ID),
                 # input_text is NOT NULL
                 _attr(span, c.GOSLING_INPUT_TEXT) or "",

@@ -9,3 +9,8 @@ __pycache__/
 .conversations/
 .evals/
 analysis/
+
+# Local runtime databases (telemetry, checkpoints) — never commit
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
