@@ -3,7 +3,7 @@ imports them. Adding a tool = one new module + one line in _DEFAULT_MODULES.
 
 tools_for_tier() is the permission gate: the agent only sees tools at or
 below max_tier. At max_tier=1 that means READ-only; at max_tier=2 the action
-tool (trigger_automation) is also included.
+tool (trigger_action) is also included.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.get_areas",
     "app.tools.read.get_battery_status",
     "app.tools.read.get_automations",
+    "app.tools.read.list_actions",
     "app.tools.read.get_person_locations",
     "app.tools.read.get_vacuum_state",
     "app.tools.read.get_weather",
@@ -31,7 +32,7 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.list_devices",
     "app.tools.read.list_skills",
     "app.tools.read.load_skill",
-    "app.tools.action.trigger_automation",
+    "app.tools.action.trigger_action",
 )
 
 
@@ -62,7 +63,7 @@ def tools_for_tier(max_tier: int) -> list[ToolDefinition]:
 def load_all(modules: tuple[str, ...] = _DEFAULT_MODULES) -> None:
     """Import every tool module so its register() call runs. Clears first so
     it is safe to call even when side-effect imports have already registered
-    some tools (e.g. trigger_automation via needle/menu.py)."""
+    some tools (e.g. trigger_action via needle/menu.py)."""
     _REGISTRY.clear()
     for mod in modules:
         existing = sys.modules.get(mod)

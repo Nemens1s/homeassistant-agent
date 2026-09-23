@@ -112,7 +112,7 @@ CREATE INDEX idx_labels_req ON labels(request_id);
     #   prediction (= entity_id from fp decision), confidence, threshold,
     #   accepted, latest_label_rating (rating from the most-recent label row,
     #   NULL if none), agent_reference (entity_id from the first
-    #   trigger_automation tool call when path=agent, NULL for fast-path hits
+    #   trigger_action tool call when path=agent, NULL for fast-path hits
     #   or when none was called).
     #
     # tool_offer_stats — per toolset_hash, per tool: how often offered and
@@ -152,7 +152,7 @@ SELECT
         SELECT tc.args_json
         FROM tool_calls tc
         WHERE tc.request_id = r.request_id
-          AND tc.tool = 'trigger_automation'
+          AND tc.tool = 'trigger_action'
           AND (tc.call_id IS NULL OR tc.call_id NOT LIKE 'fastpath-%')
         ORDER BY tc.seq
         LIMIT 1

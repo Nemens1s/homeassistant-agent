@@ -81,7 +81,7 @@ def test_build_agent_compiles_with_read_tools():
     tier1 = {t.name for t in registry.tools_for_tier(1)}
     tier2 = {t.name for t in registry.tools_for_tier(2)}
     assert tier1  # registry loaded
-    assert tier2 - tier1 == {"trigger_automation"}
+    assert tier2 - tier1 == {"trigger_action"}
     assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()
 
@@ -119,7 +119,7 @@ def test_tool_subset_middleware_trims_to_message():
         def __init__(self, name):
             self.name = name
 
-    tools = [T("list_entities"), T("get_weather"), T("get_vacuum_state"), T("trigger_automation")]
+    tools = [T("list_entities"), T("get_weather"), T("get_vacuum_state"), T("trigger_action")]
     captured = {}
 
     def handler(req):

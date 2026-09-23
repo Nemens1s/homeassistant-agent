@@ -1,5 +1,5 @@
 """Fast path as a model-call middleware. On a confident hit it short-circuits
-the model call with a synthetic trigger_automation tool call; the agent's tool
+the model call with a synthetic trigger_action tool call; the agent's tool
 node runs it (gate + audit + loop guard apply). The follow-up step returns the
 templated reply. Never fails a request: any error falls through to the LLM."""
 
@@ -186,7 +186,7 @@ class FastPathMiddleware(AgentMiddleware):
         call_id = FASTPATH_PREFIX + uuid.uuid4().hex
         return AIMessage(
             content="",
-            tool_calls=[{"name": "trigger_automation",
+            tool_calls=[{"name": "trigger_action",
                          "args": {"entity_id": entity_id},
                          "id": call_id}],
             response_metadata={"model_name": self._backend.name, "fast_path": True},

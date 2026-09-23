@@ -12,6 +12,8 @@ class Params(BaseModel):
 
 
 async def handler(params: Params, ctx) -> ToolResult:
+    # Named generically (trigger_action) so scripts can be added additively later
+    # by dispatching on the entity_id domain. For now only automation.ai_* runs.
     if not params.entity_id.startswith("automation."):
         return ToolResult.error(
             "invalid_params", "entity_id must start with 'automation.'"
@@ -42,11 +44,11 @@ async def handler(params: Params, ctx) -> ToolResult:
 
 register(
     ToolDefinition(
-        name="trigger_automation",
+        name="trigger_action",
         description=(
-            "Run an AI-controllable Home Assistant automation right now by its "
+            "Run an AI-controllable Home Assistant action right now by its "
             "entity_id. Only automations whose entity_id starts with 'automation.ai_' "
-            "may be triggered (see the ai_controllable flag from get_automations). "
+            "may be triggered (call list_actions to discover them). "
             "Requires the home's AI-actions switch to be on."
         ),
         params_model=Params,

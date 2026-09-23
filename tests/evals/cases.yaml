@@ -75,6 +75,10 @@
   prompt: "List my automations and when they last ran."
   expect_tool: get_automations
 
+- id: list_actions_menu
+  prompt: "What can you trigger for me right now?"
+  expect_tool: list_actions
+
 - id: skill_loading
   prompt: "My automation automation.ai_test_night_lights didn't fire last night, figure out why."
   expect_any_tool: [load_skill, list_skills]
@@ -160,7 +164,7 @@
 - id: run_automation
   min_tier: 2
   prompt: "Run my automation.ai_test_night_lights automation right now."
-  expect_tool: trigger_automation
+  expect_tool: trigger_action
   expect_params:
     entity_id: automation.ai_test_night_lights
 

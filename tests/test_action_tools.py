@@ -23,7 +23,7 @@ class FakeRest:
 @pytest.fixture(autouse=True)
 def load_tools():
     registry._reset_for_tests()
-    registry.load_all(("app.tools.action.trigger_automation",))
+    registry.load_all(("app.tools.action.trigger_action",))
     yield
     registry._reset_for_tests()
 
@@ -35,9 +35,9 @@ def _ctx(rest=None, allowed=None):
     return ToolContext(settings=settings, rest=rest or FakeRest(), ws=None)
 
 
-async def test_trigger_automation_happy_path():
+async def test_trigger_action_happy_path():
     rest = FakeRest()
-    defn = registry.get("trigger_automation")
+    defn = registry.get("trigger_action")
     assert int(defn.tier) == 2
     result = await defn.handler(defn.params_model(entity_id="automation.ai_night"), _ctx(rest))
     assert result.status == "ok"
@@ -45,22 +45,22 @@ async def test_trigger_automation_happy_path():
     assert result.data["last_triggered"] == "2026-07-13T22:00:00+00:00"
 
 
-async def test_trigger_automation_rejects_non_automation_entity():
-    defn = registry.get("trigger_automation")
+async def test_trigger_action_rejects_non_automation_entity():
+    defn = registry.get("trigger_action")
     result = await defn.handler(defn.params_model(entity_id="light.kitchen"), _ctx())
     assert result.error_code == "invalid_params"
 
 
-async def test_trigger_automation_rejects_non_ai_automation():
+async def test_trigger_action_rejects_non_ai_automation():
     rest = FakeRest()
-    defn = registry.get("trigger_automation")
+    defn = registry.get("trigger_action")
     result = await defn.handler(defn.params_model(entity_id="automation.night"), _ctx(rest))
     assert result.error_code == "not_ai_controllable"
     assert rest.calls == []
 
 
-async def test_trigger_automation_respects_allowlist():
-    defn = registry.get("trigger_automation")
+async def test_trigger_action_respects_allowlist():
+    defn = registry.get("trigger_action")
     result = await defn.handler(
         defn.params_model(entity_id="automation.ai_night"), _ctx(allowed=["light"]))
     assert result.error_code == "domain_not_allowed"

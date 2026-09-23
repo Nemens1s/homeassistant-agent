@@ -165,7 +165,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
             # Load the tool registry before building the fast path: it guards on
-            # registry.get("trigger_automation"), and build_agent (which also
+            # registry.get("trigger_action"), and build_agent (which also
             # loads the registry) runs later. load_all is idempotent.
             from app.tools import registry
             registry.load_all()
@@ -279,6 +279,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/chat/stream")
     async def chat_stream(req: ChatRequest) -> StreamingResponse:
         log.info("chat/stream thread=%s len=%d", req.thread_id, len(req.message))
+        from opentelemetry import trace
         from app.telemetry.setup import get_tracer
         from app.telemetry import conventions as C
         from app.agent.middleware.telemetry_middleware import fast_path_seen as _fp_seen
@@ -292,38 +293,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def sse() -> AsyncIterator[str]:
             span = tracer.start_span(C.SPAN_INVOKE_AGENT)
             request_id: str | None = None
+            # Make the root span CURRENT across the whole stream: child spans
+            # created inside the agent graph (chat, execute_tool,
+            # fast_path.classify) must parent onto it and share its trace_id.
+            # Without this they become orphan traces → phantom empty `requests`
+            # rows. Keep the manual .end() in `finally` (end_on_exit=False).
             try:
-                try:
-                    span.set_attribute(C.GOSLING_INPUT_TEXT, req.message)
-                    span.set_attribute(C.GOSLING_ENDPOINT, "/api/chat/stream")
-                    span.set_attribute(C.GOSLING_CHANNEL, channel)
-                except Exception:
-                    pass
+                with trace.use_span(span, end_on_exit=False):
+                    try:
+                        span.set_attribute(C.GOSLING_INPUT_TEXT, req.message)
+                        span.set_attribute(C.GOSLING_ENDPOINT, "/api/chat/stream")
+                        span.set_attribute(C.GOSLING_CHANNEL, channel)
+                    except Exception:
+                        pass
 
-                trace_id = span.get_span_context().trace_id
-                request_id = format(trace_id, "032x") if trace_id else None
-                outcome = "ok"
+                    trace_id = span.get_span_context().trace_id
+                    request_id = format(trace_id, "032x") if trace_id else None
+                    outcome = "ok"
 
-                # Fast path is handled transparently by FastPathMiddleware inside the agent.
-                async for event in stream_events(
-                    app.state.agent,
-                    req.message,
-                    req.thread_id,
-                    app.state.settings.recursion_limit,
-                ):
-                    if event.get("type") == "done":
-                        try:
-                            span.set_attribute(C.GOSLING_OUTPUT_TEXT, event.get("reply", ""))
-                            path = "fast_path" if _fp_seen.get() else "agent"
-                            span.set_attribute(C.GOSLING_PATH, path)
-                        except Exception:
-                            pass
-                        yield _sse({**event, "request_id": request_id})
-                    elif event.get("type") == "error":
-                        outcome = "error"
-                        yield _sse({**event, "request_id": request_id})
-                    else:
-                        yield _sse(event)
+                    # Fast path is handled transparently by FastPathMiddleware inside the agent.
+                    async for event in stream_events(
+                        app.state.agent,
+                        req.message,
+                        req.thread_id,
+                        app.state.settings.recursion_limit,
+                    ):
+                        if event.get("type") == "done":
+                            try:
+                                span.set_attribute(C.GOSLING_OUTPUT_TEXT, event.get("reply", ""))
+                                path = "fast_path" if _fp_seen.get() else "agent"
+                                span.set_attribute(C.GOSLING_PATH, path)
+                            except Exception:
+                                pass
+                            yield _sse({**event, "request_id": request_id})
+                        elif event.get("type") == "error":
+                            outcome = "error"
+                            yield _sse({**event, "request_id": request_id})
+                        else:
+                            yield _sse(event)
 
             except GeneratorExit:
                 outcome = "cancelled"

@@ -54,7 +54,7 @@ async def test_tool_call_parses_status():
     mw = TelemetryMiddleware(tracer)
     # ToolCallRequest.tool_call is a dict with name/id/args keys
     req = SimpleNamespace(
-        tool_call={"name": "trigger_automation", "id": "fastpath-1", "args": {}}
+        tool_call={"name": "trigger_action", "id": "fastpath-1", "args": {}}
     )
 
     async def handler(request):

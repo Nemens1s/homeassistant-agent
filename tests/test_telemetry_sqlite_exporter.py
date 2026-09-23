@@ -35,10 +35,10 @@ def test_chat_span_maps_to_model_calls_row(tmp_path):
         with tracer.start_as_current_span(f"{c.SPAN_CHAT} needle") as chat:
             chat.set_attribute(c.GOSLING_FAST_PATH, True)
             chat.set_attribute(c.GOSLING_STEP, 1)
-            chat.set_attribute(c.GOSLING_TOOLS_OFFERED, '["trigger_automation"]')
+            chat.set_attribute(c.GOSLING_TOOLS_OFFERED, '["trigger_action"]')
     tp.shutdown()
     rows = conn.execute("SELECT fast_path, step, tools_offered FROM model_calls").fetchall()
-    assert rows == [(1, 1, '["trigger_automation"]')]
+    assert rows == [(1, 1, '["trigger_action"]')]
     reqs = conn.execute("SELECT input_text, path, outcome FROM requests").fetchall()
     assert reqs == [("goodnight", "fast_path", "ok")]
 

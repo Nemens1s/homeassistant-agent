@@ -13,15 +13,18 @@ slightly slower path, never a dead end. When in doubt it exposes more, not less.
 
 from __future__ import annotations
 
-# Always offered: general-purpose querying + automation triggering. These cover any
-# request even when no specialized keyword matches, so hiding a shortcut can only
-# cost a step, never capability.
+# Always offered: general-purpose querying + the action discover/trigger pair.
+# These cover any request even when no specialized keyword matches, so hiding a
+# shortcut can only cost a step, never capability. list_actions is the short menu
+# of what the agent may trigger; trigger_action runs one. (get_automations, the
+# full read-only catalogue, is keyword-gated below — it is not the action path.)
 CORE_TOOLS: frozenset[str] = frozenset({
     "search_entities",
     "get_entity_state",
     "list_entities",
     "load_skill",
-    "trigger_automation",
+    "list_actions",
+    "trigger_action",
 })
 
 # Room/area overview intents. Both room tools are offered together so the model has

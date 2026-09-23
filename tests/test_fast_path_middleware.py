@@ -29,7 +29,7 @@ async def test_hit_returns_synthetic_tool_call():
     assert resp.response_metadata == {"model_name": "fake", "fast_path": True}
     assert len(resp.tool_calls) == 1
     tc = resp.tool_calls[0]
-    assert tc["name"] == "trigger_automation"
+    assert tc["name"] == "trigger_action"
     assert tc["args"] == {"entity_id": "automation.ai_action_night"}
     assert tc["id"].startswith(FASTPATH_PREFIX)
 
@@ -53,11 +53,11 @@ async def test_step_after_fastpath_tool_returns_templated_reply():
     # not from ToolMessage.additional_kwargs (which LangGraph does not propagate).
     ai_msg = AIMessage(
         content="",
-        tool_calls=[{"name": "trigger_automation",
+        tool_calls=[{"name": "trigger_action",
                      "args": {"entity_id": "automation.ai_action_night"},
                      "id": call_id}],
     )
-    tm = ToolMessage(content=ok, tool_call_id=call_id, name="trigger_automation")
+    tm = ToolMessage(content=ok, tool_call_id=call_id, name="trigger_action")
     resp = await mw.awrap_model_call(_request([HumanMessage("x"), ai_msg, tm]), _fail_handler)
     assert isinstance(resp, AIMessage)
     assert "automation.ai_action_night" in resp.content
