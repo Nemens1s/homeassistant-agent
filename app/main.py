@@ -214,7 +214,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         log.info("chat thread=%s len=%d", req.thread_id, len(req.message))
         from app.telemetry.setup import get_tracer
         from app.telemetry import conventions as C
-        from app.telemetry.middleware import fast_path_seen as _fp_seen
+        from app.agent.middleware.telemetry_middleware import fast_path_seen as _fp_seen
 
         channel = req.channel or "assist"
         tracer = get_tracer()
@@ -276,7 +276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         log.info("chat/stream thread=%s len=%d", req.thread_id, len(req.message))
         from app.telemetry.setup import get_tracer
         from app.telemetry import conventions as C
-        from app.telemetry.middleware import fast_path_seen as _fp_seen
+        from app.agent.middleware.telemetry_middleware import fast_path_seen as _fp_seen
 
         channel = req.channel or "ui"
         tracer = get_tracer()

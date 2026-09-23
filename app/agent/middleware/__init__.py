@@ -31,7 +31,7 @@ def build_middleware(
         middleware.insert(0, ToolSubsetMiddleware())
     # TelemetryMiddleware is inserted immediately before FastPath (outer to it, inner to all else).
     if telemetry_tracer is not None:
-        from app.telemetry.middleware import TelemetryMiddleware
+        from app.agent.middleware.telemetry_middleware import TelemetryMiddleware
         middleware.append(TelemetryMiddleware(telemetry_tracer))
     # FastPath is always appended last (innermost) so it short-circuits first.
     if fast_path is not None and settings.max_tier >= 2:
