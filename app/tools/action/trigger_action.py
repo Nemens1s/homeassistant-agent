@@ -70,6 +70,8 @@ async def _validate_script_params(ctx, object_id: str, provided: dict):
         cfg = await ctx.rest.get_script_config(object_id)
     except Exception:
         return None  # can't validate -> let the script's guards handle it
+    if cfg is None:
+        return None
     schema = fields_to_parameters(cfg.get("fields") or {})
     declared = set(schema.get("properties", {}))
     unknown = set(provided) - declared

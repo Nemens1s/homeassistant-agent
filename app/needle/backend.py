@@ -14,8 +14,8 @@ _NON_IDENT = re.compile(r"[^0-9a-zA-Z_]")
 
 
 def _tool_name(entity_id: str) -> str:
-    """Derive a python-identifier tool name from an automation entity_id.
-    'automation.ai_goodnight' -> 'goodnight'."""
+    """Derive a python-identifier tool name from an automation or script entity_id.
+    'automation.ai_goodnight' -> 'goodnight', 'script.ai_action_lights_on' -> 'action_lights_on'."""
     local = entity_id
     if "." in local:
         local = local.split(".", 1)[1]

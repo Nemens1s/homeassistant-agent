@@ -29,7 +29,7 @@ class FakeRest:
     async def get_state(self, entity_id):  # AI-actions switch reads on → gate passes
         return {"entity_id": entity_id, "state": "on", "attributes": {}}
 
-    async def call_service(self, domain, service, entity_id):
+    async def call_service(self, domain, service, entity_id=None, data=None):
         return []
 
     async def list_states(self):

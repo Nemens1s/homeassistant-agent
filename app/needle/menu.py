@@ -53,8 +53,9 @@ def fields_to_parameters(fields: dict) -> dict:
         selector = spec.get("selector") or {}
         schema: dict
         if "select" in selector:
-            schema = {"type": "string",
-                      "enum": list((selector["select"] or {}).get("options", []))}
+            raw_options = (selector["select"] or {}).get("options", [])
+            enum_values = [o["value"] if isinstance(o, dict) else o for o in raw_options]
+            schema = {"type": "string", "enum": enum_values}
         elif "number" in selector:
             num = selector["number"] or {}
             schema = {"type": "integer"}
