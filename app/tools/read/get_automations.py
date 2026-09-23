@@ -2,7 +2,6 @@ import difflib
 
 from pydantic import BaseModel, Field
 
-from app.constants import AI_AUTOMATION_PREFIX
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows
 from app.tools.registry import register
 
@@ -11,10 +10,6 @@ class Params(BaseModel):
     entity_id: str = Field(
         default="",
         description="Optional automation entity_id (e.g. 'automation.night_lights') to fetch the full config for. Empty lists all automations.",
-    )
-    ai_controllable: bool = Field(
-        default=False,
-        description="When true, list only AI-controllable automations (those the agent may trigger). Ignored when entity_id is set.",
     )
 
 
@@ -28,15 +23,11 @@ async def handler(params: Params, ctx) -> ToolResult:
     if not params.entity_id:
         rows = []
         for a in autos:
-            is_ai_controllable = a["entity_id"].startswith(AI_AUTOMATION_PREFIX)
-            if params.ai_controllable and not is_ai_controllable:
-                continue
             rows.append({
                 "entity_id": a["entity_id"],
                 "state": a["state"],
                 "name": a.get("attributes", {}).get("friendly_name", ""),
                 "last_triggered": a.get("attributes", {}).get("last_triggered"),
-                "ai_controllable": is_ai_controllable,
             })
         return ToolResult.ok(bound_rows(rows, max_rows=ctx.settings.max_rows))
 
@@ -72,7 +63,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 register(
     ToolDefinition(
         name="get_automations",
-        description="List all automations with enabled/disabled state (ai_controllable=true lists only ones the agent may trigger), or fetch one automation's full config (triggers, conditions, actions). Use for 'is automation X enabled?', 'what triggers X?', 'which automations run when X?'. Not for whether one ran recently (activity history) or diagnosing why one failed (troubleshooting playbook).",
+        description="List all automations with enabled/disabled state, or fetch one automation's full config (triggers, conditions, actions). Use for 'is automation X enabled?', 'what triggers X?', 'which automations run when X?'. For the automations the agent may trigger, use list_actions. Not for whether one ran recently (activity history) or diagnosing why one failed (troubleshooting playbook).",
         params_model=Params,
         tier=Tier.READ,
         handler=handler,

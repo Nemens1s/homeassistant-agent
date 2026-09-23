@@ -38,7 +38,7 @@ class FakeRest:
 
 async def test_fast_path_hit_persists_full_turn(monkeypatch):
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, max_tier=2)  # tier-2 → trigger_automation registered
+    settings = Settings(_env_file=None, max_tier=2)  # tier-2 → trigger_action registered
     ctx = ToolContext(settings=settings, rest=FakeRest(), ws=None)
     # Scripted with an entry that must NOT be consumed (the fast path short-circuits).
     model = ScriptedModel(responses=[AIMessage(content="LLM SHOULD NOT RUN")])

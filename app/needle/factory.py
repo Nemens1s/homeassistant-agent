@@ -24,8 +24,8 @@ def build_fast_path_backend(cfg, rest, ctx):
     if not cfg.needle_remote_url:
         log.warning("needle enabled but needle_remote_url is empty; fast path off")
         return None
-    if registry.get("trigger_automation") is None:
-        log.warning("needle enabled but trigger_automation not registered; fast path off")
+    if registry.get("trigger_action") is None:
+        log.warning("needle enabled but trigger_action not registered; fast path off")
         return None
     backend = RemoteNeedleBackend(cfg.needle_remote_url)
     menu_provider = MenuProvider(rest, ttl_s=cfg.needle_menu_ttl_s,

@@ -143,6 +143,36 @@ def test_chat_stream_emits_protocol_events():
     assert last["request_id"] is None
 
 
+def test_chat_stream_runs_agent_within_root_span(tmp_path, reset_otel_provider):
+    # The agent graph must run while the invoke_agent root span is CURRENT, so
+    # child spans (chat, execute_tool, fast_path.classify) parent onto it and
+    # share its trace_id — otherwise each orphan span becomes its own trace and
+    # the exporter writes phantom empty `requests` rows.
+    from opentelemetry import trace as ot
+    from langchain_core.messages import AIMessageChunk
+
+    captured = {}
+
+    class SpanCheckAgent:
+        async def astream(self, payload, config=None, stream_mode=None):
+            span = ot.get_current_span()
+            captured["trace_id"] = format(span.get_span_context().trace_id, "032x")
+            yield AIMessageChunk(content="ok"), {}
+
+    settings = _settings()
+    # A real telemetry DB path installs a real recording provider (non-zero
+    # trace ids), so we can compare the in-graph trace id to the request_id.
+    settings.telemetry_db_path = str(tmp_path / "t.sqlite")
+    app = create_app(settings)
+    with TestClient(app) as client:
+        client.app.state.agent = SpanCheckAgent()
+        resp = client.post("/api/chat/stream", json={"message": "hi"})
+    done = _parse_sse(resp.text)[-1]
+    assert done["type"] == "done"
+    # Agent ran INSIDE the root span → same trace id as the emitted request_id.
+    assert captured["trace_id"] == done["request_id"]
+
+
 def test_chat_stream_recursion_limit_is_error_event():
     from langgraph.errors import GraphRecursionError
 
@@ -180,3 +210,33 @@ async def test_lifespan_teardown_survives_rest_close_failure():
     with pytest.raises(RuntimeError):
         await main_mod._teardown(BadRest(), GoodWS())
     assert calls == ["rest", "ws"]
+
+
+def test_lifespan_builds_fast_path_when_needle_enabled(monkeypatch):
+    # Regression: build_fast_path_backend guards on registry.get("trigger_action"),
+    # so the tool registry must be loaded BEFORE it runs in the lifespan. If it isn't,
+    # the backend builds to None and FastPathMiddleware is silently never added.
+    from app.tools import registry
+
+    registry._reset_for_tests()
+    captured = {}
+
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
+        # Does NOT call registry.load_all(), so only the lifespan can load it.
+        captured["fast_path"] = fast_path
+        class A:
+            async def ainvoke(self, *a, **k):
+                return {"messages": []}
+        return A()
+
+    from app import main as main_mod
+    monkeypatch.setattr(main_mod, "build_agent", fake_build_agent)
+    settings = _settings()
+    settings.max_tier = 2
+    settings.needle_enabled = True
+    settings.needle_remote_url = "http://needle.lan:8765"
+    app = create_app(settings)
+    with TestClient(app):
+        pass
+    assert captured["fast_path"] is not None
+    registry._reset_for_tests()

@@ -35,9 +35,9 @@ def test_display_transcript_strips_thinking():
 def test_display_transcript_skips_tool_calls_and_tool_messages():
     tool_call = AIMessage(
         content="",
-        tool_calls=[{"name": "trigger_automation", "args": {"entity_id": "x"}, "id": "c1"}],
+        tool_calls=[{"name": "trigger_action", "args": {"entity_id": "x"}, "id": "c1"}],
     )
-    tool_msg = ToolMessage(content='{"status":"ok"}', tool_call_id="c1", name="trigger_automation")
+    tool_msg = ToolMessage(content='{"status":"ok"}', tool_call_id="c1", name="trigger_action")
     messages = [
         HumanMessage("goodnight"),
         tool_call,

@@ -7,6 +7,51 @@ import pytest
 from app.telemetry.store import open_store, summary, recent_requests
 
 
+def _add_fast_path_step(conn, rid):
+    """Mark a request as a fast-path hit via its authoritative signal: a
+    model_call with fast_path=1 (what the exporter records from the model
+    response). requests.path is derived from this, not trusted directly."""
+    conn.execute(
+        "INSERT INTO model_calls (span_id, request_id, ts_start, step, model, fast_path, tools_offered) "
+        "VALUES (?, ?, '2026-09-17T00:00:00Z', 0, 'needle-remote', 1, '[]')",
+        (rid + "-s0", rid),
+    )
+
+
+def _seed_fast_path_hit_stored_as_agent(conn, rid="r1"):
+    """A request the fast path actually handled, but whose stored requests.path
+    is 'agent' — reproducing the real bug where fast_path_seen (a contextvar set
+    inside the graph) never reaches the request handler. The model_call carries
+    the authoritative fast_path=1 flag."""
+    conn.execute(
+        "INSERT INTO requests (request_id, ts_start, channel, input_text, path, outcome) "
+        "VALUES (?, '2026-09-17T00:00:00Z','ui','goodnight','agent','ok')",
+        (rid,),
+    )
+    conn.execute(
+        "INSERT INTO model_calls (span_id, request_id, ts_start, step, model, fast_path, tools_offered) "
+        "VALUES (?, ?, '2026-09-17T00:00:00Z', 0, 'needle-remote', 1, '[]')",
+        (rid + "-s0", rid),
+    )
+    conn.commit()
+
+
+def test_summary_derives_fast_path_from_model_calls(tmp_path):
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    _seed_fast_path_hit_stored_as_agent(conn)
+    s = summary(conn, days=3650)
+    assert s["requests_by_path"].get("fast_path") == 1
+    assert s["requests_by_path"].get("agent", 0) == 0
+    assert s["fast_path_hit_rate"] == 1.0
+
+
+def test_recent_requests_derives_fast_path_from_model_calls(tmp_path):
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    _seed_fast_path_hit_stored_as_agent(conn)
+    result = recent_requests(conn, limit=10)
+    assert result["rows"][0]["path"] == "fast_path"
+
+
 # ---------------------------------------------------------------------------
 # TDD anchor: summary counts requests by path
 # ---------------------------------------------------------------------------
@@ -14,12 +59,15 @@ from app.telemetry.store import open_store, summary, recent_requests
 
 def test_summary_counts_requests_by_path(tmp_path):
     conn = open_store(str(tmp_path / "t.sqlite"))
-    for rid, path in [("r1", "fast_path"), ("r2", "agent"), ("r3", "fast_path")]:
+    for rid in ("r1", "r2", "r3"):
         conn.execute(
             "INSERT INTO requests (request_id, ts_start, channel, input_text, path, outcome) "
-            "VALUES (?, '2026-09-17T00:00:00Z','ui','hi',?, 'ok')",
-            (rid, path),
+            "VALUES (?, '2026-09-17T00:00:00Z','ui','hi','agent', 'ok')",
+            (rid,),
         )
+    # r1 and r3 were fast-path hits (authoritative signal = model_calls.fast_path).
+    _add_fast_path_step(conn, "r1")
+    _add_fast_path_step(conn, "r3")
     conn.commit()
     s = summary(conn, days=3650)
     assert s["requests_by_path"]["fast_path"] == 2
@@ -54,12 +102,15 @@ def test_summary_outcome_counts(tmp_path):
 
 def test_summary_fast_path_hit_rate(tmp_path):
     conn = open_store(str(tmp_path / "t.sqlite"))
-    for rid, path in [("r1", "fast_path"), ("r2", "fast_path"), ("r3", "agent"), ("r4", "agent")]:
+    for rid in ("r1", "r2", "r3", "r4"):
         conn.execute(
             "INSERT INTO requests (request_id, ts_start, channel, input_text, path, outcome) "
-            "VALUES (?, '2026-09-17T00:00:00Z','ui','hi',?, 'ok')",
-            (rid, path),
+            "VALUES (?, '2026-09-17T00:00:00Z','ui','hi','agent', 'ok')",
+            (rid,),
         )
+    # Two of four were fast-path hits.
+    _add_fast_path_step(conn, "r1")
+    _add_fast_path_step(conn, "r2")
     conn.commit()
     s = summary(conn, days=3650)
     assert s["fast_path_hit_rate"] == pytest.approx(0.5)

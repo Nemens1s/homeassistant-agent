@@ -64,10 +64,14 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
         )
     if settings.max_tier >= 2:
         prompt += (
-            "\n\nACTIONS: you can trigger AI-controllable automations — those whose "
-            "entity_id starts with 'automation.ai_' (see the ai_controllable flag from "
-            "get_automations). You cannot control lights, switches, or other entities "
-            "directly; act only by triggering one of these automations. Every action "
+            "\n\nACTIONS: real-world actions (turning on lights, starting the vacuum, "
+            "etc.) can only be performed by triggering AI-controllable automations — "
+            "those whose entity_id starts with 'automation.ai_'. You cannot control "
+            "lights, switches, or other entities directly. When the user asks you to "
+            "perform an action, first call list_actions to see the available "
+            "automations, then trigger the matching one with trigger_action. If none "
+            "matches, tell the user the action is not possible yet and that they should "
+            "create an automation for it — do not investigate further. Every action "
             "also requires the home's AI-actions switch to be on, or it is refused."
         )
     return prompt
