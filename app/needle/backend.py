@@ -1,13 +1,13 @@
-"""Swappable inference backend protocol, shared helpers, and test fake.
+"""Needle-specific helpers: name-map construction and result parsing.
 
-FakeBackend drives all router unit tests without a real runtime."""
+Decision is defined in app.fast_path.backend (backend-agnostic); imported
+here so callers that already import Decision from this module keep working."""
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Protocol
 
+from app.fast_path.backend import Decision  # noqa: F401 — re-exported for compat
 from app.needle.menu import Menu
 
 _NON_IDENT = re.compile(r"[^0-9a-zA-Z_]")
@@ -43,7 +43,7 @@ def _build_name_map(menu: Menu) -> dict[str, str]:
     return mapping
 
 
-def _decision_from_result(result: dict, name_to_id: dict[str, str]) -> "Decision":
+def _decision_from_result(result: dict, name_to_id: dict[str, str]) -> Decision:
     """Map a needle complete() result dict into a Decision."""
     confidence = float(result.get("confidence") or 0.0)
     calls = result.get("function_calls") or []
@@ -54,27 +54,3 @@ def _decision_from_result(result: dict, name_to_id: dict[str, str]) -> "Decision
     return Decision(entity_id=entity_id, confidence=confidence)
 
 
-@dataclass(frozen=True)
-class Decision:
-    entity_id: str | None   # grammar-constrained to the current menu, or None
-    confidence: float
-
-
-class NeedleBackend(Protocol):
-    async def classify(self, message: str, menu: Menu) -> Decision: ...
-
-
-class FakeBackend:
-    """Test backend: returns a per-message Decision if provided, else a single
-    scripted Decision, else a no-op (None, 0.0)."""
-
-    def __init__(self, decision: Decision | None = None, by_message: dict | None = None):
-        self._decision = decision
-        self._by_message = by_message or {}
-
-    async def classify(self, message: str, menu: Menu) -> Decision:
-        if message in self._by_message:
-            return self._by_message[message]
-        if self._decision is not None:
-            return self._decision
-        return Decision(entity_id=None, confidence=0.0)

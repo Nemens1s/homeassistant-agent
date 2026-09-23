@@ -30,46 +30,6 @@ class FakeAgentRecursion:
         raise GraphRecursionError("Recursion limit reached")
 
 
-class FakeFastPath:
-    def __init__(self, reply):
-        self._reply = reply
-        self.calls = []
-
-    async def try_fast_path(self, message, thread_id):
-        self.calls.append((message, thread_id))
-        return self._reply
-
-
-class ExplodingAgent:
-    async def ainvoke(self, payload, config=None):
-        raise AssertionError("agent must not run when the fast path handles the turn")
-
-
-def test_fast_path_handles_turn_and_skips_agent():
-    app = create_app(_settings())
-    with TestClient(app) as client:
-        client.app.state.agent = ExplodingAgent()
-        client.app.state.fast_path = FakeFastPath("Done — triggered automation.ai_goodnight.")
-        resp = client.post("/api/chat", json={"message": "goodnight"})
-    assert resp.status_code == 200
-    assert resp.json()["reply"].startswith("Done — triggered")
-
-
-def test_agent_runs_when_fast_path_declines():
-    app = create_app(_settings())
-    with TestClient(app) as client:
-        client.app.state.agent = FakeAgent()
-        client.app.state.fast_path = FakeFastPath(None)  # declines
-        resp = client.post("/api/chat", json={"message": "what's the temperature"})
-    assert resp.json() == {"reply": "hi there"}
-
-
-def test_fast_path_absent_by_default():
-    app = create_app(_settings())  # needle_enabled defaults False
-    with TestClient(app) as client:
-        assert client.app.state.fast_path is None
-
-
 def test_health_degraded_without_backends():
     app = create_app(_settings())
     with TestClient(app) as client:
@@ -88,7 +48,7 @@ def test_chat_returns_agent_reply():
         client.app.state.agent = FakeAgent()
         resp = client.post("/api/chat", json={"message": "hello"})
     assert resp.status_code == 200
-    assert resp.json() == {"reply": "hi there"}
+    assert resp.json()["reply"] == "hi there"
 
 
 def test_chat_returns_graceful_reply_on_recursion_limit():
@@ -111,7 +71,7 @@ def test_frontend_served_at_root():
 def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
         captured["audit"] = ctx.audit
         captured["rest"] = ctx.rest
         class A:
@@ -136,7 +96,7 @@ def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
         captured["checkpointer"] = checkpointer
         class A:
             async def ainvoke(self, *a, **k):
@@ -175,7 +135,12 @@ def test_chat_stream_emits_protocol_events():
     assert resp.headers["content-type"].startswith("text/event-stream")
     events = _parse_sse(resp.text)
     assert events[0] == {"type": "token", "text": "hel"}
-    assert events[-1] == {"type": "done", "reply": "hello"}
+    last = events[-1]
+    assert last["type"] == "done"
+    assert last["reply"] == "hello"
+    # Telemetry is disabled here (no-op tracer, trace_id == 0), so request_id
+    # is None — never the phantom all-zeros key that would collide in the label store.
+    assert last["request_id"] is None
 
 
 def test_chat_stream_recursion_limit_is_error_event():

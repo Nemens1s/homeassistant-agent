@@ -55,6 +55,13 @@ options:
   needle_remote_url: ""
   person_name_map: []
   person_name_exclude: []
+  # Telemetry (local SQLite + optional OTLP). Set telemetry_enabled=false to opt out.
+  telemetry_enabled: true
+  telemetry_db_path: "/data/telemetry.sqlite"
+  telemetry_retention_days: 0
+  otlp_endpoint: ""
+backup_exclude:
+  - "telemetry.sqlite*"
 schema:
   llm_provider: "str"
   llm_url: "url"
@@ -88,3 +95,7 @@ schema:
     - ha_name: str
       name: str
   person_name_exclude: ["str"]
+  telemetry_enabled: "bool"
+  telemetry_db_path: "str?"
+  telemetry_retention_days: "int"
+  otlp_endpoint: "str?"

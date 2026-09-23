@@ -19,6 +19,8 @@ dependencies = [
     "python-dotenv",
     "websockets>=15,<17",
     "pyyaml",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
 ]
 
 [dependency-groups]

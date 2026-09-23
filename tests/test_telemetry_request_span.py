@@ -1,0 +1,98 @@
+"""Tests for Task 13: request root span, request_id in responses."""
+from __future__ import annotations
+
+import pytest
+from langchain_core.messages import AIMessage
+
+from app.main import ChatResponse
+
+
+def test_chatresponse_has_optional_request_id():
+    assert ChatResponse(reply="hi").request_id is None
+    assert ChatResponse(reply="hi", request_id="abc").request_id == "abc"
+
+
+# ---------------------------------------------------------------------------
+# Endpoint-level test: /api/chat returns non-null request_id when telemetry
+# is enabled with a real temp DB.  We construct the app with a Settings that
+# points at a writable tmp file, install a FakeAgent on app.state, and assert
+# that the response JSON contains a non-null "request_id".
+#
+# OTel provider-override hygiene: init_telemetry calls trace.set_tracer_provider
+# which is a global mutation.  To avoid the "Overriding of current
+# TracerProvider is not allowed" warning we reset the global before AND after
+# this test via the `reset_otel_provider` fixture below.
+# ---------------------------------------------------------------------------
+
+
+def test_chat_returns_request_id_when_telemetry_enabled(tmp_path, reset_otel_provider):
+    """POST /api/chat should return a non-null request_id in the JSON body
+    when telemetry is enabled and the DB is writable."""
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings(
+        _env_file=None,
+        ha_base_url="http://127.0.0.1:59999",
+        ha_token="t",
+        llm_url="http://127.0.0.1:59998",
+        ws_connect_timeout=0.5,
+        telemetry_enabled=True,
+        telemetry_db_path=str(tmp_path / "telemetry.sqlite"),
+    )
+
+    app = create_app(settings)
+
+    class FakeAgent:
+        async def ainvoke(self, payload, config=None):
+            return {"messages": [AIMessage(content="hello from agent")]}
+
+    with TestClient(app) as client:
+        client.app.state.agent = FakeAgent()
+        resp = client.post("/api/chat", json={"message": "what time is it?"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reply"] == "hello from agent"
+    assert body["request_id"] is not None
+    # request_id should be a 32-hex-char trace ID
+    assert len(body["request_id"]) == 32
+    assert all(c in "0123456789abcdef" for c in body["request_id"])
+    # Real span => non-zero trace_id.
+    assert int(body["request_id"], 16) != 0
+
+
+def test_chat_returns_null_request_id_when_telemetry_disabled():
+    """When telemetry is disabled (no-op tracer, trace_id == 0), the response
+    request_id must be None — NOT the phantom all-zeros key that would collide
+    across every disabled-telemetry response in the label store (Task 16)."""
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings(
+        _env_file=None,
+        ha_base_url="http://127.0.0.1:59999",
+        ha_token="t",
+        llm_url="http://127.0.0.1:59998",
+        ws_connect_timeout=0.5,
+        telemetry_enabled=False,
+    )
+
+    app = create_app(settings)
+
+    class FakeAgent:
+        async def ainvoke(self, payload, config=None):
+            return {"messages": [AIMessage(content="hello from agent")]}
+
+    with TestClient(app) as client:
+        client.app.state.agent = FakeAgent()
+        resp = client.post("/api/chat", json={"message": "what time is it?"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reply"] == "hello from agent"
+    assert body["request_id"] is None

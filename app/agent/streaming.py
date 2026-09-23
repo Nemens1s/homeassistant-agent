@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 
-from langchain_core.messages import AIMessageChunk, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.errors import GraphRecursionError
 
 
@@ -91,7 +91,7 @@ async def stream_events(
             config=config,
             stream_mode="messages",
         ):
-            if isinstance(msg, AIMessageChunk):
+            if isinstance(msg, AIMessage):
                 for tc in msg.tool_calls:
                     yield {"type": "tool_call", "name": tc["name"], "args": tc["args"]}
 
