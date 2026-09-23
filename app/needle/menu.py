@@ -1,4 +1,4 @@
-"""The fast-path menu: the set of ai_* automations Needle may trigger, plus a
+"""The fast-path menu: the set of ai_* automations/scripts Needle may trigger, plus a
 stable signature of that id set (used by a backend to cache its compiled
 grammar). Fetched from HA REST and cached with a short TTL."""
 
@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.constants import AI_AUTOMATION_PREFIX
 
@@ -17,6 +18,7 @@ class MenuItem:
     entity_id: str
     name: str
     description: str = ""  # optional; Needle matches on name + description
+    parameters: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -28,9 +30,8 @@ class Menu:
 def _signature(items: list[MenuItem]) -> str:
     parts = []
     for item in items:
-        parts.append(item.entity_id)
-    joined = "\n".join(parts)
-    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+        parts.append(item.entity_id + "\x1f" + json.dumps(item.parameters, sort_keys=True))
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
 def _by_id(item: MenuItem) -> str:
@@ -43,16 +44,55 @@ def needle_description(ha_description: str) -> str:
     return ha_description
 
 
-async def _empty() -> str:
-    return ""
+def fields_to_parameters(fields: dict) -> dict:
+    """HA script `fields:` -> JSON-Schema `parameters` object."""
+    properties: dict = {}
+    required: list[str] = []
+    for name, spec in (fields or {}).items():
+        spec = spec or {}
+        selector = spec.get("selector") or {}
+        schema: dict
+        if "select" in selector:
+            schema = {"type": "string",
+                      "enum": list((selector["select"] or {}).get("options", []))}
+        elif "number" in selector:
+            num = selector["number"] or {}
+            schema = {"type": "integer"}
+            if "min" in num:
+                schema["minimum"] = num["min"]
+            if "max" in num:
+                schema["maximum"] = num["max"]
+        else:
+            schema = {"type": "string"}
+        if spec.get("description"):
+            schema["description"] = spec["description"]
+        properties[name] = schema
+        if spec.get("required"):
+            required.append(name)
+    out: dict = {"type": "object", "properties": properties}
+    if required:
+        out["required"] = required
+    return out
 
 
-async def _fetch_automation_description(rest, unique_id: str) -> str:
+async def _empty_meta() -> tuple[str, dict]:
+    return "", {}
+
+
+async def _fetch_automation_meta(rest, unique_id: str) -> tuple[str, dict]:
     try:
         config = await rest.get_automation_config(unique_id)
-        return config.get("description") or ""
+        return config.get("description") or "", {}
     except Exception:
-        return ""
+        return "", {}
+
+
+async def _fetch_script_meta(rest, object_id: str) -> tuple[str, dict]:
+    try:
+        config = await rest.get_script_config(object_id)
+        return config.get("description") or "", fields_to_parameters(config.get("fields") or {})
+    except Exception:
+        return "", {}
 
 
 async def _entity_unique_ids(ws) -> dict[str, str]:
@@ -70,14 +110,15 @@ async def _entity_unique_ids(ws) -> dict[str, str]:
 
 
 class MenuProvider:
-    def __init__(self, rest, ttl_s: int = 60, prefix: str = AI_AUTOMATION_PREFIX, ws=None):
+    def __init__(self, rest, ttl_s: int = 60, prefixes=(AI_AUTOMATION_PREFIX,), ws=None):
         self._rest = rest
         self._ws = ws
         self._ttl_s = ttl_s
-        self._prefix = prefix
+        self._prefixes = tuple(prefixes)
         self._cached: Menu | None = None
         self._fetched_at = 0.0
         self._desc_cache: dict[str, str] = {}  # entity_id → description; session-persistent
+        self._params_cache: dict[str, dict] = {}  # entity_id → parameters; session-persistent
 
     async def get(self) -> Menu:
         now = time.monotonic()
@@ -87,7 +128,7 @@ class MenuProvider:
         candidates = []
         for state in states:
             entity_id = state.get("entity_id", "")
-            if not entity_id.startswith(self._prefix):
+            if not entity_id.startswith(self._prefixes):
                 continue
             attrs = state.get("attributes") or {}
             name = attrs.get("friendly_name") or entity_id
@@ -97,17 +138,24 @@ class MenuProvider:
             unique_ids = await _entity_unique_ids(self._ws) if self._ws is not None else {}
             tasks = []
             for eid in new_eids:
-                if eid in unique_ids:
-                    tasks.append(_fetch_automation_description(self._rest, unique_ids[eid]))
+                if eid.startswith("script."):
+                    tasks.append(_fetch_script_meta(self._rest, eid.split(".", 1)[1]))
+                elif eid in unique_ids:
+                    tasks.append(_fetch_automation_meta(self._rest, unique_ids[eid]))
                 else:
-                    tasks.append(_empty())
+                    tasks.append(_empty_meta())
             fetched = await asyncio.gather(*tasks)
-            for eid, desc in zip(new_eids, fetched):
+            for eid, (desc, params) in zip(new_eids, fetched):
                 self._desc_cache[eid] = desc
+                self._params_cache[eid] = params
         items = []
         for entity_id, name in candidates:
-            raw_desc = self._desc_cache.get(entity_id, "")
-            items.append(MenuItem(entity_id=entity_id, name=name, description=needle_description(raw_desc)))
+            items.append(MenuItem(
+                entity_id=entity_id,
+                name=name,
+                description=needle_description(self._desc_cache.get(entity_id, "")),
+                parameters=self._params_cache.get(entity_id, {}),
+            ))
         items.sort(key=_by_id)
         menu = Menu(items=tuple(items), signature=_signature(items))
         self._cached = menu
