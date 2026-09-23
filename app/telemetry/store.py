@@ -261,6 +261,23 @@ LEFT JOIN tool_stats tl ON tl.request_id = r.request_id;
 ]
 
 
+def _derived_path(alias: str) -> str:
+    """SQL expression for a request's path, derived from model_calls.
+
+    requests.path is written from the fast_path_seen contextvar, which is set
+    inside the LangGraph execution and cannot propagate back to the request
+    handler, so the stored value is unreliable (always 'agent'). model_calls
+    .fast_path, by contrast, is set directly from the model response and is
+    authoritative: a request is a fast-path hit iff any of its model steps was.
+    """
+    return (
+        "CASE WHEN EXISTS ("
+        f"SELECT 1 FROM model_calls mc "
+        f"WHERE mc.request_id = {alias}.request_id AND mc.fast_path = 1"
+        ") THEN 'fast_path' ELSE 'agent' END"
+    )
+
+
 def summary(conn: sqlite3.Connection, days: int) -> dict:
     """Return an aggregated summary dict for the last *days* days.
 
@@ -287,10 +304,10 @@ def summary(conn: sqlite3.Connection, days: int) -> dict:
 
     # ---- requests_by_path and outcome_counts --------------------------------
     rows = conn.execute(
-        "SELECT path, outcome, COUNT(*) "
+        f"SELECT {_derived_path('requests')} AS path, outcome, COUNT(*) "
         "FROM requests "
         "WHERE datetime(ts_start) >= datetime('now', ?) "
-        "GROUP BY path, outcome",
+        "GROUP BY 1, outcome",
         (cutoff,),
     ).fetchall()
 
@@ -316,14 +333,14 @@ def summary(conn: sqlite3.Connection, days: int) -> dict:
         return clean[idx]
 
     duration_rows = conn.execute(
-        "SELECT path, duration_ms "
+        f"SELECT {_derived_path('requests')} AS path, duration_ms "
         "FROM requests "
         "WHERE datetime(ts_start) >= datetime('now', ?)",
         (cutoff,),
     ).fetchall()
 
     ttft_rows = conn.execute(
-        "SELECT path, ttft_ms "
+        f"SELECT {_derived_path('requests')} AS path, ttft_ms "
         "FROM requests "
         "WHERE datetime(ts_start) >= datetime('now', ?)",
         (cutoff,),
@@ -421,7 +438,7 @@ def recent_requests(
 
     # Fetch limit+1 to know whether there is a next page.
     sql = (
-        "SELECT r.request_id, r.ts_start, r.channel, r.path, r.outcome, "
+        f"SELECT r.request_id, r.ts_start, r.channel, {_derived_path('r')} AS path, r.outcome, "
         "       r.duration_ms, r.ttft_ms, r.input_text, r.output_text "
         f"FROM requests r {where} "
         "ORDER BY r.ts_start DESC "
