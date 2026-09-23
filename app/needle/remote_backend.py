@@ -23,11 +23,15 @@ class RemoteNeedleBackend:
 
     async def classify(self, message: str, menu: Menu) -> Decision:
         name_to_id = _build_name_map(menu)
-        id_to_desc = {item.entity_id: item.description or item.name for item in menu.items}
-        tools = [
-            {"name": name, "description": id_to_desc[entity_id]}
-            for name, entity_id in name_to_id.items()
-        ]
+        id_to_item = {item.entity_id: item for item in menu.items}
+        tools = []
+        for name, entity_id in name_to_id.items():
+            item = id_to_item[entity_id]
+            tools.append({
+                "name": name,
+                "description": item.description or item.name,
+                "parameters": item.parameters or {},
+            })
         payload = {"message": message, "tools": tools, "signature": menu.signature}
         response = await self._client.post(self._url, json=payload)
         response.raise_for_status()
