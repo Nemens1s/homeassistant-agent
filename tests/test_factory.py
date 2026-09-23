@@ -143,3 +143,27 @@ def test_tool_subsetting_flag_toggles_middleware():
 
     assert any(isinstance(m, ToolSubsetMiddleware) for m in mws(True))
     assert not any(isinstance(m, ToolSubsetMiddleware) for m in mws(False))
+
+
+def test_fast_path_menu_spans_automation_and_script_prefixes():
+    from app.constants import AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION
+    from app.needle.factory import build_fast_path_backend
+    from app.tools import registry
+
+    registry._reset_for_tests()
+    registry.load_all(("app.tools.action.trigger_action",))  # required or factory returns None
+
+    class Cfg:
+        needle_enabled = True
+        max_tier = 2
+        needle_remote_url = "http://needle.test"
+        needle_menu_ttl_s = 60
+
+    class Ctx:
+        ws = None
+
+    built = build_fast_path_backend(Cfg(), rest=object(), ctx=Ctx())
+    registry._reset_for_tests()
+    assert built is not None
+    _backend, menu_provider = built
+    assert menu_provider._prefixes == (AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION)
