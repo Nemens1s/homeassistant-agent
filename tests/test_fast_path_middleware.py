@@ -30,8 +30,22 @@ async def test_hit_returns_synthetic_tool_call():
     assert len(resp.tool_calls) == 1
     tc = resp.tool_calls[0]
     assert tc["name"] == "trigger_action"
-    assert tc["args"] == {"entity_id": "automation.ai_action_night"}
+    assert tc["args"] == {"entity_id": "automation.ai_action_night", "params": {}}
     assert tc["id"].startswith(FASTPATH_PREFIX)
+
+@pytest.mark.asyncio
+async def test_synthetic_call_includes_params():
+    from app.agent.middleware.fast_path_middleware import FastPathMiddleware
+
+    class _Backend:
+        name = "fake"
+
+    mw = FastPathMiddleware(backend=_Backend(), menu_provider=None, threshold=0.0)
+    msg = mw._synthetic_call("script.ai_action_lights_on", {"room": "living_room"})
+    call = msg.tool_calls[0]
+    assert call["name"] == "trigger_action"
+    assert call["args"] == {"entity_id": "script.ai_action_lights_on",
+                            "params": {"room": "living_room"}}
 
 @pytest.mark.asyncio
 async def test_miss_calls_handler():
@@ -54,7 +68,7 @@ async def test_step_after_fastpath_tool_returns_templated_reply():
     ai_msg = AIMessage(
         content="",
         tool_calls=[{"name": "trigger_action",
-                     "args": {"entity_id": "automation.ai_action_night"},
+                     "args": {"entity_id": "automation.ai_action_night", "params": {}},
                      "id": call_id}],
     )
     tm = ToolMessage(content=ok, tool_call_id=call_id, name="trigger_action")

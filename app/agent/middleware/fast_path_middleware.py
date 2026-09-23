@@ -95,7 +95,7 @@ class FastPathMiddleware(AgentMiddleware):
                     return await handler(request)
                 # result is a Decision
                 if result.entity_id is not None and result.confidence >= self._threshold:
-                    return self._synthetic_call(result.entity_id)
+                    return self._synthetic_call(result.entity_id, result.arguments)
 
         return await handler(request)
 
@@ -182,12 +182,12 @@ class FastPathMiddleware(AgentMiddleware):
                 log.debug("fast path telemetry error; falling through to agent")
                 return "fallthrough"
 
-    def _synthetic_call(self, entity_id: str) -> AIMessage:
+    def _synthetic_call(self, entity_id: str, arguments: dict | None = None) -> AIMessage:
         call_id = FASTPATH_PREFIX + uuid.uuid4().hex
         return AIMessage(
             content="",
             tool_calls=[{"name": "trigger_action",
-                         "args": {"entity_id": entity_id},
+                         "args": {"entity_id": entity_id, "params": arguments or {}},
                          "id": call_id}],
             response_metadata={"model_name": self._backend.name, "fast_path": True},
             additional_kwargs={"fastpath_entity_id": entity_id},
