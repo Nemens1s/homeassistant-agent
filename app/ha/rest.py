@@ -76,14 +76,23 @@ class RestClient:
     async def get_automation_config(self, automation_id: str) -> dict:
         return await self._get_json(f"/api/config/automation/config/{automation_id}")
 
-    async def call_service(self, domain: str, service: str, entity_id: str) -> list:
+    async def get_script_config(self, object_id: str) -> dict:
+        return await self._get_json(f"/api/config/script/config/{object_id}")
+
+    async def call_service(
+        self, domain: str, service: str, entity_id: str | None = None,
+        data: dict | None = None,
+    ) -> list:
         """The ONLY write method. Refuses domains outside the allowlist the
-        client was constructed with — defense in depth beneath the handler
-        check; an empty allowlist (the default) makes this client read-only."""
+        client was constructed with. `data` is the service payload (e.g. script
+        field variables); `entity_id`, when given, is merged into it."""
         if domain not in self._allowed_write_domains:
             raise PermissionError(f"write domain not allowed: {domain!r}")
+        body: dict = dict(data or {})
+        if entity_id is not None:
+            body["entity_id"] = entity_id
         resp = await self._client.post(
-            f"/api/services/{domain}/{service}", json={"entity_id": entity_id}
+            f"/api/services/{domain}/{service}", json=body
         )
         resp.raise_for_status()
         return resp.json()

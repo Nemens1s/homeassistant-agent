@@ -127,3 +127,44 @@ async def test_default_client_cannot_write_at_all():
     with pytest.raises(PermissionError):
         await client.call_service("light", "turn_on", "light.kitchen")
     await client.aclose()
+
+
+async def test_get_script_config_path():
+    def handler(request):
+        assert request.url.path == "/api/config/script/config/ai_action_lights_on"
+        return httpx.Response(200, json={
+            "alias": "AI Action: Turn Room Lights On",
+            "fields": {"room": {"selector": {"select": {"options": ["living_room"]}}}},
+        })
+
+    client = _client(handler)
+    cfg = await client.get_script_config("ai_action_lights_on")
+    assert "fields" in cfg
+    await client.aclose()
+
+
+async def test_call_service_with_data_and_no_entity_id():
+    def handler(request):
+        assert request.url.path == "/api/services/script/ai_action_lights_on"
+        assert json.loads(request.content) == {"room": "living_room"}  # no entity_id
+        return httpx.Response(200, json=[])
+
+    client = RestClient(
+        "http://ha.test", "tok", transport=httpx.MockTransport(handler),
+        allowed_write_domains=("script",),
+    )
+    await client.call_service("script", "ai_action_lights_on", data={"room": "living_room"})
+    await client.aclose()
+
+
+async def test_call_service_entity_id_still_works():
+    def handler(request):
+        assert json.loads(request.content) == {"entity_id": "automation.ai_x"}
+        return httpx.Response(200, json=[])
+
+    client = RestClient(
+        "http://ha.test", "tok", transport=httpx.MockTransport(handler),
+        allowed_write_domains=("automation",),
+    )
+    await client.call_service("automation", "trigger", "automation.ai_x")
+    await client.aclose()
