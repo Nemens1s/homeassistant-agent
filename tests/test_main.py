@@ -88,7 +88,7 @@ def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     with TestClient(app):
         pass
     assert captured["audit"] is not None
-    assert captured["rest"]._allowed_write_domains == ("light", "switch", "fan", "automation")
+    assert captured["rest"]._allowed_write_domains == ("light", "switch", "fan", "automation", "script")
 
 
 def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):

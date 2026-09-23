@@ -63,3 +63,8 @@ def test_load_settings_from_options_json(tmp_path, monkeypatch):
     s = load_settings()
     assert s.llm_model == "llama3.1:8b"
     assert s.num_ctx == 4096
+
+
+def test_script_domain_allowed_by_default():
+    s = Settings(_env_file=None)
+    assert "script" in s.allowed_domains

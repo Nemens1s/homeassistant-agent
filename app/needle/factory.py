@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from app.constants import AI_AUTOMATION_PREFIX_ACTION
+from app.constants import AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION
 from app.needle.menu import MenuProvider
 from app.needle.remote_backend import RemoteNeedleBackend
 from app.tools import registry
@@ -29,5 +29,5 @@ def build_fast_path_backend(cfg, rest, ctx):
         return None
     backend = RemoteNeedleBackend(cfg.needle_remote_url)
     menu_provider = MenuProvider(rest, ttl_s=cfg.needle_menu_ttl_s,
-                                 prefix=AI_AUTOMATION_PREFIX_ACTION, ws=ctx.ws)
+                                 prefixes=(AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION), ws=ctx.ws)
     return backend, menu_provider
