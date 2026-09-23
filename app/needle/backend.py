@@ -51,6 +51,7 @@ def _decision_from_result(result: dict, name_to_id: dict[str, str]) -> Decision:
         return Decision(entity_id=None, confidence=confidence)
     name = calls[0].get("name")
     entity_id = name_to_id.get(name)
-    return Decision(entity_id=entity_id, confidence=confidence)
+    arguments = calls[0].get("arguments") or {}
+    return Decision(entity_id=entity_id, confidence=confidence, arguments=arguments)
 
 

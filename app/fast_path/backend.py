@@ -4,7 +4,7 @@ this protocol, never on a concrete backend."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from app.needle.menu import Menu
@@ -14,6 +14,7 @@ from app.needle.menu import Menu
 class Decision:
     entity_id: str | None   # constrained to the current menu, or None
     confidence: float
+    arguments: dict = field(default_factory=dict)
 
 
 class FastPathBackend(Protocol):

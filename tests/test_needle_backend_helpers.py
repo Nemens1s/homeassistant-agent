@@ -42,3 +42,17 @@ def test_decision_from_result_no_call_is_none():
 def test_decision_from_result_unknown_name_is_none():
     d = _decision_from_result({"function_calls": [{"name": "ghost"}], "confidence": 0.5}, {})
     assert d.entity_id is None and d.confidence == 0.5
+
+
+def test_decision_carries_arguments():
+    name_to_id = {"lights_on": "script.ai_action_lights_on"}
+    result = {"confidence": 0.9,
+              "function_calls": [{"name": "lights_on", "arguments": {"room": "living_room"}}]}
+    decision = _decision_from_result(result, name_to_id)
+    assert decision.entity_id == "script.ai_action_lights_on"
+    assert decision.arguments == {"room": "living_room"}
+
+
+def test_decision_arguments_default_empty():
+    decision = _decision_from_result({"confidence": 0.0, "function_calls": []}, {})
+    assert decision.arguments == {}
