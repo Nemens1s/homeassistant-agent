@@ -164,6 +164,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ws = None
 
             ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
+            # Load the tool registry before building the fast path: it guards on
+            # registry.get("trigger_automation"), and build_agent (which also
+            # loads the registry) runs later. load_all is idempotent.
+            from app.tools import registry
+            registry.load_all()
             fast_path = None
             try:
                 fast_path = build_fast_path_backend(cfg, rest, ctx)
