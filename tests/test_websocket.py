@@ -123,6 +123,74 @@ async def test_request_total_deadline_single_budget(server_url):
     await client.stop()
 
 
+async def _fake_ha_management(ws):
+    await ws.send(json.dumps({"type": "auth_required", "ha_version": "2026.7"}))
+    msg = json.loads(await ws.recv())
+    if msg.get("access_token") != "secret":
+        await ws.send(json.dumps({"type": "auth_invalid", "message": "bad token"}))
+        return
+    await ws.send(json.dumps({"type": "auth_ok", "ha_version": "2026.7"}))
+    async for raw in ws:
+        msg = json.loads(raw)
+        if msg["type"] in ("call_service", "config/entity_registry/update"):
+            await ws.send(json.dumps(
+                {"id": msg["id"], "type": "result", "success": True, "result": None}
+            ))
+        else:
+            await ws.send(json.dumps(
+                {"id": msg["id"], "type": "result", "success": False,
+                 "error": {"code": "unknown_command", "message": "unknown"}}
+            ))
+
+
+@pytest.fixture
+async def management_server_url():
+    async with websockets.serve(_fake_ha_management, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        yield f"ws://127.0.0.1:{port}"
+
+
+async def test_management_request_allows_call_service(management_server_url):
+    client = WebSocketClient(management_server_url, "secret")
+    await client.start(connect_timeout=5)
+    result = await client.management_request(
+        "call_service", domain="automation", service="turn_on",
+        service_data={"entity_id": "automation.ai_night_lights"},
+    )
+    assert result is None
+    await client.stop()
+
+
+async def test_management_request_allows_entity_registry_update(management_server_url):
+    client = WebSocketClient(management_server_url, "secret")
+    await client.start(connect_timeout=5)
+    result = await client.management_request(
+        "config/entity_registry/update",
+        entity_id="script.ai_action_music",
+        disabled_by="user",
+    )
+    assert result is None
+    await client.stop()
+
+
+async def test_management_request_rejects_non_management_command(management_server_url):
+    client = WebSocketClient(management_server_url, "secret")
+    await client.start(connect_timeout=5)
+    with pytest.raises(PermissionError):
+        await client.management_request("config/area_registry/list")
+    assert client._next_id == 1
+    assert client._pending == {}
+    await client.stop()
+
+
+async def test_request_still_rejects_call_service(server_url):
+    client = WebSocketClient(server_url, "secret")
+    await client.start(connect_timeout=5)
+    with pytest.raises(PermissionError):
+        await client.request("call_service", domain="automation", service="turn_on")
+    await client.stop()
+
+
 async def test_disconnect_clears_cache(server_url):
     client = WebSocketClient(server_url, "secret")
     await client.start(connect_timeout=5)

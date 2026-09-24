@@ -113,6 +113,10 @@ class LabelRequest(BaseModel):
     note: str | None = None
 
 
+class ToggleRequest(BaseModel):
+    enabled: bool
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
 
@@ -425,6 +429,78 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             note=req.note,
         )
         return {"id": label_id}
+
+    @app.get("/api/actions")
+    async def get_actions() -> dict:
+        from fastapi import HTTPException
+        from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
+
+        ws = app.state.ws
+        if ws is None:
+            raise HTTPException(status_code=503, detail="websocket unavailable")
+
+        registry_entries = await ws.request("config/entity_registry/list")
+        states = await app.state.rest.list_states()
+        state_map = {s["entity_id"]: s for s in states}
+
+        actions = []
+        for entry in registry_entries:
+            entity_id = entry["entity_id"]
+            if not entity_id.startswith((AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX)):
+                continue
+
+            disabled_by = entry.get("disabled_by")
+            is_automation = entity_id.startswith("automation.")
+
+            if is_automation:
+                s = state_map.get(entity_id)
+                enabled = (not disabled_by) and s is not None and s["state"] == "on"
+            else:
+                enabled = disabled_by is None
+
+            s = state_map.get(entity_id)
+            if s:
+                name = s.get("attributes", {}).get("friendly_name") or ""
+            else:
+                name = entry.get("name") or entry.get("original_name") or entity_id
+
+            actions.append({
+                "entity_id": entity_id,
+                "name": name,
+                "type": "automation" if is_automation else "script",
+                "enabled": enabled,
+            })
+
+        return {"actions": actions}
+
+    @app.post("/api/actions/{entity_id:path}/toggle")
+    async def toggle_action(entity_id: str, req: ToggleRequest) -> dict:
+        from fastapi import HTTPException
+        from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
+
+        if not entity_id.startswith((AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX)):
+            raise HTTPException(status_code=403, detail="not an AI-controlled entity")
+
+        ws = app.state.ws
+        if ws is None:
+            raise HTTPException(status_code=503, detail="websocket unavailable")
+
+        if entity_id.startswith("automation."):
+            service = "turn_on" if req.enabled else "turn_off"
+            await ws.management_request(
+                "call_service",
+                domain="automation",
+                service=service,
+                service_data={"entity_id": entity_id},
+            )
+        else:
+            await ws.management_request(
+                "config/entity_registry/update",
+                entity_id=entity_id,
+                disabled_by=None if req.enabled else "user",
+            )
+
+        return {"ok": True}
 
     # Mounted last so /api/* wins. Frontend must use relative fetch paths
     # ("api/chat", not "/api/chat") — HA ingress serves us under a prefix.
