@@ -84,7 +84,9 @@ class FakeRest:
 
 class FakeWS:
     connected = True
-    last_management_call = None
+
+    def __init__(self):
+        self.management_calls = []
 
     async def request(self, msg_type, **payload):
         if msg_type == "config/entity_registry/list":
@@ -92,7 +94,7 @@ class FakeWS:
         raise RuntimeError(f"unexpected request: {msg_type}")
 
     async def management_request(self, msg_type, **payload):
-        self.last_management_call = {"type": msg_type, **payload}
+        self.management_calls.append({"type": msg_type, **payload})
         return None
 
 
@@ -175,9 +177,9 @@ def test_toggle_automation_enable_calls_turn_on():
             json={"enabled": True},
         )
     assert resp.status_code == 200
-    assert fake_ws.last_management_call["type"] == "call_service"
-    assert fake_ws.last_management_call["domain"] == "automation"
-    assert fake_ws.last_management_call["service"] == "turn_on"
+    assert fake_ws.management_calls[0]["type"] == "call_service"
+    assert fake_ws.management_calls[0]["domain"] == "automation"
+    assert fake_ws.management_calls[0]["service"] == "turn_on"
 
 
 def test_toggle_automation_disable_calls_turn_off():
@@ -191,10 +193,10 @@ def test_toggle_automation_disable_calls_turn_off():
             json={"enabled": False},
         )
     assert resp.status_code == 200
-    assert fake_ws.last_management_call["service"] == "turn_off"
+    assert fake_ws.management_calls[0]["service"] == "turn_off"
 
 
-def test_toggle_script_enable_clears_disabled_by():
+def test_toggle_script_enable_clears_disabled_by_and_reloads():
     fake_ws = FakeWS()
     app = create_app(_settings())
     with TestClient(app) as client:
@@ -205,11 +207,12 @@ def test_toggle_script_enable_clears_disabled_by():
             json={"enabled": True},
         )
     assert resp.status_code == 200
-    assert fake_ws.last_management_call["type"] == "config/entity_registry/update"
-    assert fake_ws.last_management_call["disabled_by"] is None
+    assert fake_ws.management_calls[0]["type"] == "config/entity_registry/update"
+    assert fake_ws.management_calls[0]["disabled_by"] is None
+    assert fake_ws.management_calls[1] == {"type": "call_service", "domain": "script", "service": "reload"}
 
 
-def test_toggle_script_disable_sets_disabled_by_user():
+def test_toggle_script_disable_sets_disabled_by_user_no_reload():
     fake_ws = FakeWS()
     app = create_app(_settings())
     with TestClient(app) as client:
@@ -220,7 +223,8 @@ def test_toggle_script_disable_sets_disabled_by_user():
             json={"enabled": False},
         )
     assert resp.status_code == 200
-    assert fake_ws.last_management_call["disabled_by"] == "user"
+    assert fake_ws.management_calls[0]["disabled_by"] == "user"
+    assert len(fake_ws.management_calls) == 1
 
 
 def test_toggle_rejects_non_ai_entity():

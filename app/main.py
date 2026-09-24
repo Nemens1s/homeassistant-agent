@@ -499,6 +499,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 entity_id=entity_id,
                 disabled_by=None if req.enabled else "user",
             )
+            if req.enabled:
+                await ws.management_request("call_service", domain="script", service="reload")
 
         return {"ok": True}
 
