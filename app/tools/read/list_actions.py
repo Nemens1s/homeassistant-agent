@@ -1,3 +1,4 @@
+import httpx
 from pydantic import BaseModel
 
 from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
@@ -17,16 +18,17 @@ async def handler(params: Params, ctx) -> ToolResult:
         entity_id = s["entity_id"]
         if not entity_id.startswith((AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX)):
             continue
+        if entity_id.startswith("automation.") and s["state"] == "off":
+            continue
         row = {
             "entity_id": entity_id,
-            "state": s["state"],
             "name": s.get("attributes", {}).get("friendly_name", ""),
         }
         if entity_id.startswith("script."):
             try:
                 cfg = await ctx.rest.get_script_config(entity_id.split(".", 1)[1])
                 params_schema = fields_to_parameters(cfg.get("fields") or {})
-            except Exception:
+            except (httpx.HTTPStatusError, httpx.RequestError):
                 params_schema = {"type": "object", "properties": {}}
             if params_schema.get("properties"):
                 row["params"] = params_schema

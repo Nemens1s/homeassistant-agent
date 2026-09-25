@@ -29,6 +29,12 @@ READ_ONLY_COMMANDS: tuple[str, ...] = (
     "ping",
 )
 
+# Commands allowed only for UI management (not agent tools).
+MANAGEMENT_COMMANDS: tuple[str, ...] = (
+    "call_service",
+    "config/entity_registry/update",
+)
+
 
 class WebSocketClient:
     def __init__(self, url: str, token: str, request_timeout: float = 10.0):
@@ -75,18 +81,7 @@ class WebSocketClient:
         self._connected.clear()
         self._fail_pending(ConnectionError("websocket client stopped"))
 
-    async def request(self, msg_type: str, **payload: Any) -> Any:
-        """Send one command and await its correlated result.
-
-        Raises:
-            PermissionError: msg_type is not in READ_ONLY_COMMANDS.
-            TimeoutError: no connection or no response within request_timeout
-                (one total budget across both waits).
-            ConnectionError: connection dropped before/while sending.
-            RuntimeError: HA answered with success=False.
-        """
-        if msg_type not in READ_ONLY_COMMANDS:
-            raise PermissionError(f"websocket command not allowed: {msg_type!r}")
+    async def _send_request(self, msg_type: str, **payload: Any) -> Any:
         deadline = time.monotonic() + self._timeout
         await asyncio.wait_for(
             self._connected.wait(), timeout=max(0.0, deadline - time.monotonic())
@@ -109,6 +104,30 @@ class WebSocketClient:
             raise ConnectionError(f"websocket send failed: {exc}") from exc
         finally:
             self._pending.pop(msg_id, None)
+
+    async def request(self, msg_type: str, **payload: Any) -> Any:
+        """Send one read-only command and await its correlated result.
+
+        Raises:
+            PermissionError: msg_type is not in READ_ONLY_COMMANDS.
+            TimeoutError: no connection or no response within request_timeout
+                (one total budget across both waits).
+            ConnectionError: connection dropped before/while sending.
+            RuntimeError: HA answered with success=False.
+        """
+        if msg_type not in READ_ONLY_COMMANDS:
+            raise PermissionError(f"websocket command not allowed: {msg_type!r}")
+        return await self._send_request(msg_type, **payload)
+
+    async def management_request(self, msg_type: str, **payload: Any) -> Any:
+        """Send a management command (UI-only, not available to agent tools).
+
+        Raises:
+            PermissionError: msg_type is not in MANAGEMENT_COMMANDS.
+        """
+        if msg_type not in MANAGEMENT_COMMANDS:
+            raise PermissionError(f"websocket management command not allowed: {msg_type!r}")
+        return await self._send_request(msg_type, **payload)
 
     async def request_cached(self, msg_type: str, ttl: float = 60.0) -> Any:
         hit = self._cache.get(msg_type)

@@ -32,6 +32,7 @@ class RemoteNeedleBackend:
                 "description": item.description or item.name,
                 "parameters": item.parameters or {},
             })
+        print(f"Tools {tools}")
         payload = {"message": message, "tools": tools, "signature": menu.signature}
         response = await self._client.post(self._url, json=payload)
         response.raise_for_status()

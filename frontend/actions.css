@@ -1,0 +1,113 @@
+.actions-main {
+  padding: 1.5rem;
+  max-width: 640px;
+}
+
+.actions-loading {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  padding: 1rem 0;
+}
+
+.actions-section {
+  margin-bottom: 1.5rem;
+}
+
+.actions-section-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.actions-ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: opacity 0.2s;
+}
+
+.action-row.disabled {
+  opacity: 0.5;
+}
+
+.action-name {
+  font-size: 0.875rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Toggle switch */
+.toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--accent);
+}
+
+.toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s;
+}
+
+.toggle input:checked + .toggle-track::after {
+  transform: translateX(16px);
+}
+
+.toggle input:disabled + .toggle-track {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.banner {
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: var(--error-soft);
+  color: var(--error);
+  margin-bottom: 1rem;
+}
