@@ -20,12 +20,15 @@ log = logging.getLogger("fast_path")
 FASTPATH_PREFIX = "fastpath-"
 
 
-def _reply_from_envelope(raw: str, entity_id: str) -> str:
+def _reply_from_envelope(raw: str, entity_id: str, params: dict | None = None) -> str:
     try:
         env = json.loads(raw)
     except (ValueError, TypeError):
         return "Sorry, I couldn't run that automation."
     if env.get("status") == "ok":
+        if params:
+            param_str = ", ".join(f"{k}: {v}" for k, v in params.items())
+            return f"Done — triggered {entity_id} ({param_str})."
         return f"Done — triggered {entity_id}."
     error = env.get("error") or {}
     message = error.get("message")
@@ -70,10 +73,13 @@ class FastPathMiddleware(AgentMiddleware):
             # constructs it from the tool result only); read the entity_id from the
             # preceding AIMessage's tool_calls args instead.
             try:
-                entity_id = messages[-2].tool_calls[0]["args"]["entity_id"]
+                prev_args = messages[-2].tool_calls[0]["args"]
+                entity_id = prev_args["entity_id"]
+                params = prev_args.get("params") or {}
             except (IndexError, KeyError, AttributeError, TypeError):
                 entity_id = ""
-            return AIMessage(content=_reply_from_envelope(last.content, entity_id))
+                params = {}
+            return AIMessage(content=_reply_from_envelope(last.content, entity_id, params))
 
         # First step of a turn → classify.
         if isinstance(last, HumanMessage):
@@ -87,24 +93,29 @@ class FastPathMiddleware(AgentMiddleware):
                         pass
                 return await handler(request)
 
-            decision = None
-            result = await self._classify_with_telemetry(last.content, decision)
+            result = await self._classify_with_telemetry(last.content)
             if result is not None:
-                # result is either a Decision (hit/miss) or a sentinel meaning fall-through
+                # result is either a (Decision, Menu) tuple or a sentinel meaning fall-through
                 if result == "fallthrough":
                     return await handler(request)
-                # result is a Decision
-                if result.entity_id is not None and result.confidence >= self._threshold:
-                    return self._synthetic_call(result.entity_id, result.arguments)
+                decision, menu = result
+                if decision.entity_id is not None and decision.confidence >= self._threshold:
+                    # Fall through when required params are missing — the LLM must resolve them.
+                    item = next((i for i in menu.items if i.entity_id == decision.entity_id), None)
+                    if item:
+                        required = item.parameters.get("required") or []
+                        if required and not all(k in decision.arguments for k in required):
+                            return await handler(request)
+                    return self._synthetic_call(decision.entity_id, decision.arguments)
 
         return await handler(request)
 
-    async def _classify_with_telemetry(self, message: str, _unused):
+    async def _classify_with_telemetry(self, message: str):
         """Run menu fetch + classify, wrapped in a telemetry span if tracer is set.
 
         Returns:
-            A Decision on success, or the string "fallthrough" when the request
-            should fall through to the LLM (empty menu or backend error).
+            A (Decision, Menu) tuple on success, or the string "fallthrough" when
+            the request should fall through to the LLM (empty menu or backend error).
         """
         if self._tracer is None:
             # No telemetry — plain path identical to original behavior.
@@ -112,7 +123,8 @@ class FastPathMiddleware(AgentMiddleware):
                 menu = await self._menu_provider.get()
                 if not menu.items:
                     return "fallthrough"
-                return await self._backend.classify(message, menu)
+                decision = await self._backend.classify(message, menu)
+                return (decision, menu)
             except Exception:
                 log.exception("fast path error; falling through to agent")
                 return "fallthrough"
@@ -128,7 +140,8 @@ class FastPathMiddleware(AgentMiddleware):
                 menu = await self._menu_provider.get()
                 if not menu.items:
                     return "fallthrough"
-                return await self._backend.classify(message, menu)
+                decision = await self._backend.classify(message, menu)
+                return (decision, menu)
             except Exception:
                 log.exception("fast path error; falling through to agent")
                 return "fallthrough"
@@ -174,7 +187,7 @@ class FastPathMiddleware(AgentMiddleware):
                 self._safe_set(span, conventions.GOSLING_FP_CONFIDENCE, decision.confidence)
                 self._safe_set(span, conventions.GOSLING_FP_ACCEPTED, accepted)
 
-                return decision
+                return (decision, menu)
 
             except Exception:
                 # Last-resort catch: telemetry raised unexpectedly. Fall through so
