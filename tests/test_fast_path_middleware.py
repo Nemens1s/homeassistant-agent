@@ -10,6 +10,25 @@ from app.needle.menu import Menu, MenuItem
 
 _MENU = Menu(items=(MenuItem("automation.ai_action_night", "Night", "goodnight"),), signature="s")
 
+_MENU_WITH_REQUIRED = Menu(
+    items=(
+        MenuItem(
+            "script.ai_action_set_brightness",
+            "Set Brightness",
+            "Set room brightness",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "room": {"type": "string", "enum": ["living_room"]},
+                    "percentage": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                "required": ["room", "percentage"],
+            },
+        ),
+    ),
+    signature="s2",
+)
+
 class _FakeMenu:
     def __init__(self, menu): self._m = menu
     async def get(self): return self._m
@@ -124,3 +143,83 @@ async def test_opt_out_flag_falls_through():
         return AIMessage("llm")
     await mw.awrap_model_call(req, handler)
     assert called == {"yes": True}
+
+
+@pytest.mark.asyncio
+async def test_params_included_in_reply_text():
+    """Params from the synthetic call appear in the plain-text reply so the LLM can see them."""
+    mw = FastPathMiddleware(FakeBackend(), _FakeMenu(_MENU), threshold=0.0)
+    call_id = FASTPATH_PREFIX + "abc"
+    ok = json.dumps({"status": "ok"})
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[{"name": "trigger_action",
+                     "args": {"entity_id": "script.ai_action_set_brightness",
+                              "params": {"room": "living_room", "percentage": 20}},
+                     "id": call_id}],
+    )
+    tm = ToolMessage(content=ok, tool_call_id=call_id, name="trigger_action")
+    resp = await mw.awrap_model_call(_request([HumanMessage("x"), ai_msg, tm]), _fail_handler)
+    assert "room: living_room" in resp.content
+    assert "percentage: 20" in resp.content
+
+
+@pytest.mark.asyncio
+async def test_missing_required_params_falls_through_to_llm():
+    """When the fast-path decision lacks required params the LLM must handle it."""
+    decision = Decision("script.ai_action_set_brightness", 0.95, arguments={})
+    mw = FastPathMiddleware(
+        FakeBackend(decision),
+        _FakeMenu(_MENU_WITH_REQUIRED),
+        threshold=0.0,
+    )
+    called = {}
+    async def handler(request):
+        called["yes"] = True
+        return AIMessage("llm reply")
+    resp = await mw.awrap_model_call(
+        _request([HumanMessage("make lights a bit less bright")]), handler
+    )
+    assert called == {"yes": True}
+    assert resp.content == "llm reply"
+
+
+@pytest.mark.asyncio
+async def test_all_required_params_present_triggers():
+    """When the decision supplies all required params the fast path still fires."""
+    decision = Decision(
+        "script.ai_action_set_brightness", 0.95,
+        arguments={"room": "living_room", "percentage": 20},
+    )
+    mw = FastPathMiddleware(
+        FakeBackend(decision),
+        _FakeMenu(_MENU_WITH_REQUIRED),
+        threshold=0.0,
+    )
+    resp = await mw.awrap_model_call(
+        _request([HumanMessage("set brightness to 20 in living room")]), _fail_handler
+    )
+    assert isinstance(resp, AIMessage)
+    tc = resp.tool_calls[0]
+    assert tc["args"]["params"] == {"room": "living_room", "percentage": 20}
+
+
+@pytest.mark.asyncio
+async def test_no_required_field_in_schema_triggers_without_args():
+    """A script with no required params still triggers even if arguments is empty."""
+    menu = Menu(
+        items=(
+            MenuItem(
+                "script.ai_action_lights_on",
+                "Lights On",
+                "Turn lights on",
+                parameters={"type": "object", "properties": {}},
+            ),
+        ),
+        signature="s3",
+    )
+    decision = Decision("script.ai_action_lights_on", 0.9, arguments={})
+    mw = FastPathMiddleware(FakeBackend(decision), _FakeMenu(menu), threshold=0.0)
+    resp = await mw.awrap_model_call(_request([HumanMessage("lights on")]), _fail_handler)
+    assert isinstance(resp, AIMessage)
+    assert resp.tool_calls[0]["args"]["entity_id"] == "script.ai_action_lights_on"
