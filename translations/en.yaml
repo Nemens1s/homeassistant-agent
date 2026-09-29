@@ -134,3 +134,68 @@ configuration:
     description: >-
       Hide person entities whose friendly_name contains any of these substrings
       (case-insensitive) from location output.
+  language_layer_enabled:
+    name: Language layer
+    description: >-
+      Accept Russian and Estonian as well as English. The message is translated
+      to English before the agent runs and the reply is translated back; the
+      agent itself stays English-only. Off = nothing changes and the translation
+      service is never called.
+  lang_mt_url:
+    name: Translation service URL
+    description: >-
+      Base URL of the lang-mt detection/translation service (e.g.
+      http://192.168.1.4:8765). Used only while the language layer is on; if it
+      is unreachable, replies fall back to English instead of failing.
+  languages:
+    name: Languages
+    description: >-
+      Languages detection may choose between, as two-letter codes. Restricting
+      the list is what stops short Estonian commands being read as Finnish.
+  default_language:
+    name: Default language
+    description: >-
+      Language assumed when detection is unsure and the conversation has no
+      previous language to fall back on.
+  min_confidence:
+    name: Minimum detection confidence
+    description: >-
+      Below this confidence, the language of the previous message in the same
+      conversation is used instead of the detected one, then the default
+      language. Raise it if short commands get the wrong language.
+  lang_mt_timeout_s:
+    name: Translation timeout
+    description: >-
+      Seconds to wait for the translation service before giving up on that hop.
+      A timeout means the agent still answers — in English.
+  glossary_path:
+    name: Glossary path
+    description: >-
+      YAML file mapping device and room names to their forms in each language,
+      so translation cannot mangle them. Missing file = no name protection. See
+      docs/glossary.example.yaml for the format.
+  telemetry_enabled:
+    name: Telemetry
+    description: >-
+      Record what each request did — prompts, tool calls, timings and replies —
+      to a local SQLite file for the Metrics tab. Everything stays on this
+      machine; nothing is sent anywhere. Turn it off to record nothing.
+  telemetry_db_path:
+    name: Telemetry DB path
+    description: >-
+      SQLite file the traces are written to. /data persists across add-on
+      restarts. An empty string disables telemetry regardless of the switch
+      above; the file is excluded from add-on backups.
+  telemetry_retention_days:
+    name: Telemetry retention
+    description: >-
+      Intended age limit (days) for stored traces; 0 = keep everything.
+      Automatic pruning is not implemented yet, so this value currently has no
+      effect and the file grows until you delete it.
+  otlp_endpoint:
+    name: OTLP endpoint
+    description: >-
+      Reserved for exporting traces to a collector (e.g.
+      http://otelcol.home:4318). No exporter is wired up yet, so setting it
+      changes nothing except that the add-on refuses to start if the address is
+      not on your LAN. Leave blank.

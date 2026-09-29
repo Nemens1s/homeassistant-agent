@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     needle_confidence_threshold: float = 0.0
     needle_menu_ttl_s: int = 60          # menu/grammar cache TTL
 
+    # Language layer. Off by default: when
+    # disabled the HTTP edge behaves exactly as before and lang-mt is never
+    # called. Translation happens only here, never inside the agent graph.
+    language_layer_enabled: bool = False
+    lang_mt_url: str = "http://localhost:8765"
+    languages: list[str] = ["en", "ru", "et"]
+    default_language: str = "en"
+    min_confidence: float = 0.5   # below this, fall back to the thread prior
+    lang_mt_timeout_s: float = 3.0
+    glossary_path: str = "/config/gosling/glossary.yaml"
+
     # Telemetry (OTel + local SQLite). Set telemetry_enabled=False to opt out.
     # telemetry_db_path: local SQLite file; empty = telemetry disabled.
     # telemetry_retention_days: 0 = keep forever (pruning is a future task).

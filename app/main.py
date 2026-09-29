@@ -28,6 +28,8 @@ from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.needle.factory import build_fast_path_backend
 from app.config import Settings, load_settings
+from app.i18n import build_language_adapter, set_language_attributes
+from app.i18n.store import LangOverlay, apply_overlay
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
 from app.tools.context import ToolContext
@@ -73,8 +75,13 @@ def _assert_otlp_is_lan(endpoint: str) -> None:
             )
 
 
-async def _teardown(rest, ws, audit=None, telemetry_provider=None) -> None:
+async def _teardown(rest, ws, audit=None, telemetry_provider=None, language=None) -> None:
     try:
+        if language is not None:
+            try:
+                await language.aclose()
+            except Exception:
+                pass
         await rest.aclose()
     finally:
         try:
@@ -102,6 +109,11 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     request_id: str | None = None
+    # Language layer: the language the reply is in, and the English
+    # text the agent actually produced. reply_en is None when nothing was
+    # translated. Gosling ignores unknown fields, so this is additive.
+    language: str | None = None
+    reply_en: str | None = None
 
 
 class LabelRequest(BaseModel):
@@ -135,6 +147,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                           allowed_write_domains=write_domains)
         audit = AuditSink(cfg.audit_db_path)
         ws: WebSocketClient | None = WebSocketClient(cfg.ws_url, cfg.ha_token)
+        # Language adapter lives at the HTTP edge only; a no-op instance when
+        # the layer is off, so the handlers never branch on config.
+        language = build_language_adapter(cfg)
+        app.state.language = language
+        # Native-text overlay for /api/history. It lives in the
+        # checkpoint DB, so it only exists when threads are durable — in-memory
+        # threads do not survive the reload it exists to fix.
+        overlay = None
+        if cfg.language_layer_enabled and cfg.checkpoint_db_path:
+            overlay = LangOverlay(cfg.checkpoint_db_path)
+        app.state.lang_overlay = overlay
 
         # Nothing leaves the LAN: kill LangSmith env vars and enforce a
         # private-address-only constraint on the OTLP endpoint.
@@ -214,9 +237,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     snapshot_conn.close()
                 except Exception:
                     pass
-            await _teardown(rest, ws, audit=audit, telemetry_provider=telemetry_provider)
+            if overlay is not None:
+                overlay.close()
+            await _teardown(rest, ws, audit=audit, telemetry_provider=telemetry_provider,
+                            language=language)
 
     app = FastAPI(lifespan=lifespan)
+
+    def _record_native_turn(thread_id, inbound, reply_en, reply) -> None:
+        """Keep the native texts for /api/history; English stays in the graph."""
+        overlay = getattr(app.state, "lang_overlay", None)
+        if overlay is None or inbound.language == "en":
+            return
+        overlay.record(
+            thread_id,
+            language=inbound.language,
+            original_text=inbound.original_text,
+            english_text=inbound.english_text,
+            reply_en=reply_en,
+            reply_native=reply if reply != reply_en else None,
+        )
 
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(req: ChatRequest) -> ChatResponse:
@@ -230,9 +270,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request_id: str | None = None
 
         with tracer.start_as_current_span(C.SPAN_INVOKE_AGENT) as span:
-            # Set input attributes on the root span.
+            # Translate on the way in; everything past this point is English.
+            language = app.state.language
+            inbound = await language.inbound(req.message, req.thread_id)
+            set_language_attributes(span, language, inbound)
+
+            # Set input attributes on the root span. gosling.input.text is the
+            # English text the agent saw; the original lives under
+            # gosling.lang.original_text.
             try:
-                span.set_attribute(C.GOSLING_INPUT_TEXT, req.message)
+                span.set_attribute(C.GOSLING_INPUT_TEXT, inbound.english_text)
                 span.set_attribute(C.GOSLING_ENDPOINT, "/api/chat")
                 span.set_attribute(C.GOSLING_CHANNEL, channel)
             except Exception:
@@ -243,23 +290,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             try:
                 result = await app.state.agent.ainvoke(
-                    {"messages": [{"role": "user", "content": req.message}]},
+                    {"messages": [{"role": "user", "content": inbound.english_text}]},
                     config={
                         "configurable": {"thread_id": req.thread_id},
                         "recursion_limit": app.state.settings.recursion_limit,
                     },
                 )
-                reply = result["messages"][-1].content
+                reply_en = result["messages"][-1].content
+                reply = await language.outbound(reply_en, inbound)
+                set_language_attributes(span, language, inbound, reply_native=reply)
+                _record_native_turn(req.thread_id, inbound, reply_en, reply)
 
                 try:
-                    span.set_attribute(C.GOSLING_OUTPUT_TEXT, reply)
+                    span.set_attribute(C.GOSLING_OUTPUT_TEXT, reply_en)
                     path = "fast_path" if _fp_seen.get() else "agent"
                     span.set_attribute(C.GOSLING_PATH, path)
                     span.set_attribute(C.GOSLING_OUTCOME, "ok")
                 except Exception:
                     pass
 
-                return ChatResponse(reply=reply, request_id=request_id)
+                return ChatResponse(
+                    reply=reply,
+                    request_id=request_id,
+                    language=inbound.language,
+                    reply_en=reply_en if reply != reply_en else None,
+                )
 
             except GraphRecursionError:
                 try:
@@ -304,8 +359,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # rows. Keep the manual .end() in `finally` (end_on_exit=False).
             try:
                 with trace.use_span(span, end_on_exit=False):
+                    language = app.state.language
+                    inbound = await language.inbound(req.message, req.thread_id)
+                    set_language_attributes(span, language, inbound)
                     try:
-                        span.set_attribute(C.GOSLING_INPUT_TEXT, req.message)
+                        span.set_attribute(C.GOSLING_INPUT_TEXT, inbound.english_text)
                         span.set_attribute(C.GOSLING_ENDPOINT, "/api/chat/stream")
                         span.set_attribute(C.GOSLING_CHANNEL, channel)
                     except Exception:
@@ -318,18 +376,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     # Fast path is handled transparently by FastPathMiddleware inside the agent.
                     async for event in stream_events(
                         app.state.agent,
-                        req.message,
+                        inbound.english_text,
                         req.thread_id,
                         app.state.settings.recursion_limit,
                     ):
                         if event.get("type") == "done":
+                            # Tokens streamed in English (they cannot be
+                            # translated incrementally); `done` carries the
+                            # native reply the frontend swaps in.
+                            reply_en = event.get("reply", "")
+                            reply = await language.outbound(reply_en, inbound)
+                            set_language_attributes(span, language, inbound,
+                                                    reply_native=reply)
+                            _record_native_turn(req.thread_id, inbound, reply_en, reply)
                             try:
-                                span.set_attribute(C.GOSLING_OUTPUT_TEXT, event.get("reply", ""))
+                                span.set_attribute(C.GOSLING_OUTPUT_TEXT, reply_en)
                                 path = "fast_path" if _fp_seen.get() else "agent"
                                 span.set_attribute(C.GOSLING_PATH, path)
                             except Exception:
                                 pass
-                            yield _sse({**event, "request_id": request_id})
+                            yield _sse({
+                                **event,
+                                "reply": reply,
+                                "reply_en": reply_en if reply != reply_en else None,
+                                "language": inbound.language,
+                                "request_id": request_id,
+                            })
                         elif event.get("type") == "error":
                             outcome = "error"
                             yield _sse({**event, "request_id": request_id})
@@ -389,7 +461,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {"configurable": {"thread_id": thread_id}}
         )
         messages = (snap.values or {}).get("messages", [])
-        return {"messages": display_transcript(messages)}
+        turns = display_transcript(messages)
+        overlay = getattr(app.state, "lang_overlay", None)
+        if overlay is not None:
+            turns = apply_overlay(turns, overlay.rows_for(thread_id))
+        return {"messages": turns}
 
     @app.get("/api/telemetry/summary")
     async def get_telemetry_summary(days: int = 7) -> dict:
