@@ -67,12 +67,12 @@ async def test_noop_adapter_passes_text_through():
 
 
 async def test_inbound_protects_entities_and_restores_english(glossary):
-    client = FakeMT([MT("turn off the light in the ⟦E1⟧", src="ru")])
+    client = FakeMT([MT("turn off the light in the [E1]", src="ru")])
     adapter = _adapter(client, glossary)
 
     inbound = await adapter.inbound("выключи свет в гостиной", thread_id="t")
 
-    assert client.calls[0]["text"] == "выключи свет в ⟦E1⟧"
+    assert client.calls[0]["text"] == "выключи свет в [E1]"
     assert client.calls[0]["src"] == "auto"
     assert client.calls[0]["tgt"] == "en"
     assert client.calls[0]["allowed"] == ["en", "ru", "et"]
@@ -161,15 +161,15 @@ async def test_inbound_fails_open_when_lang_mt_is_down(glossary):
 
 async def test_outbound_translates_the_reply_and_restores_native_names(glossary):
     client = FakeMT([
-        MT("turned off the light in the ⟦E1⟧", src="ru"),
-        MT("Выключил свет в ⟦E1⟧", src="en"),
+        MT("turned off the light in the [E1]", src="ru"),
+        MT("Выключил свет в [E1]", src="en"),
     ])
     adapter = _adapter(client, glossary)
 
     inbound = await adapter.inbound("выключи свет в гостиной", thread_id="t")
     reply = await adapter.outbound("Turned off the light in the living room.", inbound)
 
-    assert client.calls[1]["text"] == "Turned off the light in the ⟦E1⟧."
+    assert client.calls[1]["text"] == "Turned off the light in the [E1]."
     assert client.calls[1]["src"] == "en"
     assert client.calls[1]["tgt"] == "ru"
     assert reply == "Выключил свет в гостиная"

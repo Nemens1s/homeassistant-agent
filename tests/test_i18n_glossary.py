@@ -33,26 +33,26 @@ def test_missing_file_gives_empty_glossary(tmp_path):
 
 def test_protect_replaces_a_russian_inflected_form(glossary):
     protected = glossary.protect("включи Конкорда в гостиной")
-    assert protected.text == "включи ⟦E1⟧ в ⟦E2⟧"
+    assert protected.text == "включи [E1] в [E2]"
     assert protected.hits == ["concorde_lights", "living_room"]
 
 
 def test_restore_puts_english_canonical_names_back(glossary):
     protected = glossary.protect("включи Конкорда в гостиной")
-    english = "turn on ⟦E1⟧ in the ⟦E2⟧"
+    english = "turn on [E1] in the [E2]"
     assert glossary.restore(english, protected, "en") == "turn on Concorde in the living room"
 
 
 def test_restore_uses_the_first_native_form(glossary):
     protected = glossary.protect("Turned on Concorde in the living room", languages=["en"])
-    assert protected.text == "Turned on ⟦E1⟧ in the ⟦E2⟧"
-    native = "Включил ⟦E1⟧ в ⟦E2⟧"
+    assert protected.text == "Turned on [E1] in the [E2]"
+    native = "Включил [E1] в [E2]"
     assert glossary.restore(native, protected, "ru") == "Включил Конкорд в гостиная"
 
 
 def test_matching_is_case_insensitive(glossary):
     protected = glossary.protect("turn on CONCORDE")
-    assert protected.text == "turn on ⟦E1⟧"
+    assert protected.text == "turn on [E1]"
 
 
 def test_longest_match_wins(tmp_path):
@@ -79,3 +79,12 @@ def test_restore_falls_back_to_english_when_language_has_no_form(tmp_path):
     g = Glossary.load(path)
     protected = g.protect("start the vacuum", languages=["en"])
     assert g.restore(protected.text, protected, "ru") == "start the vacuum"
+
+
+def test_placeholder_format_is_bracketed():
+    # NLLB's sentencepiece vocabulary has no ⟦ or ⟧: they tokenize to <unk>
+    # and the placeholder cannot survive translation.
+    from app.i18n.glossary import PLACEHOLDER_RE, placeholder
+
+    assert placeholder(1) == "[E1]"
+    assert PLACEHOLDER_RE.findall("turn on [E1] in [E2]") == ["[E1]", "[E2]"]

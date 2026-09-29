@@ -89,8 +89,8 @@ def test_app_builds_a_noop_adapter_when_the_layer_is_off():
 
 def test_chat_translates_in_and_out(tmp_path):
     mt = FakeMT([
-        MT("turn off the light in the ⟦E1⟧", src="ru"),
-        MT("Выключил свет в ⟦E1⟧", src="en"),
+        MT("turn off the light in the [E1]", src="ru"),
+        MT("Выключил свет в [E1]", src="en"),
     ])
     agent = FakeAgent(reply="Turned off the light in the living room.")
     app = create_app(_settings())
@@ -121,8 +121,8 @@ def test_chat_is_unchanged_when_the_layer_is_off():
 
 def test_stream_sends_english_tokens_and_a_translated_done(tmp_path):
     mt = FakeMT([
-        MT("turn off the light in the ⟦E1⟧", src="ru"),
-        MT("Выключил свет в ⟦E1⟧", src="en"),
+        MT("turn off the light in the [E1]", src="ru"),
+        MT("Выключил свет в [E1]", src="en"),
     ])
     agent = FakeAgent(reply="Turned off the light in the living room.")
     app = create_app(_settings())
@@ -171,8 +171,8 @@ def test_history_shows_native_text_after_a_translated_turn(tmp_path):
     from langchain_core.messages import HumanMessage
 
     mt = FakeMT([
-        MT("turn off the light in the ⟦E1⟧", src="ru"),
-        MT("Выключил свет в ⟦E1⟧", src="en"),
+        MT("turn off the light in the [E1]", src="ru"),
+        MT("Выключил свет в [E1]", src="en"),
     ])
     reply_en = "Turned off the light in the living room."
     agent = FakeStateAgent(
@@ -213,8 +213,8 @@ def test_stream_turns_are_recorded_for_history(tmp_path):
     from langchain_core.messages import HumanMessage
 
     mt = FakeMT([
-        MT("turn off the light in the ⟦E1⟧", src="ru"),
-        MT("Выключил свет в ⟦E1⟧", src="en"),
+        MT("turn off the light in the [E1]", src="ru"),
+        MT("Выключил свет в [E1]", src="en"),
     ])
     reply_en = "Turned off the light in the living room."
     agent = FakeStateAgent(

@@ -62,7 +62,7 @@ def _adapter(mt, tmp_path, tracer):
 
 async def test_adapter_emits_child_spans_for_both_hops(tmp_path):
     exporter = InMemorySpanExporter()
-    mt = FakeMT([MT("the ⟦E1⟧ light", src="ru"), MT("свет в ⟦E1⟧", src="en")])
+    mt = FakeMT([MT("the [E1] light", src="ru"), MT("свет в [E1]", src="en")])
     adapter = _adapter(mt, tmp_path, _tracer(exporter))
 
     inbound = await adapter.inbound("свет в гостиной", thread_id="t")
@@ -92,8 +92,8 @@ def test_root_span_carries_the_language_attributes(tmp_path, reset_otel_provider
     otel_trace.set_tracer_provider(provider)
 
     mt = FakeMT([
-        MT("turn off the light in the ⟦E1⟧", src="ru", confidence=0.94),
-        MT("Выключил свет в ⟦E1⟧", src="en"),
+        MT("turn off the light in the [E1]", src="ru", confidence=0.94),
+        MT("Выключил свет в [E1]", src="en"),
     ])
 
     class FakeAgent:

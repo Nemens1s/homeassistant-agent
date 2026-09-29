@@ -17,8 +17,10 @@ import yaml
 
 log = logging.getLogger("agent.i18n")
 
-PLACEHOLDER_OPEN = "⟦"
-PLACEHOLDER_CLOSE = "⟧"
+# NLLB's sentencepiece vocabulary has no ⟦ or ⟧ — they become <unk> and the
+# placeholder is destroyed at tokenization. Brackets survive.
+PLACEHOLDER_OPEN = "["
+PLACEHOLDER_CLOSE = "]"
 
 
 def placeholder(index: int) -> str:

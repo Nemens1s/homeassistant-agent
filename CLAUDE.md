@@ -61,7 +61,7 @@ class in `app/config.py`; in the addon container it reads
 - `i18n/` — the language adapter at the HTTP edge (off by default,
   `language_layer_enabled`). `inbound()` translates the user's message to
   English before the agent runs, `outbound()` translates the reply back, via
-  the `lang-mt` service; `glossary.py` masks entity names as `⟦E1⟧`
+  the `lang-mt` service; `glossary.py` masks entity names as `[E1]`
   placeholders. The agent core — graph, prompts, tools, checkpointed messages —
   never sees non-English text, and every lang-mt failure fails open (the user
   gets an English answer). `store.py` keeps a `lang_overlay` table in the
