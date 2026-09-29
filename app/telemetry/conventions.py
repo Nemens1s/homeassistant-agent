@@ -20,6 +20,10 @@ SPAN_CLASSIFY = "fast_path.classify"
 # One per tool execution (created by TelemetryMiddleware)
 SPAN_EXECUTE_TOOL = "execute_tool"
 
+# One per lang-mt hop (created by the language adapter at the HTTP edge)
+SPAN_LANG_INBOUND = "lang.inbound"
+SPAN_LANG_OUTBOUND = "lang.outbound"
+
 # ---------------------------------------------------------------------------
 # OTel GenAI semantic convention attribute keys
 # (experimental spec, pinned to the names current at design time)
@@ -142,3 +146,30 @@ GOSLING_TOOL_ERROR_CODE = "gosling.tool.error_code"
 
 # Full result envelope JSON, capped at 64 KB
 GOSLING_TOOL_RESULT = "gosling.tool.result"
+
+
+# --- language layer (invoke_agent gosling span) ---
+
+# True when the language adapter is active for this request
+GOSLING_LANG_ENABLED = "gosling.lang.enabled"
+
+# Language the message was treated as: en | ru | et
+GOSLING_LANG_DETECTED = "gosling.lang.detected"
+
+# Detector confidence for that language
+GOSLING_LANG_CONFIDENCE = "gosling.lang.confidence"
+
+# How the language was decided: detector | thread_prior | default
+GOSLING_LANG_SOURCE = "gosling.lang.source"
+
+# The user's message before translation (gosling.input.text holds the English)
+GOSLING_LANG_ORIGINAL_TEXT = "gosling.lang.original_text"
+
+# The reply as sent to the user (gosling.output.text holds the English)
+GOSLING_LANG_REPLY_NATIVE = "gosling.lang.reply_native"
+
+# JSON list of glossary entry ids matched in the request
+GOSLING_LANG_GLOSSARY_HITS = "gosling.lang.glossary_hits"
+
+# Failure code from lang-mt: mt_timeout | mt_unavailable | mt_placeholder_lost | mt_error
+GOSLING_LANG_ERROR = "gosling.lang.error"

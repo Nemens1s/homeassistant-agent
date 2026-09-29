@@ -1,0 +1,18 @@
+# Entity glossary for the language layer.
+# Copy to the path in `glossary_path` (default /config/gosling/glossary.yaml).
+#
+# Each entry protects one device or room from the translation models: the name
+# is swapped for a placeholder before translation and put back afterwards —
+# as `en` on the way into the agent, as the FIRST form of the user's language
+# on the way out. List inflected forms for ru/et; matching is case-insensitive
+# and longest-match-first.
+
+- id: concorde_lights
+  en: Concorde
+  ru: [Конкорд, Конкорда, Конкорду]
+  et: [Concorde, Concorde'i]
+
+- id: living_room
+  en: living room
+  ru: [гостиная, гостиной, гостиную]
+  et: [elutuba, elutoas, elutuppa]
