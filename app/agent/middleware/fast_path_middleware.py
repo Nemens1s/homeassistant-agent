@@ -20,16 +20,21 @@ log = logging.getLogger("fast_path")
 FASTPATH_PREFIX = "fastpath-"
 
 
-def _reply_from_envelope(raw: str, entity_id: str, params: dict | None = None) -> str:
+def _reply_from_envelope(raw: str, name: str, params: dict | None = None) -> str:
+    """Build the templated confirmation. `name` must be a human-readable label
+    (the menu item's friendly name), never a raw HA entity/service id — raw ids
+    in this text get shown to the user, sent to TTS and fed through translation,
+    where a Latin-script id can also skew language detection of the whole reply."""
     try:
         env = json.loads(raw)
     except (ValueError, TypeError):
         return "Sorry, I couldn't run that automation."
     if env.get("status") == "ok":
+        label = name or "that"
         if params:
             param_str = ", ".join(f"{k}: {v}" for k, v in params.items())
-            return f"Done — triggered {entity_id} ({param_str})."
-        return f"Done — triggered {entity_id}."
+            return f"Done — triggered {label} ({param_str})."
+        return f"Done — triggered {label}."
     error = env.get("error") or {}
     message = error.get("message")
     if message:
@@ -73,13 +78,14 @@ class FastPathMiddleware(AgentMiddleware):
             # constructs it from the tool result only); read the entity_id from the
             # preceding AIMessage's tool_calls args instead.
             try:
-                prev_args = messages[-2].tool_calls[0]["args"]
-                entity_id = prev_args["entity_id"]
+                prev = messages[-2]
+                prev_args = prev.tool_calls[0]["args"]
                 params = prev_args.get("params") or {}
+                name = prev.additional_kwargs.get("fastpath_name") or ""
             except (IndexError, KeyError, AttributeError, TypeError):
-                entity_id = ""
                 params = {}
-            return AIMessage(content=_reply_from_envelope(last.content, entity_id, params))
+                name = ""
+            return AIMessage(content=_reply_from_envelope(last.content, name, params))
 
         # First step of a turn → classify.
         if isinstance(last, HumanMessage):
@@ -106,7 +112,8 @@ class FastPathMiddleware(AgentMiddleware):
                         required = item.parameters.get("required") or []
                         if required and not all(k in decision.arguments for k in required):
                             return await handler(request)
-                    return self._synthetic_call(decision.entity_id, decision.arguments)
+                    name = item.name if item else ""
+                    return self._synthetic_call(decision.entity_id, decision.arguments, name)
 
         return await handler(request)
 
@@ -195,7 +202,8 @@ class FastPathMiddleware(AgentMiddleware):
                 log.debug("fast path telemetry error; falling through to agent")
                 return "fallthrough"
 
-    def _synthetic_call(self, entity_id: str, arguments: dict | None = None) -> AIMessage:
+    def _synthetic_call(self, entity_id: str, arguments: dict | None = None,
+                        name: str = "") -> AIMessage:
         call_id = FASTPATH_PREFIX + uuid.uuid4().hex
         return AIMessage(
             content="",
@@ -203,5 +211,5 @@ class FastPathMiddleware(AgentMiddleware):
                          "args": {"entity_id": entity_id, "params": arguments or {}},
                          "id": call_id}],
             response_metadata={"model_name": self._backend.name, "fast_path": True},
-            additional_kwargs={"fastpath_entity_id": entity_id},
+            additional_kwargs={"fastpath_entity_id": entity_id, "fastpath_name": name},
         )

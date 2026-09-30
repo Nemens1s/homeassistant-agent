@@ -84,16 +84,39 @@ async def test_step_after_fastpath_tool_returns_templated_reply():
     ok = json.dumps({"status": "ok"})
     # The entity_id is now read from the preceding AIMessage's tool_calls args,
     # not from ToolMessage.additional_kwargs (which LangGraph does not propagate).
+    # The friendly name travels the same way, via additional_kwargs.
     ai_msg = AIMessage(
         content="",
         tool_calls=[{"name": "trigger_action",
                      "args": {"entity_id": "automation.ai_action_night", "params": {}},
                      "id": call_id}],
+        additional_kwargs={"fastpath_name": "Night"},
     )
     tm = ToolMessage(content=ok, tool_call_id=call_id, name="trigger_action")
     resp = await mw.awrap_model_call(_request([HumanMessage("x"), ai_msg, tm]), _fail_handler)
     assert isinstance(resp, AIMessage)
-    assert "automation.ai_action_night" in resp.content
+    assert "Night" in resp.content
+    # Raw HA entity/service ids must never appear in user-facing / TTS text.
+    assert "automation.ai_action_night" not in resp.content
+
+
+@pytest.mark.asyncio
+async def test_fastpath_full_round_trip_never_leaks_raw_entity_id():
+    """Classify -> synthetic call -> tool result -> reply, end to end. The
+    reply must use the menu item's friendly name, never the raw entity_id."""
+    mw = FastPathMiddleware(FakeBackend(Decision("automation.ai_action_night", 0.9)),
+                            _FakeMenu(_MENU), threshold=0.0)
+    synthetic = await mw.awrap_model_call(_request([HumanMessage("goodnight")]), _fail_handler)
+    assert synthetic.additional_kwargs.get("fastpath_name") == "Night"
+
+    call_id = synthetic.tool_calls[0]["id"]
+    tm = ToolMessage(content=json.dumps({"status": "ok"}), tool_call_id=call_id,
+                      name="trigger_action")
+    resp = await mw.awrap_model_call(
+        _request([HumanMessage("goodnight"), synthetic, tm]), _fail_handler
+    )
+    assert "Night" in resp.content
+    assert "automation.ai_action_night" not in resp.content
 
 @pytest.mark.asyncio
 async def test_mid_loop_tool_message_falls_through():

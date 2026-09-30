@@ -56,7 +56,9 @@ async def test_fast_path_hit_persists_full_turn(monkeypatch):
     assert isinstance(msgs[1], AIMessage) and msgs[1].tool_calls
     assert isinstance(msgs[2], ToolMessage)
     assert isinstance(msgs[3], AIMessage)
-    assert "automation.ai_action_night" in msgs[3].content
+    # Reply uses the menu item's friendly name, never the raw entity_id.
+    assert "Night" in msgs[3].content
+    assert "automation.ai_action_night" not in msgs[3].content
     assert msgs[3].content != "LLM SHOULD NOT RUN"
     registry._reset_for_tests()
 
