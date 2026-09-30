@@ -91,8 +91,7 @@ register(
         description=(
             "Run an AI-controllable Home Assistant action by entity_id. "
             "Automations (automation.ai_*) take no params; scripts (script.ai_*) "
-            "take the arguments shown in the 'params' schema from list_actions. "
-            "Requires the home's AI-actions switch to be on."
+            "take the arguments shown in the 'params' schema from list_actions."
         ),
         params_model=Params,
         tier=Tier.ACTION,
