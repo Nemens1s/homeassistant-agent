@@ -164,7 +164,7 @@ New options in `config.yaml` / `Settings`:
 
 ```yaml
 language_layer_enabled: false
-lang_mt_url: "http://192.168.1.4:8765"
+lang_mt_url: "http://192.168.1.4:10100"
 languages: [en, ru, et]
 default_language: en
 min_confidence: 0.5
@@ -409,7 +409,7 @@ services:
   lang-mt:
     image: gosling-speech:latest
     command: ["lang-mt", "--config", "/config/lang-mt.yaml"]
-    ports: ["8765:8765"]
+    ports: ["10100:10100"]
     volumes: ["./config:/config:ro", "models:/models"]
     restart: unless-stopped
 

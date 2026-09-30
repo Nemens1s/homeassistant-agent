@@ -67,7 +67,7 @@ options:
   person_name_exclude: []
   # Language layer: off = today's behaviour, lang-mt is never called.
   language_layer_enabled: false
-  lang_mt_url: "http://localhost:8765"
+  lang_mt_url: "http://localhost:10100"
   languages:
     - en
     - es
