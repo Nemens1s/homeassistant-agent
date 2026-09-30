@@ -70,7 +70,8 @@ options:
   lang_mt_url: "http://localhost:10100"
   languages:
     - en
-    - es
+    - et
+    - ru
   default_language: "en"
   min_confidence: 0.5
   lang_mt_timeout_s: 3.0
