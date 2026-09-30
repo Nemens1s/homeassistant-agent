@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     # disabled the HTTP edge behaves exactly as before and lang-mt is never
     # called. Translation happens only here, never inside the agent graph.
     language_layer_enabled: bool = False
-    lang_mt_url: str = "http://localhost:8765"
+    lang_mt_url: str = "http://localhost:10100"
     languages: list[str] = ["en", "ru", "et"]
     default_language: str = "en"
     min_confidence: float = 0.5   # below this, fall back to the thread prior

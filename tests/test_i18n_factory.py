@@ -27,7 +27,7 @@ def test_enabled_settings_build_a_real_adapter(tmp_path):
     s = Settings(
         _env_file=None,
         language_layer_enabled=True,
-        lang_mt_url="http://mt.test:8765",
+        lang_mt_url="http://mt.test:10100",
         glossary_path=str(glossary),
     )
     adapter = build_language_adapter(s)
