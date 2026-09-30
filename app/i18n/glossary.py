@@ -64,6 +64,7 @@ class Glossary:
         """Load a glossary file. A missing or broken file yields an empty one."""
         p = Path(path)
         if not p.exists():
+            log.info("glossary: does not exist")
             return cls([])
         try:
             raw = yaml.safe_load(p.read_text(encoding="utf-8")) or []
@@ -71,6 +72,7 @@ class Glossary:
             log.warning("glossary: could not parse %s — continuing without it", p, exc_info=True)
             return cls([])
 
+        log.info("glossary: found")
         entries = []
         for item in raw:
             if not isinstance(item, dict):
