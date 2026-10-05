@@ -194,7 +194,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.warning("websocket not connected yet (%s) — retrying in the background", exc)
                 ws.start_background()
 
-            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
+            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit, lang=language)
             # Load the tool registry before building the fast path: it guards on
             # registry.get("trigger_action"), and build_agent (which also
             # loads the registry) runs later. load_all is idempotent.
