@@ -93,3 +93,19 @@ async def test_signature_changes_when_parameters_change():
     b = await MenuProvider(FakeRest(SCRIPT_STATES, cfg_b), ttl_s=60,
                            prefixes=(AI_SCRIPT_PREFIX_ACTION,)).get()
     assert a.signature != b.signature
+
+
+async def test_menu_excludes_listed_entities():
+    states = [
+        {"entity_id": "script.ai_action_notify", "attributes": {}},
+        {"entity_id": "script.ai_action_stop_vacuum", "attributes": {}},
+    ]
+    rest = FakeRest(states, {"ai_action_notify": {}, "ai_action_stop_vacuum": {}})
+    provider = MenuProvider(
+        rest, prefixes=(AI_SCRIPT_PREFIX_ACTION,), exclude=("script.ai_action_notify",)
+    )
+    menu = await provider.get()
+    ids = []
+    for item in menu.items:
+        ids.append(item.entity_id)
+    assert ids == ["script.ai_action_stop_vacuum"]

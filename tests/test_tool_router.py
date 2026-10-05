@@ -97,3 +97,8 @@ def test_deferred_request_offers_note_tools():
     assert "save_time_note" in selected
     selected = select_tool_names(ALL_TOOLS, "never mind, cancel my reminder")
     assert {"list_memory_notes", "cancel_memory_note"} <= selected
+
+
+def test_event_run_offers_notify_user():
+    selected = select_tool_names(ALL_TOOLS, "[EVENT] vacuum.x changed docked → cleaning.")
+    assert "notify_user" in selected

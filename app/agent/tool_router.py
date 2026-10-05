@@ -82,6 +82,7 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
     "save_time_note": _DEFERRED + ("minutes", "hours", " at ", "o'clock"),
     "list_memory_notes": _NOTE_ADMIN,
     "cancel_memory_note": _NOTE_ADMIN,
+    "notify_user": ("[event]", "notify", "notification", "message me", "send me", "ping me"),
 }
 
 

@@ -111,11 +111,13 @@ async def _entity_unique_ids(ws) -> dict[str, str]:
 
 
 class MenuProvider:
-    def __init__(self, rest, ttl_s: int = 60, prefixes=(AI_AUTOMATION_PREFIX,), ws=None):
+    def __init__(self, rest, ttl_s: int = 60, prefixes=(AI_AUTOMATION_PREFIX,), ws=None,
+                 exclude: tuple[str, ...] = ()):
         self._rest = rest
         self._ws = ws
         self._ttl_s = ttl_s
         self._prefixes = tuple(prefixes)
+        self._exclude = frozenset(exclude)  # e.g. the notify script: notify_user only
         self._cached: Menu | None = None
         self._fetched_at = 0.0
         self._desc_cache: dict[str, str] = {}  # entity_id → description; session-persistent
@@ -130,6 +132,8 @@ class MenuProvider:
         for state in states:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith(self._prefixes):
+                continue
+            if entity_id in self._exclude:
                 continue
             attrs = state.get("attributes") or {}
             name = attrs.get("friendly_name") or entity_id

@@ -22,6 +22,10 @@ class Params(BaseModel):
 
 async def handler(params: Params, ctx) -> ToolResult:
     entity_id = params.entity_id
+    if entity_id == ctx.settings.notify_action:
+        return ToolResult.error(
+            "use_notify_user", "Send notifications with notify_user, not trigger_action."
+        )
     domain = entity_domain(entity_id)
 
     if domain not in ("automation", "script"):

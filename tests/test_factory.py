@@ -81,7 +81,7 @@ def test_build_agent_compiles_with_read_tools():
     tier1 = {t.name for t in registry.tools_for_tier(1)}
     tier2 = {t.name for t in registry.tools_for_tier(2)}
     assert tier1  # registry loaded
-    assert tier2 - tier1 == {"trigger_action"}
+    assert tier2 - tier1 == {"trigger_action", "notify_user"}
     assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()
 
@@ -158,6 +158,7 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
         max_tier = 2
         needle_remote_url = "http://needle.test"
         needle_menu_ttl_s = 60
+        notify_action = "script.ai_action_notify"
 
     class Ctx:
         ws = None

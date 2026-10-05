@@ -37,6 +37,7 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.memory.list_memory_notes",
     "app.tools.memory.cancel_memory_note",
     "app.tools.action.trigger_action",
+    "app.tools.action.notify_user",
 )
 
 
