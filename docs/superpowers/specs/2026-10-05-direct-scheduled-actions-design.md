@@ -31,7 +31,7 @@ The model already makes the right choice when the user is talking to it. This de
 | 1 | How is the confirmation worded without an LLM? | A fixed Python sentence, translated through the existing notify path. |
 | 2 | Can one task hold both an action and a reminder? | Yes, both on one task. |
 | 3 | How many actions per task? | One. Anything more complex falls back to the LLM run. |
-| 4 | Do existing tasks need migrating? | No. Nothing is deployed yet. A local DB only needs the new columns added on start. |
+| 4 | Do existing tasks need migrating? | No. Nothing is deployed yet, so the columns go straight into `CREATE TABLE` with no migration code. A local test DB drops `memory_notes` once. |
 
 ## The task model
 
@@ -111,7 +111,7 @@ Python never calls `rest.call_service` directly.
 
 ## Outcomes (`memory_notes`)
 
-New columns, added on start with `ALTER TABLE … ADD COLUMN` when missing (decision 4):
+New columns, part of the table's `CREATE TABLE` (decision 4, no migration):
 
 | Column | Values |
 |---|---|
@@ -121,7 +121,7 @@ New columns, added on start with `ALTER TABLE … ADD COLUMN` when missing (deci
 | `outcome` | `done` / `failed` / `no_action` / `agent`, set when the task fires |
 | `result` | a short human-readable line, e.g. `Stop Vacuum ✓` or the error message |
 
-- `outcome = agent` means the task went to the LLM fallback. Its result is taken from whether that run called `trigger_action` or `notify_user`, so the model doing nothing is visible as `no_action`.
+- `outcome = agent` means the task went to the LLM fallback. Its result is taken from whether **that run** called `trigger_action` or `notify_user`. Only messages after the run's own `[EVENT]` message count, because the `events` thread keeps earlier runs. So the model doing nothing is visible as `no_action`. Agent tasks that fired together share one run and therefore one outcome.
 - `NoteStore.record_outcome(note_id, outcome, result)`.
 - The Notes page shows outcome and result in History. `list_scheduled` shows the action and the reminder for pending tasks.
 
@@ -137,7 +137,7 @@ New columns, added on start with `ALTER TABLE … ADD COLUMN` when missing (deci
 ## Testing
 
 - **Tool:** a valid action and params are stored; an unknown action, a non-ai action, the notify script and bad params are each rejected with guidance; a reminder is normalised to English; action and reminder together are accepted; neither is accepted (LLM fallback).
-- **Store:** columns are added to an existing old-schema table; `record_outcome` works.
+- **Store:** action, params and reminder round-trip; `record_outcome` works. Runner: an agent run that does nothing records `no_action` even when the thread history holds earlier tool calls.
 - **Runner:**
   - an action-only task calls the trigger tool and not the LLM, and records `done`;
   - a failure records `failed` and notifies even when suppressed;
