@@ -102,3 +102,20 @@ def test_addon_config_mirrors_event_memory_settings():
     for key in _EVENT_MEMORY_KEYS:
         assert key in config["options"], key
         assert key in config["schema"], key
+
+
+import pytest
+from pydantic import ValidationError
+
+
+@pytest.mark.parametrize("field", [
+    "time_note_grace_minutes", "memory_note_default_ttl_hours", "memory_note_max_ttl_hours",
+])
+def test_scheduling_durations_must_be_positive(field):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{field: 0})
+
+
+def test_notify_action_is_normalised():
+    s = Settings(_env_file=None, notify_action="  Script.AI_Action_Notify ")
+    assert s.notify_action == "script.ai_action_notify"

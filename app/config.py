@@ -8,7 +8,7 @@ environment. In dev, everything comes from .env / environment variables.
 import json
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 OPTIONS_FILE = Path("/data/options.json")
@@ -126,10 +126,19 @@ class Settings(BaseSettings):
     # Off = the agent still calls notify_user after acting, but nothing is sent
     # (reminders the user asked for are always sent).
     event_confirmations_enabled: bool = True
-    memory_note_default_ttl_hours: int = 24
-    memory_note_max_ttl_hours: int = 168
-    time_note_grace_minutes: int = 120  # a time note this late expires instead of firing
+    memory_note_default_ttl_hours: int = Field(24, ge=1)
+    memory_note_max_ttl_hours: int = Field(168, ge=1)
+    # A time note this late expires instead of firing. 0 would expire every
+    # note on its own fire tick, hence ge=1.
+    time_note_grace_minutes: int = Field(120, ge=1)
     notify_action: str = "script.ai_action_notify"  # the only script notify_user calls
+
+    @field_validator("notify_action")
+    @classmethod
+    def _normalise_notify_action(cls, value: str) -> str:
+        # Compared by exact string to keep the notify script off trigger_action
+        # and the fast path; "Script.AI_..." must not slip past that.
+        return value.strip().lower()
 
     # Person display names: list of {ha_name: "<HA friendly_name>", name: "<shown name>"}
     # ha_name is the lookup key (what HA reports); name is what the agent sees.

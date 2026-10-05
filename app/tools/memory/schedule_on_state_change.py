@@ -16,17 +16,47 @@ def _normalise(state: str) -> str:
     return state.strip().lower().replace(" ", "_").replace("-", "_")
 
 
-def resolve_states(requested: str, options: list[str]) -> list[str]:
-    """Map what the model asked for onto the entity's real (raw) states:
-    every option containing it, ignoring case/spaces/underscores. So
-    "Segment cleaning" -> [segment_cleaning], and "cleaning" -> [cleaning,
-    segment_cleaning, spot_cleaning, ...]. Empty when nothing fits. Resolved
-    at save time, so the stored list is exactly what will fire."""
+# Domains whose states HA fixes, as raw state -> UI label. These entities
+# have no `options` attribute, so without this list a label like
+# "Returning to dock" would be stored as-is and never match `returning`.
+# (person/device_tracker are left out: their state can be any zone name.)
+_ON_OFF = {"on": "On", "off": "Off"}
+DOMAIN_STATES: dict[str, dict[str, str]] = {
+    "vacuum": {
+        "cleaning": "Cleaning", "docked": "Docked", "idle": "Idle",
+        "paused": "Paused", "returning": "Returning to dock", "error": "Error",
+    },
+    "binary_sensor": _ON_OFF,
+    "input_boolean": _ON_OFF,
+    "switch": _ON_OFF,
+    "light": _ON_OFF,
+    "fan": _ON_OFF,
+}
+
+
+def known_states(entity_id: str, attributes: dict) -> dict[str, str]:
+    """raw state -> label for the entity, or {} when its states are open-ended."""
+    options = attributes.get("options") or []
+    if options:
+        states = {}
+        for option in options:
+            states[option] = option
+        return states
+    domain = entity_id.split(".", 1)[0]
+    return DOMAIN_STATES.get(domain, {})
+
+
+def resolve_states(requested: str, states: dict[str, str]) -> list[str]:
+    """Map what the model asked for onto the entity's raw states: every state
+    whose raw name or label contains it, ignoring case/spaces/underscores.
+    "Segment cleaning" -> [segment_cleaning]; "cleaning" -> [cleaning,
+    segment_cleaning, ...]; "Returning to dock" -> [returning]. Empty when
+    nothing fits. Resolved at save time, so the stored list is what fires."""
     wanted = _normalise(requested)
     matches = []
-    for option in options:
-        if wanted in _normalise(option):
-            matches.append(option)
+    for raw, label in states.items():
+        if wanted in _normalise(raw) or wanted in _normalise(label):
+            matches.append(raw)
     return matches
 
 
@@ -61,6 +91,13 @@ def dynamic_params(ctx) -> type[BaseModel]:
 
 
 async def handler(params: Params, ctx) -> ToolResult:
+    if ctx.settings.max_tier < 2:
+        # A scheduled task fires into a run that needs trigger_action /
+        # notify_user (ACTION tier); below tier 2 it would silently do nothing.
+        return ToolResult.error(
+            "feature_disabled",
+            "Scheduling needs actions enabled (max_tier 2); a task would fire with nothing able to act.",
+        )
     watched = list(ctx.settings.watched_entities)
     if not watched:
         return ToolResult.error(
@@ -80,15 +117,15 @@ async def handler(params: Params, ctx) -> ToolResult:
     states = []
     if params.to_state:
         state = await ctx.rest.get_state(params.entity_id)
-        options = (state.get("attributes") or {}).get("options") or []
-        if options:
-            states = resolve_states(params.to_state, options)
+        valid = known_states(params.entity_id, state.get("attributes") or {})
+        if valid:
+            states = resolve_states(params.to_state, valid)
             if not states:
                 return ToolResult.error(
                     "invalid_state",
                     f"{params.to_state!r} is not a state of {params.entity_id}. "
                     "Use one of valid_states.",
-                    data={"valid_states": list(options)},
+                    data={"valid_states": list(valid)},
                 )
         else:
             states = [params.to_state]

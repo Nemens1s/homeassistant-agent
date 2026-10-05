@@ -67,7 +67,7 @@ def store():
 
 
 def _ctx(store, rest=None, lang=None, **overrides):
-    values = {"watched_entities": [VACUUM]}
+    values = {"watched_entities": [VACUUM], "max_tier": 2}
     values.update(overrides)
     settings = Settings(_env_file=None, **values)
     return ToolContext(
@@ -262,3 +262,45 @@ async def test_entity_without_options_keeps_state_as_given(store):
 def test_schedule_tools_do_not_ask_for_tags():
     for name in ("schedule_on_state_change", "schedule_at_time"):
         assert "tags" not in registry.get(name).params_model.model_fields, name
+
+
+@pytest.mark.parametrize("name, args", [
+    ("schedule_on_state_change", {"entity_id": VACUUM, "instruction": "x", "kind": "action"}),
+    ("schedule_at_time", {"at": "18:00", "instruction": "x", "kind": "reminder"}),
+])
+async def test_scheduling_refused_without_action_tier(store, name, args):
+    result = await _call(name, _ctx(store, max_tier=1), **args)
+    assert result.error_code == "feature_disabled"
+    assert "max_tier" in result.error_message
+    assert _pending(store) == []
+
+
+@pytest.mark.parametrize("requested, stored", [
+    ("Cleaning", "cleaning"),
+    ("Returning to dock", "returning"),
+    ("docked", "docked"),
+])
+async def test_vacuum_states_resolve_without_options_attribute(store, requested, stored):
+    result = await _call(
+        "schedule_on_state_change", _ctx(store),
+        entity_id=VACUUM, to_state=requested, instruction="x", kind="action",
+    )
+    assert result.data["to_state"] == [stored]
+
+
+async def test_unknown_vacuum_state_lists_domain_states(store):
+    result = await _call(
+        "schedule_on_state_change", _ctx(store),
+        entity_id=VACUUM, to_state="vacuuming", instruction="x", kind="action",
+    )
+    assert result.error_code == "invalid_state"
+    assert "cleaning" in result.data["valid_states"]
+
+
+async def test_binary_sensor_states_resolve(store):
+    sensor = "binary_sensor.front_door"
+    result = await _call(
+        "schedule_on_state_change", _ctx(store, watched_entities=[sensor]),
+        entity_id=sensor, to_state="On", instruction="x", kind="reminder",
+    )
+    assert result.data["to_state"] == ["on"]

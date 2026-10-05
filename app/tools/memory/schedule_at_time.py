@@ -24,6 +24,13 @@ class Params(BaseModel):
 
 
 async def handler(params: Params, ctx) -> ToolResult:
+    if ctx.settings.max_tier < 2:
+        # A scheduled task fires into a run that needs trigger_action /
+        # notify_user (ACTION tier); below tier 2 it would silently do nothing.
+        return ToolResult.error(
+            "feature_disabled",
+            "Scheduling needs actions enabled (max_tier 2); a task would fire with nothing able to act.",
+        )
     if not ctx.settings.clock_entity:
         return ToolResult.error("feature_disabled", "Time scheduling is off: no clock entity is configured.")
     if ctx.notes is None:
