@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass, field
 
 from app.constants import AI_AUTOMATION_PREFIX
+from app.ha.websocket import ws_is_ready
 
 
 @dataclass(frozen=True)
@@ -140,7 +141,7 @@ class MenuProvider:
             candidates.append((entity_id, name))
         new_eids = [eid for eid, _ in candidates if eid not in self._desc_cache]
         if new_eids:
-            unique_ids = await _entity_unique_ids(self._ws) if self._ws is not None else {}
+            unique_ids = await _entity_unique_ids(self._ws) if ws_is_ready(self._ws) else {}
             tasks = []
             for eid in new_eids:
                 if eid.startswith("script."):

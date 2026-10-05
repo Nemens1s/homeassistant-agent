@@ -118,3 +118,8 @@ async def test_agent_failure_is_contained():
             raise RuntimeError("llm down")
 
     await EventRunner(lambda: Broken(), Settings(_env_file=None)).run(STATE_TRIGGER, [_note()])
+
+
+def test_message_scopes_the_agent_to_this_event():
+    message = build_event_message(STATE_TRIGGER, [_note()])
+    assert "Act only on the notes in this message" in message

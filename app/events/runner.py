@@ -59,6 +59,9 @@ def build_event_message(trigger: Trigger, notes: list) -> str:
         lines.append("For each reminder note, deliver the reminder to the user with notify_user.")
     if has_action:
         lines.append("When done, call notify_user once with a short summary of what you did.")
+    # One thread holds every event run; earlier [EVENT] messages in its history
+    # are already done and must never be acted on again (notes are one-shot).
+    lines.append("Act only on the notes in this message; earlier [EVENT] messages are already handled.")
     lines.append("Do not ask questions; nobody is reading this thread live.")
     return "\n".join(lines)
 

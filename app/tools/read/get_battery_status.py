@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from app.tools.base import Tier, ToolDefinition, ToolResult
 from app.tools.helpers.people import alias_legend
 from app.tools.registry import register
+from app.tools.context import ws_ready
 
 
 class Params(BaseModel):
@@ -21,7 +22,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 
     # Build area lookup if WS is available
     area_by_entity: dict[str, str] = {}
-    if ctx.ws is not None:
+    if ws_ready(ctx):
         areas = await ctx.ws.request_cached("config/area_registry/list")
         devices = await ctx.ws.request_cached("config/device_registry/list")
         entities = await ctx.ws.request_cached("config/entity_registry/list")
