@@ -72,8 +72,10 @@ class in `app/config.py`; in the addon container it reads
   iterate on them without code changes.
 - `events/` — the proactive half. `listener.py` holds one `subscribe_trigger`
   over `watched_entities` + `clock_entity`, matches each event against notes
-  in SQL, and only then runs the agent via `runner.py` (thread `events`, fast
-  path off). `clock.py` parses the World Clock sensor (`HH:MM DD-MM-YYYY`);
+  in SQL, and only then hands them to `runner.py`: a task with a saved
+  action/reminder runs directly through the trigger_action/notify_user tools
+  (no LLM); only a task with neither falls back to an agent run (thread
+  `events`, fast path off). Every fired task records an outcome. `clock.py` parses the World Clock sensor (`HH:MM DD-MM-YYYY`);
   all time-note maths stays in that wall time. Most events cost no LLM call.
 - `memory/store.py` — `NoteStore`, the `memory_notes` table in the checkpoint
   DB. One-shot notes (state or time trigger), English instruction + original

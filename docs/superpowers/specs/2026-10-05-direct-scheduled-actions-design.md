@@ -1,7 +1,7 @@
 ---
 repo: homeassistant-agent
 date: 2026-10-05
-status: draft (questions settled in chat, spec awaiting review)
+status: implemented
 builds-on: 2026-10-04-event-memory-notes-design.md
 ---
 
