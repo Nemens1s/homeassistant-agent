@@ -78,10 +78,10 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
     # Both device-level room tools share the overview triggers (see _ROOM_OVERVIEW).
     "get_areas": _ROOM_OVERVIEW,
     "list_devices": _ROOM_OVERVIEW,
-    "save_event_note": _DEFERRED,
-    "save_time_note": _DEFERRED + ("minutes", "hours", " at ", "o'clock"),
-    "list_memory_notes": _NOTE_ADMIN,
-    "cancel_memory_note": _NOTE_ADMIN,
+    "schedule_on_state_change": _DEFERRED,
+    "schedule_at_time": _DEFERRED + ("minutes", "hours", " at ", "o'clock"),
+    "list_scheduled": _NOTE_ADMIN,
+    "cancel_scheduled": _NOTE_ADMIN,
     "notify_user": ("[event]", "notify", "notification", "message me", "send me", "ping me"),
 }
 

@@ -176,7 +176,7 @@
 # include the vacuum in .env (e.g. WATCHED_ENTITIES='["vacuum.roborock_qrevo_s"]').
 - id: deferred_vacuum_stop
   prompt: "We are leaving. Once the vacuum starts, stop it."
-  expect_tool: save_event_note
+  expect_tool: schedule_on_state_change
   expect_params:
     entity_id: vacuum.roborock_qrevo_s
     to_state: cleaning
@@ -184,7 +184,7 @@
 
 - id: time_reminder
   prompt: "Remind me at 18:00 to call mum."
-  expect_tool: save_time_note
+  expect_tool: schedule_at_time
   expect_params:
     at: "18:00"
     kind: reminder

@@ -34,7 +34,7 @@ The original spec listed this as a non-goal (`2026-07-13-local-ha-agent-design.m
 | Action path | Menu-only stays. Event runs act only through `trigger_action` on `script.ai_*` / `automation.ai_*`, under the ai-actions switch gate. Notifications go through a dedicated `notify_user` tool, which itself calls a menu script. There is no new write surface. |
 | Triggers | Two kinds. **State**: `entity_id` (must be watched) plus an optional `to_state`. **Time**: a local wall-clock `fire_at`, driven by the HA clock entity `sensor.europe_tallinn`. Both are set when the note is written, and matching is an SQL query. Notes that don't match never reach the LLM. |
 | Lifecycle | One-shot. State notes expire after 24h by default, and the agent may set a longer expiry. Time notes expire a grace period after `fire_at`. Fired, expired and cancelled notes stay in the DB for history and are never matched again. |
-| Management | Chat (`list_memory_notes`, `cancel_memory_note`) plus a web UI page (list and delete). |
+| Management | Chat (`list_scheduled`, `cancel_scheduled`) plus a web UI page (list and delete). |
 | Feedback | Event runs go to a dedicated `events` thread that is visible in the UI. The agent **always** calls `notify_user` after acting. Python decides whether the notification is actually delivered (see §7). The agent never knows about the toggle. |
 | Language | The agent core is English-only. Python translates note text **to English** when it is saved, and notification text **from English** to the user's language when it is sent. Both use the existing lang-mt client and fail open. |
 | HA scripts | This repo only defines the **contract** for HA scripts. The scripts themselves are written in `SmartHome/Suur-Ameerika/ai_actions/`. |
@@ -237,7 +237,7 @@ For a time trigger, the first line reads `[EVENT] Scheduled time 18:00 05-10-202
 
 **Prompt guidance.** A short "MEMORY NOTES" paragraph in `build_system_prompt` (`app/agent/factory.py`) covers:
 - *Writing:*
-  - Use `save_event_note` for "when/once X happens" requests and `save_time_note` for "at HH:MM / in N minutes" requests.
+  - Use `schedule_on_state_change` for "when/once X happens" requests and `schedule_at_time` for "at HH:MM / in N minutes" requests.
   - Set `kind="reminder"` when the user wants to be told something, and `kind="action"` when the house should do something.
   - Confirm to the user what was saved.
 - *Event runs:* messages starting with `[EVENT]` come from the harness and must be followed as written.
@@ -297,10 +297,10 @@ There are two save tools, not one tool with a trigger-type union, because small 
 
 | Tool | Params | Behaviour |
 |---|---|---|
-| `save_event_note` | `entity_id`, `to_state?`, `instruction`, `kind: action\|reminder`, `tags?`, `expires_in_hours?` | Rejects with `entity_not_watched` (data: the watched list) unless the entity is watched. Clamps the TTL to `memory_note_max_ttl_hours`. Returns `{id, entity_id, to_state, expires_at}`. |
-| `save_time_note` | `at?: "HH:MM" or "HH:MM DD-MM-YYYY"`, `in_minutes?: int`, `instruction`, `kind`, `tags?` | Exactly one of `at` / `in_minutes` is required (`invalid_params` otherwise). "Now" comes from `current_local_time(ctx)`; if it is `None`, returns `clock_unavailable`. A bare `HH:MM` that has already passed today means tomorrow. A past full date is rejected with `in_past`. Stores `fire_at_local` and `expires_at_local = fire_at + grace`. Returns `{id, fire_at: "HH:MM DD-MM-YYYY"}` in the clock's format, so the agent can echo it back. |
-| `list_memory_notes` | none | Pending notes: `id`, trigger (entity/state or fire time), kind, instruction (English), created, expires. |
-| `cancel_memory_note` | `id` | Sets the status to `cancelled`. Returns `not_found` for unknown or non-pending ids. |
+| `schedule_on_state_change` | `entity_id`, `to_state?`, `instruction`, `kind: action\|reminder`, `tags?`, `expires_in_hours?` | Rejects with `entity_not_watched` (data: the watched list) unless the entity is watched. Clamps the TTL to `memory_note_max_ttl_hours`. Returns `{id, entity_id, to_state, expires_at}`. |
+| `schedule_at_time` | `at?: "HH:MM" or "HH:MM DD-MM-YYYY"`, `in_minutes?: int`, `instruction`, `kind`, `tags?` | Exactly one of `at` / `in_minutes` is required (`invalid_params` otherwise). "Now" comes from `current_local_time(ctx)`; if it is `None`, returns `clock_unavailable`. A bare `HH:MM` that has already passed today means tomorrow. A past full date is rejected with `in_past`. Stores `fire_at_local` and `expires_at_local = fire_at + grace`. Returns `{id, fire_at: "HH:MM DD-MM-YYYY"}` in the clock's format, so the agent can echo it back. |
+| `list_scheduled` | none | Pending notes: `id`, trigger (entity/state or fire time), kind, instruction (English), created, expires. |
+| `cancel_scheduled` | `id` | Sets the status to `cancelled`. Returns `not_found` for unknown or non-pending ids. |
 
 - **Tier: `Tier.READ`.** These tools change agent-local state only, never HA. The ai-actions gate protects **HA writes**, and saving a note while the switch is off is legitimate: the switch may be back on by the time the note fires. Documented in the tool docstrings and in CLAUDE.md.
 - **Tool routing** (`app/agent/tool_router.py`): keyword triggers ("when", "once", "after", "at", "in", "remind", "remember", "note", "notes", "reminder", "cancel", "tomorrow", "minutes", "hours") offer the four memory tools. "at" and "in" are whole-word matches and only count alongside a digit, to avoid noise. The tools are not CORE.
@@ -329,7 +329,7 @@ Without a guard, "once the vacuum starts, stop it" could be classified by Needle
 | Situation | Behaviour |
 |---|---|
 | WS disconnected | Listener idles. Subscription re-sent on reconnect. Missed state events are not replayed. Time notes catch up on the next tick, within their grace period. |
-| Clock entity unavailable | No ticks, so time notes wait. Once the clock returns, they fire if still inside the grace period, otherwise they expire. `save_time_note` returns `clock_unavailable`. |
+| Clock entity unavailable | No ticks, so time notes wait. Once the clock returns, they fire if still inside the grace period, otherwise they expire. `schedule_at_time` returns `clock_unavailable`. |
 | Feature switched off (empty `watched_entities` / `clock_entity`) | That trigger type isn't subscribed, and its save tool returns `feature_disabled`. |
 | AI switch off when a note fires | The listener point-reads `ai_actions_switch` (fail-closed, like the adapter) before marking notes fired. Off or unreadable ⇒ no agent run, no LLM call, notes stay `pending` and can still fire before they expire (a due time note re-checks on each clock tick). `trigger_action` / `notify_user` keep their own gate as a second line. |
 | lang-mt down | Notes are stored as given (`language` still recorded). Notifications are sent in English. |
@@ -363,9 +363,9 @@ Without a guard, "once the vacuum starts, stop it" could be classified by Needle
 - **Fast-path guard:** `has_deferral_cue` cases, and the middleware falls through on a cue.
 - **API:** notes list and delete.
 - **Evals** (`tests/evals`):
-  - "once the vacuum starts, stop it" calls `save_event_note(entity_id="vacuum.roborock_qrevo_s", to_state="cleaning", kind="action")`, not `trigger_action`.
-  - "when we get home remind me to take out the trash" calls `save_event_note` on the presence entity with `kind="reminder"`.
-  - "remind me at 18:00 to call mum" calls `save_time_note(at="18:00", kind="reminder")`.
+  - "once the vacuum starts, stop it" calls `schedule_on_state_change(entity_id="vacuum.roborock_qrevo_s", to_state="cleaning", kind="action")`, not `trigger_action`.
+  - "when we get home remind me to take out the trash" calls `schedule_on_state_change` on the presence entity with `kind="reminder"`.
+  - "remind me at 18:00 to call mum" calls `schedule_at_time(at="18:00", kind="reminder")`.
 
 ## Verification (live)
 

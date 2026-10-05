@@ -1783,7 +1783,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `app/tools/helpers/notes.py`
-- Create: `app/tools/memory/__init__.py` (empty), `app/tools/memory/save_event_note.py`, `app/tools/memory/save_time_note.py`, `app/tools/memory/list_memory_notes.py`, `app/tools/memory/cancel_memory_note.py`
+- Create: `app/tools/memory/__init__.py` (empty), `app/tools/memory/schedule_on_state_change.py`, `app/tools/memory/schedule_at_time.py`, `app/tools/memory/list_scheduled.py`, `app/tools/memory/cancel_scheduled.py`
 - Modify: `app/tools/registry.py`, `_DEFAULT_MODULES`
 - Modify: `app/agent/tool_router.py`, `_KEYWORDS`
 - Modify: `app/main.py`, building `NoteStore` and setting `ctx.notes` and `app.state.notes`
@@ -1796,7 +1796,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `ctx.lang.to_english` (Task 7)
   - `current_local_time`, `resolve_fire_at`, `FireTimeError`, `format_clock`, `from_key` (Task 4)
 - Produces:
-  - Tools `save_event_note`, `save_time_note`, `list_memory_notes`, `cancel_memory_note`, all `Tier.READ`
+  - Tools `schedule_on_state_change`, `schedule_at_time`, `list_scheduled`, `cancel_scheduled`, all `Tier.READ`
   - `english_instruction(ctx, text) -> tuple[str, str | None]` and `note_summary(note) -> dict` in `app.tools.helpers.notes`
 
 - [ ] **Step 1: Write the failing tests** (`tests/test_memory_tools.py`)
@@ -1815,10 +1815,10 @@ from app.tools.context import ToolContext
 
 VACUUM = "vacuum.roborock_qrevo_s"
 MODULES = (
-    "app.tools.memory.save_event_note",
-    "app.tools.memory.save_time_note",
-    "app.tools.memory.list_memory_notes",
-    "app.tools.memory.cancel_memory_note",
+    "app.tools.memory.schedule_on_state_change",
+    "app.tools.memory.schedule_at_time",
+    "app.tools.memory.list_scheduled",
+    "app.tools.memory.cancel_scheduled",
 )
 
 
@@ -1878,10 +1878,10 @@ def _pending(store):
     return store.list_pending(datetime.now(timezone.utc))
 
 
-async def test_save_event_note_stores_note_with_scope(store):
+async def test_schedule_on_state_change_stores_note_with_scope(store):
     with use_scope(RunScope(language="ru", thread_id="t7")):
         result = await _call(
-            "save_event_note", _ctx(store),
+            "schedule_on_state_change", _ctx(store),
             entity_id=VACUUM, to_state="cleaning",
             instruction="Stop the vacuum and send it to the dock.", kind="action",
         )
@@ -1894,9 +1894,9 @@ async def test_save_event_note_stores_note_with_scope(store):
     assert note.source_thread_id == "t7"
 
 
-async def test_save_event_note_rejects_unwatched_entity(store):
+async def test_schedule_on_state_change_rejects_unwatched_entity(store):
     result = await _call(
-        "save_event_note", _ctx(store),
+        "schedule_on_state_change", _ctx(store),
         entity_id="light.kitchen", instruction="Turn it off.", kind="action",
     )
     assert result.error_code == "entity_not_watched"
@@ -1904,25 +1904,25 @@ async def test_save_event_note_rejects_unwatched_entity(store):
     assert _pending(store) == []
 
 
-async def test_save_event_note_feature_disabled(store):
+async def test_schedule_on_state_change_feature_disabled(store):
     result = await _call(
-        "save_event_note", _ctx(store, watched_entities=[]),
+        "schedule_on_state_change", _ctx(store, watched_entities=[]),
         entity_id=VACUUM, instruction="x", kind="action",
     )
     assert result.error_code == "feature_disabled"
 
 
-async def test_save_event_note_without_store():
+async def test_schedule_on_state_change_without_store():
     result = await _call(
-        "save_event_note", _ctx(None),
+        "schedule_on_state_change", _ctx(None),
         entity_id=VACUUM, instruction="x", kind="action",
     )
     assert result.error_code == "notes_unavailable"
 
 
-async def test_save_event_note_clamps_ttl(store):
+async def test_schedule_on_state_change_clamps_ttl(store):
     result = await _call(
-        "save_event_note", _ctx(store),
+        "schedule_on_state_change", _ctx(store),
         entity_id=VACUUM, instruction="x", kind="action", expires_in_hours=1000,
     )
     assert result.data["expires_in_hours"] == 168
@@ -1931,7 +1931,7 @@ async def test_save_event_note_clamps_ttl(store):
 async def test_instruction_is_stored_in_english_with_original(store):
     lang = FakeLang({"Останови пылесос.": "Stop the vacuum."})
     await _call(
-        "save_event_note", _ctx(store, lang=lang),
+        "schedule_on_state_change", _ctx(store, lang=lang),
         entity_id=VACUUM, instruction="Останови пылесос.", kind="action",
     )
     note = _pending(store)[0]
@@ -1940,16 +1940,16 @@ async def test_instruction_is_stored_in_english_with_original(store):
 
 
 async def test_event_note_schema_lists_watched_entities(store):
-    defn = registry.get("save_event_note")
+    defn = registry.get("schedule_on_state_change")
     model = defn.dynamic_params(_ctx(store))
     model(entity_id=VACUUM, instruction="x", kind="action")
     with pytest.raises(ValidationError):
         model(entity_id="light.kitchen", instruction="x", kind="action")
 
 
-async def test_save_time_note_at(store):
+async def test_schedule_at_time_at(store):
     result = await _call(
-        "save_time_note", _ctx(store), at="18:00", instruction="Call mum.", kind="reminder",
+        "schedule_at_time", _ctx(store), at="18:00", instruction="Call mum.", kind="reminder",
     )
     assert result.data["fire_at"] == "18:00 05-10-2026"
     note = _pending(store)[0]
@@ -1957,36 +1957,36 @@ async def test_save_time_note_at(store):
     assert note.expires_at_local == "2026-10-05 20:00"  # default 120 min grace
 
 
-async def test_save_time_note_in_minutes(store):
+async def test_schedule_at_time_in_minutes(store):
     result = await _call(
-        "save_time_note", _ctx(store), in_minutes=30, instruction="Check the oven.", kind="reminder",
+        "schedule_at_time", _ctx(store), in_minutes=30, instruction="Check the oven.", kind="reminder",
     )
     assert result.data["fire_at"] == "10:02 05-10-2026"
 
 
-async def test_save_time_note_past_date(store):
+async def test_schedule_at_time_past_date(store):
     result = await _call(
-        "save_time_note", _ctx(store), at="08:00 05-10-2026", instruction="x", kind="reminder",
+        "schedule_at_time", _ctx(store), at="08:00 05-10-2026", instruction="x", kind="reminder",
     )
     assert result.error_code == "in_past"
 
 
-async def test_save_time_note_needs_exactly_one_time(store):
-    result = await _call("save_time_note", _ctx(store), instruction="x", kind="reminder")
+async def test_schedule_at_time_needs_exactly_one_time(store):
+    result = await _call("schedule_at_time", _ctx(store), instruction="x", kind="reminder")
     assert result.error_code == "invalid_params"
 
 
-async def test_save_time_note_clock_unreadable(store):
+async def test_schedule_at_time_clock_unreadable(store):
     result = await _call(
-        "save_time_note", _ctx(store, rest=FakeRest(clock=None)),
+        "schedule_at_time", _ctx(store, rest=FakeRest(clock=None)),
         at="18:00", instruction="x", kind="reminder",
     )
     assert result.error_code == "clock_unavailable"
 
 
-async def test_save_time_note_feature_disabled(store):
+async def test_schedule_at_time_feature_disabled(store):
     result = await _call(
-        "save_time_note", _ctx(store, clock_entity=""), at="18:00", instruction="x", kind="reminder",
+        "schedule_at_time", _ctx(store, clock_entity=""), at="18:00", instruction="x", kind="reminder",
     )
     assert result.error_code == "feature_disabled"
 
@@ -1994,33 +1994,33 @@ async def test_save_time_note_feature_disabled(store):
 async def test_list_and_cancel(store):
     ctx = _ctx(store)
     saved = await _call(
-        "save_event_note", ctx, entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", kind="action",
+        "schedule_on_state_change", ctx, entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", kind="action",
     )
-    listed = await _call("list_memory_notes", ctx)
+    listed = await _call("list_scheduled", ctx)
     rows = listed.data["rows"]
     assert rows[0]["id"] == saved.data["id"]
     assert rows[0]["when"] == f"{VACUUM} → cleaning"
-    cancelled = await _call("cancel_memory_note", ctx, id=saved.data["id"])
+    cancelled = await _call("cancel_scheduled", ctx, id=saved.data["id"])
     assert cancelled.status == "ok"
-    again = await _call("cancel_memory_note", ctx, id=saved.data["id"])
+    again = await _call("cancel_scheduled", ctx, id=saved.data["id"])
     assert again.error_code == "not_found"
 
 
 async def test_memory_tools_are_read_tier():
-    for name in ("save_event_note", "save_time_note", "list_memory_notes", "cancel_memory_note"):
+    for name in ("schedule_on_state_change", "schedule_at_time", "list_scheduled", "cancel_scheduled"):
         assert int(registry.get(name).tier) == 1
 ```
 
-In `tests/test_tool_router.py`, add the new tool names to `ALL_TOOLS`: `"save_event_note", "save_time_note", "list_memory_notes", "cancel_memory_note", "notify_user"`. Then append:
+In `tests/test_tool_router.py`, add the new tool names to `ALL_TOOLS`: `"schedule_on_state_change", "schedule_at_time", "list_scheduled", "cancel_scheduled", "notify_user"`. Then append:
 
 ```python
 def test_deferred_request_offers_note_tools():
     selected = select_tool_names(ALL_TOOLS, "We are leaving. Once the vacuum starts, stop it.")
-    assert "save_event_note" in selected
+    assert "schedule_on_state_change" in selected
     selected = select_tool_names(ALL_TOOLS, "Remind me at 18:00 to call mum")
-    assert "save_time_note" in selected
+    assert "schedule_at_time" in selected
     selected = select_tool_names(ALL_TOOLS, "never mind, cancel my reminder")
-    assert {"list_memory_notes", "cancel_memory_note"} <= selected
+    assert {"list_scheduled", "cancel_scheduled"} <= selected
 ```
 
 Append to `tests/test_main.py`:
@@ -2069,7 +2069,7 @@ def note_summary(note) -> dict:
     return row
 ```
 
-- [ ] **Step 4: Implement `save_event_note`** (`app/tools/memory/save_event_note.py`)
+- [ ] **Step 4: Implement `schedule_on_state_change`** (`app/tools/memory/schedule_on_state_change.py`)
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -2109,7 +2109,7 @@ def dynamic_params(ctx) -> type[BaseModel]:
     if not watched:
         return Params
     return create_model(
-        "SaveEventNoteParams",
+        "ScheduleOnStateChangeParams",
         __base__=Params,
         entity_id=(Literal[tuple(watched)], Field(description=_ENTITY_HELP)),
     )
@@ -2159,12 +2159,12 @@ async def handler(params: Params, ctx) -> ToolResult:
 
 register(
     ToolDefinition(
-        name="save_event_note",
+        name="schedule_on_state_change",
         description=(
             "Save a one-shot note to act on LATER, when a watched device changes state - "
             "e.g. 'once the vacuum starts, stop it' -> the vacuum's entity_id, "
             "to_state='cleaning', kind='action'. Use for 'when/once/after X happens' "
-            "requests instead of acting now. For a clock time use save_time_note."
+            "requests instead of acting now. For a clock time use schedule_at_time."
         ),
         params_model=Params,
         tier=Tier.READ,  # agent-local state only; never writes to HA
@@ -2174,7 +2174,7 @@ register(
 )
 ```
 
-- [ ] **Step 5: Implement `save_time_note`** (`app/tools/memory/save_time_note.py`)
+- [ ] **Step 5: Implement `schedule_at_time`** (`app/tools/memory/schedule_at_time.py`)
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -2239,7 +2239,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 
 register(
     ToolDefinition(
-        name="save_time_note",
+        name="schedule_at_time",
         description=(
             "Save a one-shot note to act on at a clock time - e.g. 'remind me at 18:00 to "
             "call mum' -> at='18:00', kind='reminder'; 'in 20 minutes turn off the lights' "
@@ -2255,7 +2255,7 @@ register(
 
 - [ ] **Step 6: Implement the list and cancel tools**
 
-`app/tools/memory/list_memory_notes.py`:
+`app/tools/memory/list_scheduled.py`:
 
 ```python
 from datetime import datetime, timezone
@@ -2282,10 +2282,10 @@ async def handler(params: Params, ctx) -> ToolResult:
 
 register(
     ToolDefinition(
-        name="list_memory_notes",
+        name="list_scheduled",
         description=(
             "List pending notes saved for later (reminders and deferred actions) with "
-            "their id, trigger and instruction. Use before cancel_memory_note, or when "
+            "their id, trigger and instruction. Use before cancel_scheduled, or when "
             "the user asks what reminders they have."
         ),
         params_model=Params,
@@ -2295,7 +2295,7 @@ register(
 )
 ```
 
-`app/tools/memory/cancel_memory_note.py`:
+`app/tools/memory/cancel_scheduled.py`:
 
 ```python
 from pydantic import BaseModel, Field
@@ -2305,7 +2305,7 @@ from app.tools.registry import register
 
 
 class Params(BaseModel):
-    id: int = Field(description="The note id from list_memory_notes.")
+    id: int = Field(description="The note id from list_scheduled.")
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -2318,9 +2318,9 @@ async def handler(params: Params, ctx) -> ToolResult:
 
 register(
     ToolDefinition(
-        name="cancel_memory_note",
+        name="cancel_scheduled",
         description=(
-            "Cancel a pending note by id (from list_memory_notes) - e.g. 'never mind, "
+            "Cancel a pending note by id (from list_scheduled) - e.g. 'never mind, "
             "let the vacuum run'."
         ),
         params_model=Params,
@@ -2335,10 +2335,10 @@ register(
 In `app/tools/registry.py`, add to `_DEFAULT_MODULES` after `"app.tools.read.load_skill",`:
 
 ```python
-    "app.tools.memory.save_event_note",
-    "app.tools.memory.save_time_note",
-    "app.tools.memory.list_memory_notes",
-    "app.tools.memory.cancel_memory_note",
+    "app.tools.memory.schedule_on_state_change",
+    "app.tools.memory.schedule_at_time",
+    "app.tools.memory.list_scheduled",
+    "app.tools.memory.cancel_scheduled",
 ```
 
 In `app/agent/tool_router.py`, add before `_KEYWORDS`:
@@ -2358,10 +2358,10 @@ _NOTE_ADMIN: tuple[str, ...] = (
 and these entries inside `_KEYWORDS`:
 
 ```python
-    "save_event_note": _DEFERRED,
-    "save_time_note": _DEFERRED + ("minutes", "hours", " at ", "o'clock"),
-    "list_memory_notes": _NOTE_ADMIN,
-    "cancel_memory_note": _NOTE_ADMIN,
+    "schedule_on_state_change": _DEFERRED,
+    "schedule_at_time": _DEFERRED + ("minutes", "hours", " at ", "o'clock"),
+    "list_scheduled": _NOTE_ADMIN,
+    "cancel_scheduled": _NOTE_ADMIN,
 ```
 
 In `app/main.py`, import `from app.memory.store import NoteStore`. In the lifespan, after `app.state.lang_overlay = overlay`:
@@ -3447,20 +3447,20 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 def test_system_prompt_explains_notes_when_enabled(tmp_path):
     s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
     prompt = build_system_prompt(s, tmp_path)
-    assert "save_event_note" in prompt
-    assert "save_time_note" in prompt
+    assert "schedule_on_state_change" in prompt
+    assert "schedule_at_time" in prompt
     assert "[EVENT]" in prompt
 
 
 def test_system_prompt_omits_notes_when_disabled(tmp_path):
     s = Settings(_env_file=None, system_prompt="Base.", watched_entities=[], clock_entity="")
-    assert "save_event_note" not in build_system_prompt(s, tmp_path)
+    assert "schedule_on_state_change" not in build_system_prompt(s, tmp_path)
 ```
 
 - [ ] **Step 2: Run them to make sure they fail**
 
 Run: `uv run pytest tests/test_factory.py -q`
-Expected: FAIL on `assert "save_event_note" in prompt`
+Expected: FAIL on `assert "schedule_on_state_change" in prompt`
 
 - [ ] **Step 3: Implement the paragraph**
 
@@ -3470,8 +3470,8 @@ In `app/agent/factory.py`, after `_TOOL_ROUTING`:
 _MEMORY_NOTES = (
     "\n\nNOTES FOR LATER: when the user wants something to happen later - "
     "'once/when/after X happens, do Y' or 'at 18:00 / in 20 minutes, do Y' - do NOT "
-    "act now. Save a note instead: save_event_note for a device state change, "
-    "save_time_note for a clock time. Use kind='reminder' when the user wants to be "
+    "act now. Save a note instead: schedule_on_state_change for a device state change, "
+    "schedule_at_time for a clock time. Use kind='reminder' when the user wants to be "
     "told something, kind='action' when the house should do something. Then confirm "
     "in one sentence what you saved. Messages that start with [EVENT] come from the "
     "home itself, not the user: follow them exactly."
@@ -3916,7 +3916,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 # include the vacuum in .env (e.g. WATCHED_ENTITIES='["vacuum.roborock_qrevo_s"]').
 - id: deferred_vacuum_stop
   prompt: "We are leaving. Once the vacuum starts, stop it."
-  expect_tool: save_event_note
+  expect_tool: schedule_on_state_change
   expect_params:
     entity_id: vacuum.roborock_qrevo_s
     to_state: cleaning
@@ -3924,7 +3924,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - id: time_reminder
   prompt: "Remind me at 18:00 to call mum."
-  expect_tool: save_time_note
+  expect_tool: schedule_at_time
   expect_params:
     at: "18:00"
     kind: reminder

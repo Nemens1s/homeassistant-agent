@@ -46,7 +46,7 @@ def describe_trigger(trigger: Trigger) -> str:
 def build_event_message(trigger: Trigger, notes: list) -> str:
     has_action = False
     has_reminder = False
-    lines = [describe_trigger(trigger), "Saved notes for this event:"]
+    lines = [describe_trigger(trigger), "Scheduled tasks for this event:"]
     for note in notes:
         lines.append(f'- #{note.id} ({note.kind}): "{_one_line(note.instruction)}"')
         if note.kind == "reminder":
@@ -54,14 +54,14 @@ def build_event_message(trigger: Trigger, notes: list) -> str:
         else:
             has_action = True
     if has_action:
-        lines.append("Carry out each action note now using your tools (list_actions, then trigger_action).")
+        lines.append("Carry out each action task now using your tools (list_actions, then trigger_action).")
     if has_reminder:
-        lines.append("For each reminder note, deliver the reminder to the user with notify_user.")
+        lines.append("For each reminder task, deliver the reminder to the user with notify_user.")
     if has_action:
         lines.append("When done, call notify_user once with a short summary of what you did.")
     # One thread holds every event run; earlier [EVENT] messages in its history
     # are already done and must never be acted on again (notes are one-shot).
-    lines.append("Act only on the notes in this message; earlier [EVENT] messages are already handled.")
+    lines.append("Act only on the tasks in this message; earlier [EVENT] messages are already handled.")
     lines.append("Do not ask questions; nobody is reading this thread live.")
     return "\n".join(lines)
 

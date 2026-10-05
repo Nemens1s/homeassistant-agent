@@ -122,4 +122,10 @@ async def test_agent_failure_is_contained():
 
 def test_message_scopes_the_agent_to_this_event():
     message = build_event_message(STATE_TRIGGER, [_note()])
-    assert "Act only on the notes in this message" in message
+    assert "Act only on the tasks in this message" in message
+
+
+def test_message_speaks_of_scheduled_tasks_not_notes():
+    message = build_event_message(STATE_TRIGGER, [_note()])
+    assert "Scheduled tasks for this event:" in message
+    assert "note" not in message.lower()

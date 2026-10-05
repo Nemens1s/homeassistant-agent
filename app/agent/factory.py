@@ -47,13 +47,13 @@ _TOOL_ROUTING = (
 _MEMORY_NOTES = (
     "\n\nDOING THINGS LATER: you cannot create automations, and you never need to. "
     "When the user wants something to happen LATER - 'once/when/after X happens, do Y' "
-    "or 'at 18:00 / in 20 minutes, do Y' - save a note instead of an automation: "
-    "save_event_note when a device changes state, save_time_note for a clock time. "
+    "or 'at 18:00 / in 20 minutes, do Y' - schedule it instead of creating an automation: "
+    "schedule_on_state_change when a device changes state, schedule_at_time for a clock time. "
     "Do NOT act now and do NOT look for an automation. When the moment comes, you will "
     "be called back with an [EVENT] message and carry out the instruction yourself with "
     "your normal tools (list_actions, trigger_action). kind='reminder' = tell the user "
     "something; kind='action' = make the house do something. Confirm in one sentence "
-    "what you saved. Messages that start with [EVENT] come from the home itself: "
+    "what you scheduled. Messages that start with [EVENT] come from the home itself: "
     "follow them exactly. Never tell the user to create an automation for this."
 )
 

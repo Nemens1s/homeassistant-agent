@@ -22,10 +22,10 @@ async def handler(params: Params, ctx) -> ToolResult:
 
 register(
     ToolDefinition(
-        name="list_memory_notes",
+        name="list_scheduled",
         description=(
-            "List pending notes saved for later (reminders and deferred actions) with "
-            "their id, trigger and instruction. Use before cancel_memory_note, or when "
+            "List pending scheduled tasks (reminders and deferred actions) with "
+            "their id, trigger and instruction. Use before cancel_scheduled, or when "
             "the user asks what reminders they have."
         ),
         params_model=Params,

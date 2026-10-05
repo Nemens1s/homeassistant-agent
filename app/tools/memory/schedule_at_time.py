@@ -26,7 +26,7 @@ class Params(BaseModel):
 
 async def handler(params: Params, ctx) -> ToolResult:
     if not ctx.settings.clock_entity:
-        return ToolResult.error("feature_disabled", "Time notes are off: no clock entity is configured.")
+        return ToolResult.error("feature_disabled", "Time scheduling is off: no clock entity is configured.")
     if ctx.notes is None:
         return ToolResult.error("notes_unavailable", "The note store is unavailable.")
     now_local = await current_local_time(ctx)
@@ -54,13 +54,13 @@ async def handler(params: Params, ctx) -> ToolResult:
         source_thread_id=scope.thread_id,
     )
     if note_id is None:
-        return ToolResult.error("notes_unavailable", "Could not save the note.")
+        return ToolResult.error("notes_unavailable", "Could not save the task.")
     return ToolResult.ok({"id": note_id, "fire_at": format_clock(fire_at)})
 
 
 register(
     ToolDefinition(
-        name="save_time_note",
+        name="schedule_at_time",
         description=(
             "Make something happen at a clock time - use this instead of an automation. "
             "E.g. 'remind me at 18:00 to call mum' -> at='18:00', kind='reminder'; 'in 20 "

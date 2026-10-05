@@ -11,10 +11,10 @@ from app.tools.context import ToolContext
 
 VACUUM = "vacuum.roborock_qrevo_s"
 MODULES = (
-    "app.tools.memory.save_event_note",
-    "app.tools.memory.save_time_note",
-    "app.tools.memory.list_memory_notes",
-    "app.tools.memory.cancel_memory_note",
+    "app.tools.memory.schedule_on_state_change",
+    "app.tools.memory.schedule_at_time",
+    "app.tools.memory.list_scheduled",
+    "app.tools.memory.cancel_scheduled",
 )
 
 
@@ -74,10 +74,10 @@ def _pending(store):
     return store.list_pending(datetime.now(timezone.utc))
 
 
-async def test_save_event_note_stores_note_with_scope(store):
+async def test_schedule_on_state_change_stores_note_with_scope(store):
     with use_scope(RunScope(language="ru", thread_id="t7")):
         result = await _call(
-            "save_event_note", _ctx(store),
+            "schedule_on_state_change", _ctx(store),
             entity_id=VACUUM, to_state="cleaning",
             instruction="Stop the vacuum and send it to the dock.", kind="action",
         )
@@ -90,9 +90,9 @@ async def test_save_event_note_stores_note_with_scope(store):
     assert note.source_thread_id == "t7"
 
 
-async def test_save_event_note_rejects_unwatched_entity(store):
+async def test_schedule_on_state_change_rejects_unwatched_entity(store):
     result = await _call(
-        "save_event_note", _ctx(store),
+        "schedule_on_state_change", _ctx(store),
         entity_id="light.kitchen", instruction="Turn it off.", kind="action",
     )
     assert result.error_code == "entity_not_watched"
@@ -100,25 +100,25 @@ async def test_save_event_note_rejects_unwatched_entity(store):
     assert _pending(store) == []
 
 
-async def test_save_event_note_feature_disabled(store):
+async def test_schedule_on_state_change_feature_disabled(store):
     result = await _call(
-        "save_event_note", _ctx(store, watched_entities=[]),
+        "schedule_on_state_change", _ctx(store, watched_entities=[]),
         entity_id=VACUUM, instruction="x", kind="action",
     )
     assert result.error_code == "feature_disabled"
 
 
-async def test_save_event_note_without_store():
+async def test_schedule_on_state_change_without_store():
     result = await _call(
-        "save_event_note", _ctx(None),
+        "schedule_on_state_change", _ctx(None),
         entity_id=VACUUM, instruction="x", kind="action",
     )
     assert result.error_code == "notes_unavailable"
 
 
-async def test_save_event_note_clamps_ttl(store):
+async def test_schedule_on_state_change_clamps_ttl(store):
     result = await _call(
-        "save_event_note", _ctx(store),
+        "schedule_on_state_change", _ctx(store),
         entity_id=VACUUM, instruction="x", kind="action", expires_in_hours=1000,
     )
     assert result.data["expires_in_hours"] == 168
@@ -127,7 +127,7 @@ async def test_save_event_note_clamps_ttl(store):
 async def test_instruction_is_stored_in_english_with_original(store):
     lang = FakeLang({"Останови пылесос.": "Stop the vacuum."})
     await _call(
-        "save_event_note", _ctx(store, lang=lang),
+        "schedule_on_state_change", _ctx(store, lang=lang),
         entity_id=VACUUM, instruction="Останови пылесос.", kind="action",
     )
     note = _pending(store)[0]
@@ -136,16 +136,16 @@ async def test_instruction_is_stored_in_english_with_original(store):
 
 
 async def test_event_note_schema_lists_watched_entities(store):
-    defn = registry.get("save_event_note")
+    defn = registry.get("schedule_on_state_change")
     model = defn.dynamic_params(_ctx(store))
     model(entity_id=VACUUM, instruction="x", kind="action")
     with pytest.raises(ValidationError):
         model(entity_id="light.kitchen", instruction="x", kind="action")
 
 
-async def test_save_time_note_at(store):
+async def test_schedule_at_time_at(store):
     result = await _call(
-        "save_time_note", _ctx(store), at="18:00", instruction="Call mum.", kind="reminder",
+        "schedule_at_time", _ctx(store), at="18:00", instruction="Call mum.", kind="reminder",
     )
     assert result.data["fire_at"] == "18:00 05-10-2026"
     note = _pending(store)[0]
@@ -153,36 +153,36 @@ async def test_save_time_note_at(store):
     assert note.expires_at_local == "2026-10-05 20:00"  # default 120 min grace
 
 
-async def test_save_time_note_in_minutes(store):
+async def test_schedule_at_time_in_minutes(store):
     result = await _call(
-        "save_time_note", _ctx(store), in_minutes=30, instruction="Check the oven.", kind="reminder",
+        "schedule_at_time", _ctx(store), in_minutes=30, instruction="Check the oven.", kind="reminder",
     )
     assert result.data["fire_at"] == "10:02 05-10-2026"
 
 
-async def test_save_time_note_past_date(store):
+async def test_schedule_at_time_past_date(store):
     result = await _call(
-        "save_time_note", _ctx(store), at="08:00 05-10-2026", instruction="x", kind="reminder",
+        "schedule_at_time", _ctx(store), at="08:00 05-10-2026", instruction="x", kind="reminder",
     )
     assert result.error_code == "in_past"
 
 
-async def test_save_time_note_needs_exactly_one_time(store):
-    result = await _call("save_time_note", _ctx(store), instruction="x", kind="reminder")
+async def test_schedule_at_time_needs_exactly_one_time(store):
+    result = await _call("schedule_at_time", _ctx(store), instruction="x", kind="reminder")
     assert result.error_code == "invalid_params"
 
 
-async def test_save_time_note_clock_unreadable(store):
+async def test_schedule_at_time_clock_unreadable(store):
     result = await _call(
-        "save_time_note", _ctx(store, rest=FakeRest(clock=None)),
+        "schedule_at_time", _ctx(store, rest=FakeRest(clock=None)),
         at="18:00", instruction="x", kind="reminder",
     )
     assert result.error_code == "clock_unavailable"
 
 
-async def test_save_time_note_feature_disabled(store):
+async def test_schedule_at_time_feature_disabled(store):
     result = await _call(
-        "save_time_note", _ctx(store, clock_entity=""), at="18:00", instruction="x", kind="reminder",
+        "schedule_at_time", _ctx(store, clock_entity=""), at="18:00", instruction="x", kind="reminder",
     )
     assert result.error_code == "feature_disabled"
 
@@ -190,18 +190,18 @@ async def test_save_time_note_feature_disabled(store):
 async def test_list_and_cancel(store):
     ctx = _ctx(store)
     saved = await _call(
-        "save_event_note", ctx, entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", kind="action",
+        "schedule_on_state_change", ctx, entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", kind="action",
     )
-    listed = await _call("list_memory_notes", ctx)
+    listed = await _call("list_scheduled", ctx)
     rows = listed.data["rows"]
     assert rows[0]["id"] == saved.data["id"]
     assert rows[0]["when"] == f"{VACUUM} → cleaning"
-    cancelled = await _call("cancel_memory_note", ctx, id=saved.data["id"])
+    cancelled = await _call("cancel_scheduled", ctx, id=saved.data["id"])
     assert cancelled.status == "ok"
-    again = await _call("cancel_memory_note", ctx, id=saved.data["id"])
+    again = await _call("cancel_scheduled", ctx, id=saved.data["id"])
     assert again.error_code == "not_found"
 
 
 async def test_memory_tools_are_read_tier():
-    for name in ("save_event_note", "save_time_note", "list_memory_notes", "cancel_memory_note"):
+    for name in ("schedule_on_state_change", "schedule_at_time", "list_scheduled", "cancel_scheduled"):
         assert int(registry.get(name).tier) == 1

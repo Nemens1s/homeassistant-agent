@@ -173,14 +173,14 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
 def test_system_prompt_explains_notes_when_enabled(tmp_path):
     s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
     prompt = build_system_prompt(s, tmp_path)
-    assert "save_event_note" in prompt
-    assert "save_time_note" in prompt
+    assert "schedule_on_state_change" in prompt
+    assert "schedule_at_time" in prompt
     assert "[EVENT]" in prompt
 
 
 def test_system_prompt_omits_notes_when_disabled(tmp_path):
     s = Settings(_env_file=None, system_prompt="Base.", watched_entities=[], clock_entity="")
-    assert "save_event_note" not in build_system_prompt(s, tmp_path)
+    assert "schedule_on_state_change" not in build_system_prompt(s, tmp_path)
 
 
 def test_actions_paragraph_defers_later_requests_to_notes(tmp_path):
@@ -196,15 +196,15 @@ def test_notes_paragraph_explains_the_callback(tmp_path):
     s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
     prompt = build_system_prompt(s, tmp_path)
     assert "you will be called back" in prompt.lower()
-    assert "instead of an automation" in prompt.lower()
+    assert "instead of creating an automation" in prompt.lower()
 
 
 def test_save_note_descriptions_explain_they_run_later():
     from app.tools import registry as reg
 
     reg._reset_for_tests()
-    reg.load_all(("app.tools.memory.save_event_note", "app.tools.memory.save_time_note"))
-    for name in ("save_event_note", "save_time_note"):
+    reg.load_all(("app.tools.memory.schedule_on_state_change", "app.tools.memory.schedule_at_time"))
+    for name in ("schedule_on_state_change", "schedule_at_time"):
         description = reg.get(name).description
         assert len(description) <= 400, name
         assert "called back" in description, name

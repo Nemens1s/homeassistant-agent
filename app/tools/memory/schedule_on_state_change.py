@@ -8,7 +8,7 @@ from app.tools.base import Tier, ToolDefinition, ToolResult
 from app.tools.helpers.notes import english_instruction
 from app.tools.registry import register
 
-_ENTITY_HELP = "The watched entity whose state change fires the note."
+_ENTITY_HELP = "The watched entity whose state change triggers the task."
 
 
 class Params(BaseModel):
@@ -24,7 +24,7 @@ class Params(BaseModel):
     )
     tags: list[str] = Field(default_factory=list, description="Optional short labels.")
     expires_in_hours: int | None = Field(
-        None, description="Forget the note after this many hours (default 24)."
+        None, description="Drop the task if it has not triggered after this many hours (default 24)."
     )
 
 
@@ -35,7 +35,7 @@ def dynamic_params(ctx) -> type[BaseModel]:
     if not watched:
         return Params
     return create_model(
-        "SaveEventNoteParams",
+        "ScheduleOnStateChangeParams",
         __base__=Params,
         entity_id=(Literal[tuple(watched)], Field(description=_ENTITY_HELP)),
     )
@@ -45,14 +45,14 @@ async def handler(params: Params, ctx) -> ToolResult:
     watched = list(ctx.settings.watched_entities)
     if not watched:
         return ToolResult.error(
-            "feature_disabled", "Event notes are off: no watched entities are configured."
+            "feature_disabled", "State-change scheduling is off: no watched entities are configured."
         )
     if ctx.notes is None:
         return ToolResult.error("notes_unavailable", "The note store is unavailable.")
     if params.entity_id not in watched:
         return ToolResult.error(
             "entity_not_watched",
-            f"{params.entity_id!r} is not watched, so a note on it would never fire.",
+            f"{params.entity_id!r} is not watched, so a task on it would never trigger.",
             data={"watched": watched},
         )
 
@@ -74,7 +74,7 @@ async def handler(params: Params, ctx) -> ToolResult:
         source_thread_id=scope.thread_id,
     )
     if note_id is None:
-        return ToolResult.error("notes_unavailable", "Could not save the note.")
+        return ToolResult.error("notes_unavailable", "Could not save the task.")
     return ToolResult.ok({
         "id": note_id,
         "entity_id": params.entity_id,
@@ -85,13 +85,13 @@ async def handler(params: Params, ctx) -> ToolResult:
 
 register(
     ToolDefinition(
-        name="save_event_note",
+        name="schedule_on_state_change",
         description=(
             "Make the house react LATER, when a device changes state - use this instead of "
             "an automation. E.g. 'once the vacuum starts, stop it' -> the vacuum's "
             "entity_id, to_state='cleaning', kind='action'. When it happens you are called "
             "back and carry out `instruction` with your normal tools. Do not act now. For "
-            "a clock time use save_time_note."
+            "a clock time use schedule_at_time."
         ),
         params_model=Params,
         tier=Tier.READ,  # agent-local state only; never writes to HA
