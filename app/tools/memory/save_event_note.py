@@ -87,10 +87,11 @@ register(
     ToolDefinition(
         name="save_event_note",
         description=(
-            "Save a one-shot note to act on LATER, when a watched device changes state - "
-            "e.g. 'once the vacuum starts, stop it' -> the vacuum's entity_id, "
-            "to_state='cleaning', kind='action'. Use for 'when/once/after X happens' "
-            "requests instead of acting now. For a clock time use save_time_note."
+            "Make the house react LATER, when a device changes state - use this instead of "
+            "an automation. E.g. 'once the vacuum starts, stop it' -> the vacuum's "
+            "entity_id, to_state='cleaning', kind='action'. When it happens you are called "
+            "back and carry out `instruction` with your normal tools. Do not act now. For "
+            "a clock time use save_time_note."
         ),
         params_model=Params,
         tier=Tier.READ,  # agent-local state only; never writes to HA

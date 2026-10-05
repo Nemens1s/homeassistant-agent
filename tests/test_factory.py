@@ -181,3 +181,32 @@ def test_system_prompt_explains_notes_when_enabled(tmp_path):
 def test_system_prompt_omits_notes_when_disabled(tmp_path):
     s = Settings(_env_file=None, system_prompt="Base.", watched_entities=[], clock_entity="")
     assert "save_event_note" not in build_system_prompt(s, tmp_path)
+
+
+def test_actions_paragraph_defers_later_requests_to_notes(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", max_tier=2, watched_entities=["vacuum.x"])
+    prompt = build_system_prompt(s, tmp_path)
+    actions = prompt[prompt.index("ACTIONS (to do NOW):"):]
+    # "do it later" must not end in "go create an automation"
+    assert "LATER" in actions
+    assert "never tell the user to create an automation" in prompt.lower()
+
+
+def test_notes_paragraph_explains_the_callback(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
+    prompt = build_system_prompt(s, tmp_path)
+    assert "you will be called back" in prompt.lower()
+    assert "instead of an automation" in prompt.lower()
+
+
+def test_save_note_descriptions_explain_they_run_later():
+    from app.tools import registry as reg
+
+    reg._reset_for_tests()
+    reg.load_all(("app.tools.memory.save_event_note", "app.tools.memory.save_time_note"))
+    for name in ("save_event_note", "save_time_note"):
+        description = reg.get(name).description
+        assert len(description) <= 400, name
+        assert "called back" in description, name
+        assert "instead of an automation" in description, name
+    reg._reset_for_tests()

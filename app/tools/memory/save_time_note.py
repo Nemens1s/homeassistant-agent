@@ -62,10 +62,11 @@ register(
     ToolDefinition(
         name="save_time_note",
         description=(
-            "Save a one-shot note to act on at a clock time - e.g. 'remind me at 18:00 to "
-            "call mum' -> at='18:00', kind='reminder'; 'in 20 minutes turn off the lights' "
-            "-> in_minutes=20, kind='action'. Give exactly one of at / in_minutes. Use "
-            "instead of acting now."
+            "Make something happen at a clock time - use this instead of an automation. "
+            "E.g. 'remind me at 18:00 to call mum' -> at='18:00', kind='reminder'; 'in 20 "
+            "minutes turn off the lights' -> in_minutes=20, kind='action'. Exactly one of "
+            "at / in_minutes. At that time you are called back and carry out `instruction` "
+            "with your normal tools. Do not act now."
         ),
         params_model=Params,
         tier=Tier.READ,  # agent-local state only; never writes to HA
