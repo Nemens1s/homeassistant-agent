@@ -84,5 +84,6 @@ async def test_needle_menu_skips_registry_while_reconnecting():
     ws = _HangingWS()
     provider = MenuProvider(Rest(), prefixes=("automation.ai_action", AI_SCRIPT_PREFIX_ACTION), ws=ws)
     menu = await provider.get()
-    assert len(menu.items) == 1
+    # No registry → no description → not opted in; the point is it did not wait.
+    assert menu.items == ()
     assert ws.calls == []  # no 10s stall waiting on a reconnecting socket

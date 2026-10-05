@@ -51,7 +51,7 @@ The original spec listed this as a non-goal (`2026-07-13-local-ha-agent-design.m
 Scripts live in `SmartHome/Suur-Ameerika/ai_actions/` and follow the house conventions:
 
 - `alias: "AI Action: …"`
-- `description` ending in a `NEEDLE:` line
+- `description` ending in a `NEEDLE:` (or `FAST-PATH:`) line **only if** the action should be on the fast-path menu; without a marker it is agent-only
 - `fields` with selectors
 - the first step gates on `input_boolean.ai_triggered_actions` being `on`
 - `mode: single`
@@ -71,7 +71,7 @@ Scripts live in `SmartHome/Suur-Ameerika/ai_actions/` and follow the house conve
 
 - **Behaviour:** sends `message` to the household's phone(s) through whichever notify service(s) the user picks. Delivery targets are the script's concern, not the agent's.
 - **Gate:** the usual `input_boolean.ai_triggered_actions` condition.
-- **NEEDLE line:** required by convention. The script is excluded from the fast-path menu and from `list_actions` anyway (§7), so the wording doesn't matter much. For example: `NEEDLE: Send a push notification message to the household phones.`
+- **No `NEEDLE:` line.** The fast-path menu is opt-in: only actions whose description contains `NEEDLE:` or `FAST-PATH:` are offered to Needle. Leaving the marker out keeps this script agent-only (it is also excluded by id, belt and braces).
 
 `settings.notify_action` (default `script.ai_action_notify`) names this script. Only `notify_user` calls it.
 

@@ -39,9 +39,23 @@ def _by_id(item: MenuItem) -> str:
     return item.entity_id
 
 
+# An action is on the fast-path menu only when its HA description opts in with
+# one of these markers; the text after the marker is what Needle matches on.
+# Anything without a marker (e.g. the notify script) is agent-only.
+FAST_PATH_MARKERS: tuple[str, ...] = ("NEEDLE:", "FAST-PATH:")
+
+
+def fast_path_opt_in(ha_description: str) -> bool:
+    for marker in FAST_PATH_MARKERS:
+        if marker in ha_description:
+            return True
+    return False
+
+
 def needle_description(ha_description: str) -> str:
-    if "NEEDLE:" in ha_description:
-        return ha_description.split("NEEDLE:")[-1].strip()
+    for marker in FAST_PATH_MARKERS:
+        if marker in ha_description:
+            return ha_description.split(marker)[-1].strip()
     return ha_description
 
 
@@ -156,10 +170,13 @@ class MenuProvider:
                 self._params_cache[eid] = params
         items = []
         for entity_id, name in candidates:
+            description = self._desc_cache.get(entity_id, "")
+            if not fast_path_opt_in(description):
+                continue
             items.append(MenuItem(
                 entity_id=entity_id,
                 name=name,
-                description=needle_description(self._desc_cache.get(entity_id, "")),
+                description=needle_description(description),
                 parameters=self._params_cache.get(entity_id, {}),
             ))
         items.sort(key=_by_id)

@@ -15,6 +15,19 @@ class FakeRest:
     async def get_script_config(self, object_id):
         return self._script_configs[object_id]
 
+    async def get_automation_config(self, unique_id):
+        return {"description": f"NEEDLE: run {unique_id}."}
+
+
+class FakeRegistryWS:
+    """Entity registry: automation entity_id → unique_id (how descriptions are found)."""
+
+    async def request_cached(self, msg_type, ttl=60.0):
+        return [
+            {"entity_id": "automation.ai_goodnight", "unique_id": "goodnight"},
+            {"entity_id": "automation.ai_movie", "unique_id": "movie"},
+        ]
+
 
 STATES = [
     {"entity_id": "light.kitchen", "attributes": {}},
@@ -63,7 +76,7 @@ def test_fields_to_parameters_empty():
 
 
 async def test_menu_keeps_only_ai_automations_with_names():
-    provider = MenuProvider(FakeRest(STATES), ttl_s=60)
+    provider = MenuProvider(FakeRest(STATES), ttl_s=60, ws=FakeRegistryWS())
     menu = await provider.get()
     ids = [item.entity_id for item in menu.items]
     assert ids == ["automation.ai_goodnight", "automation.ai_movie"]
@@ -100,7 +113,10 @@ async def test_menu_excludes_listed_entities():
         {"entity_id": "script.ai_action_notify", "attributes": {}},
         {"entity_id": "script.ai_action_stop_vacuum", "attributes": {}},
     ]
-    rest = FakeRest(states, {"ai_action_notify": {}, "ai_action_stop_vacuum": {}})
+    rest = FakeRest(states, {
+        "ai_action_notify": {"description": "NEEDLE: notify."},  # opted in, still excluded
+        "ai_action_stop_vacuum": {"description": "NEEDLE: stop the vacuum."},
+    })
     provider = MenuProvider(
         rest, prefixes=(AI_SCRIPT_PREFIX_ACTION,), exclude=("script.ai_action_notify",)
     )
@@ -109,3 +125,25 @@ async def test_menu_excludes_listed_entities():
     for item in menu.items:
         ids.append(item.entity_id)
     assert ids == ["script.ai_action_stop_vacuum"]
+
+
+async def test_menu_keeps_only_opted_in_actions():
+    states = [
+        {"entity_id": "script.ai_action_lights_on", "attributes": {}},
+        {"entity_id": "script.ai_action_fast", "attributes": {}},
+        {"entity_id": "script.ai_action_notify", "attributes": {}},
+    ]
+    configs = {
+        "ai_action_lights_on": {"description": "Turns on lights. NEEDLE: turn on the lights."},
+        "ai_action_fast": {"description": "FAST-PATH: start the coffee machine."},
+        "ai_action_notify": {"description": "Sends a push notification."},  # no marker
+    }
+    provider = MenuProvider(FakeRest(states, configs), prefixes=(AI_SCRIPT_PREFIX_ACTION,))
+    menu = await provider.get()
+    descriptions = {}
+    for item in menu.items:
+        descriptions[item.entity_id] = item.description
+    assert descriptions == {
+        "script.ai_action_lights_on": "turn on the lights.",
+        "script.ai_action_fast": "start the coffee machine.",
+    }
