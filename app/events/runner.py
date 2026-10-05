@@ -77,7 +77,7 @@ class EventRunner:
             agent_tasks = []
             for note in notes:
                 if note.action_entity_id or note.reminder:
-                    await self._run_direct(note)
+                    await self._run_direct_safely(note)
                 else:
                     agent_tasks.append(note)
             if agent_tasks:
@@ -94,10 +94,20 @@ class EventRunner:
     async def _action_name(self, entity_id: str) -> str:
         try:
             state = await self._ctx.rest.get_state(entity_id)
+            name = ((state or {}).get("attributes") or {}).get("friendly_name")
         except Exception:
-            return "the scheduled action"
-        name = (state.get("attributes") or {}).get("friendly_name")
+            name = None
         return name or "the scheduled action"
+
+    async def _run_direct_safely(self, note) -> None:
+        # One task failing (audit DB, odd HA reply, ...) must neither reach the
+        # listener nor stop the other tasks: they are already marked fired.
+        try:
+            await self._run_direct(note)
+        except Exception:
+            log.exception("events: task %s crashed", note.id)
+            if self._ctx.notes is not None:
+                self._ctx.notes.record_outcome(note.id, "failed", "internal error")
 
     async def _run_direct(self, note) -> None:
         # A fresh guard per task: two tasks with the same action must both run.

@@ -264,3 +264,37 @@ async def test_runs_are_serialized(store):
     runner, _ = _runner(store, FakeRest(), agent=SlowAgent())
     await asyncio.gather(runner.run(STATE_TRIGGER, [first]), runner.run(STATE_TRIGGER, [second]))
     assert active["max"] == 1
+
+
+async def test_one_task_crashing_does_not_stop_the_others(store):
+    class BrokenAudit:
+        def __init__(self):
+            self.calls = 0
+
+        async def record(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise OSError("audit disk full")
+
+    rest = FakeRest()
+    first = _add(store, action=STOP)
+    second = _add(store, action=STOP)
+    runner, _ = _runner(store, rest, event_confirmations_enabled=False)
+    runner._ctx.audit = BrokenAudit()
+    await runner.run(STATE_TRIGGER, [first, second])  # must not raise
+    assert _outcome(store, first.id) == ("failed", "internal error")
+    assert _outcome(store, second.id)[0] == "done"
+
+
+async def test_action_name_survives_an_empty_state_body(store):
+    class EmptyBodyRest(FakeRest):
+        async def get_state(self, entity_id):
+            if entity_id == STOP:
+                return None
+            return await super().get_state(entity_id)
+
+    rest = EmptyBodyRest()
+    note = _add(store, action=STOP)
+    runner, _ = _runner(store, rest)
+    await runner.run(STATE_TRIGGER, [note])
+    assert _outcome(store, note.id)[0] in ("done", "failed")  # recorded, no crash
