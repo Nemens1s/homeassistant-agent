@@ -11,12 +11,32 @@ from app.tools.registry import register
 _ENTITY_HELP = "The watched entity whose state change triggers the task."
 
 
+def _normalise(state: str) -> str:
+    # "Segment cleaning", "segment-cleaning" and "segment_cleaning" are one state.
+    return state.strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def resolve_states(requested: str, options: list[str]) -> list[str]:
+    """Map what the model asked for onto the entity's real (raw) states:
+    every option containing it, ignoring case/spaces/underscores. So
+    "Segment cleaning" -> [segment_cleaning], and "cleaning" -> [cleaning,
+    segment_cleaning, spot_cleaning, ...]. Empty when nothing fits. Resolved
+    at save time, so the stored list is exactly what will fire."""
+    wanted = _normalise(requested)
+    matches = []
+    for option in options:
+        if wanted in _normalise(option):
+            matches.append(option)
+    return matches
+
+
 class Params(BaseModel):
     entity_id: str = Field(description=_ENTITY_HELP)
     to_state: str | None = Field(
         None,
-        description="Fire only when the entity changes to this state, e.g. 'cleaning' "
-        "or 'on'. Omit to fire on any change.",
+        description="Trigger only when the entity changes to this state, e.g. 'cleaning' "
+        "or 'on'. A partial word matches every state containing it. Omit to trigger "
+        "on any change.",
     )
     instruction: str = Field(description="What to do then, as one self-contained sentence.")
     kind: Literal["action", "reminder"] = Field(
@@ -56,6 +76,24 @@ async def handler(params: Params, ctx) -> ToolResult:
             data={"watched": watched},
         )
 
+    # Enum sensors (e.g. a vacuum status) list their raw states in `options`;
+    # the UI shows labels like "Segment cleaning" that would never match.
+    states = []
+    if params.to_state:
+        state = await ctx.rest.get_state(params.entity_id)
+        options = (state.get("attributes") or {}).get("options") or []
+        if options:
+            states = resolve_states(params.to_state, options)
+            if not states:
+                return ToolResult.error(
+                    "invalid_state",
+                    f"{params.to_state!r} is not a state of {params.entity_id}. "
+                    "Use one of valid_states.",
+                    data={"valid_states": list(options)},
+                )
+        else:
+            states = [params.to_state]
+
     hours = params.expires_in_hours or ctx.settings.memory_note_default_ttl_hours
     hours = max(1, min(hours, ctx.settings.memory_note_max_ttl_hours))
     english, original = await english_instruction(ctx, params.instruction)
@@ -63,7 +101,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     now = datetime.now(timezone.utc)
     note_id = ctx.notes.add_state_note(
         entity_id=params.entity_id,
-        to_state=params.to_state,
+        to_state="|".join(states) if states else None,
         instruction=english,
         instruction_original=original,
         kind=params.kind,
@@ -78,7 +116,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     return ToolResult.ok({
         "id": note_id,
         "entity_id": params.entity_id,
-        "to_state": params.to_state,
+        "to_state": states or None,
         "expires_in_hours": hours,
     })
 

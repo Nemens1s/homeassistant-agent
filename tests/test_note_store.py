@@ -139,3 +139,10 @@ def test_unusable_path_degrades(tmp_path):
     assert _state_note(bad) is None
     assert bad.match_state(VACUUM, "cleaning", NOW) == []
     assert bad.cancel(1) is False
+
+
+def test_any_of_states_match(store):
+    note_id = _state_note(store, to_state="cleaning|segment_cleaning")
+    assert _ids(store.match_state(VACUUM, "segment_cleaning", NOW)) == [note_id]
+    assert store.match_state(VACUUM, "washing_the_mop", NOW) == []
+    assert store.match_state(VACUUM, "segment", NOW) == []  # whole states only

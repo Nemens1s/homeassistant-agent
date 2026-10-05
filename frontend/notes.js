@@ -19,7 +19,8 @@ function triggerText(note) {
   if (note.trigger_kind === "time") {
     return "at " + note.fire_at_local;
   }
-  return note.entity_id + " → " + (note.to_state || "any change");
+  const states = note.to_state ? note.to_state.split("|").join(" or ") : "any change";
+  return note.entity_id + " → " + states;
 }
 
 function expiresText(note) {

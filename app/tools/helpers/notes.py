@@ -21,6 +21,7 @@ def note_summary(note) -> dict:
     if note.trigger_kind == "time":
         row["when"] = format_clock(from_key(note.fire_at_local))
     else:
-        row["when"] = f"{note.entity_id} → {note.to_state or 'any change'}"
+        states = (note.to_state or "any change").replace("|", " or ")
+        row["when"] = f"{note.entity_id} → {states}"
         row["expires_at"] = note.expires_at
     return row

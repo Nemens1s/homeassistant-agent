@@ -70,7 +70,7 @@ class Note:
     kind: str  # "action" | "reminder"
     created_at: str
     entity_id: str | None
-    to_state: str | None
+    to_state: str | None  # one or more states, "|"-separated (any-of)
     expires_at: str | None
     fire_at_local: str | None
     expires_at_local: str | None
@@ -177,7 +177,10 @@ class NoteStore:
         self._expire_state_notes(now)
         return self._select(
             "status = 'pending' AND trigger_kind = 'state' AND entity_id = ? "
-            "AND (to_state IS NULL OR LOWER(to_state) = LOWER(?)) ORDER BY id",
+            # to_state holds one or more states separated by "|" (any-of);
+            # wrapping both sides in "|" matches whole states only.
+            "AND (to_state IS NULL OR "
+            "INSTR('|' || LOWER(to_state) || '|', '|' || LOWER(?) || '|') > 0) ORDER BY id",
             (entity_id, new_state),
         )
 

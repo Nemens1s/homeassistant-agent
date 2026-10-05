@@ -18,6 +18,13 @@ MODULES = (
 )
 
 
+STATUS = "sensor.roborock_qrevo_s_status"
+STATUS_OPTIONS = [
+    "charging", "washing_the_mop", "cleaning", "segment_cleaning",
+    "spot_cleaning", "returning_home", "idle",
+]
+
+
 class FakeRest:
     def __init__(self, clock="09:32 05-10-2026"):
         self.clock = clock
@@ -25,7 +32,10 @@ class FakeRest:
     async def get_state(self, entity_id):
         if self.clock is None:
             raise ConnectionError("down")
-        return {"entity_id": entity_id, "state": self.clock}
+        if entity_id == STATUS:
+            return {"entity_id": entity_id, "state": "charging",
+                    "attributes": {"device_class": "enum", "options": STATUS_OPTIONS}}
+        return {"entity_id": entity_id, "state": self.clock, "attributes": {}}
 
 
 class FakeLang:
@@ -205,3 +215,45 @@ async def test_list_and_cancel(store):
 async def test_memory_tools_are_read_tier():
     for name in ("schedule_on_state_change", "schedule_at_time", "list_scheduled", "cancel_scheduled"):
         assert int(registry.get(name).tier) == 1
+
+
+def _status_ctx(store):
+    return _ctx(store, watched_entities=[VACUUM, STATUS])
+
+
+async def test_ui_label_resolves_to_raw_state(store):
+    result = await _call(
+        "schedule_on_state_change", _status_ctx(store),
+        entity_id=STATUS, to_state="Segment cleaning", instruction="Stop it.", kind="action",
+    )
+    assert result.data["to_state"] == ["segment_cleaning"]
+    assert _pending(store)[0].to_state == "segment_cleaning"
+
+
+async def test_partial_state_expands_to_every_matching_option(store):
+    result = await _call(
+        "schedule_on_state_change", _status_ctx(store),
+        entity_id=STATUS, to_state="cleaning", instruction="Stop it.", kind="action",
+    )
+    expected = ["cleaning", "segment_cleaning", "spot_cleaning"]
+    assert result.data["to_state"] == expected
+    now = datetime.now(timezone.utc)
+    assert len(store.match_state(STATUS, "segment_cleaning", now)) == 1
+
+
+async def test_unknown_state_lists_valid_options(store):
+    result = await _call(
+        "schedule_on_state_change", _status_ctx(store),
+        entity_id=STATUS, to_state="vacuuming", instruction="Stop it.", kind="action",
+    )
+    assert result.error_code == "invalid_state"
+    assert result.data == {"valid_states": STATUS_OPTIONS}
+    assert _pending(store) == []
+
+
+async def test_entity_without_options_keeps_state_as_given(store):
+    result = await _call(
+        "schedule_on_state_change", _ctx(store),
+        entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", kind="action",
+    )
+    assert result.data["to_state"] == ["cleaning"]
