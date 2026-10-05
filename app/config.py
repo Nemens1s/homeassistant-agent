@@ -117,6 +117,20 @@ class Settings(BaseSettings):
     telemetry_retention_days: int = 0
     otlp_endpoint: str = ""
 
+    # Event-triggered memory notes (spec 2026-10-04). The agent saves one-shot
+    # notes; the harness fires them when a watched entity changes state or the
+    # clock reaches a time. Empty watched_entities = state notes off; empty
+    # clock_entity = time notes off.
+    watched_entities: list[str] = []
+    clock_entity: str = "sensor.europe_tallinn"  # World Clock, "HH:MM DD-MM-YYYY"
+    # Off = the agent still calls notify_user after acting, but nothing is sent
+    # (reminders the user asked for are always sent).
+    event_confirmations_enabled: bool = True
+    memory_note_default_ttl_hours: int = 24
+    memory_note_max_ttl_hours: int = 168
+    time_note_grace_minutes: int = 120  # a time note this late expires instead of firing
+    notify_action: str = "script.ai_action_notify"  # the only script notify_user calls
+
     # Person display names: list of {ha_name: "<HA friendly_name>", name: "<shown name>"}
     # ha_name is the lookup key (what HA reports); name is what the agent sees.
     person_name_map: list[dict[str, str]] = []

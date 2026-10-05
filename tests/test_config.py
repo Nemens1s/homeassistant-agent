@@ -68,3 +68,37 @@ def test_load_settings_from_options_json(tmp_path, monkeypatch):
 def test_script_domain_allowed_by_default():
     s = Settings(_env_file=None)
     assert "script" in s.allowed_domains
+
+
+from pathlib import Path
+
+import yaml
+
+_EVENT_MEMORY_KEYS = (
+    "watched_entities",
+    "clock_entity",
+    "event_confirmations_enabled",
+    "memory_note_default_ttl_hours",
+    "memory_note_max_ttl_hours",
+    "time_note_grace_minutes",
+    "notify_action",
+)
+
+
+def test_event_memory_defaults():
+    s = Settings(_env_file=None)
+    assert s.watched_entities == []
+    assert s.clock_entity == "sensor.europe_tallinn"
+    assert s.event_confirmations_enabled is True
+    assert s.memory_note_default_ttl_hours == 24
+    assert s.memory_note_max_ttl_hours == 168
+    assert s.time_note_grace_minutes == 120
+    assert s.notify_action == "script.ai_action_notify"
+
+
+def test_addon_config_mirrors_event_memory_settings():
+    config_path = Path(__file__).parent.parent / "config.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    for key in _EVENT_MEMORY_KEYS:
+        assert key in config["options"], key
+        assert key in config["schema"], key
