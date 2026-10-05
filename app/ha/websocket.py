@@ -3,7 +3,7 @@
 One connection for the process lifetime: auth handshake, id-correlated
 request/response via futures, reconnect with backoff. Used for the
 websocket-only APIs (area/device/entity registries). Event subscriptions
-are out of scope but nothing here precludes them.
+(subscribe_trigger only) are re-sent on every reconnect.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import websockets
@@ -35,6 +36,13 @@ MANAGEMENT_COMMANDS: tuple[str, ...] = (
     "config/entity_registry/update",
 )
 
+# Subscription commands. Only subscribe_trigger: HA evaluates the trigger
+# server-side, so the client receives exactly the state changes it asked for
+# instead of the whole event bus.
+SUBSCRIPTION_COMMANDS: tuple[str, ...] = ("subscribe_trigger",)
+
+EventCallback = Callable[[dict], Awaitable[None]]
+
 
 class WebSocketClient:
     def __init__(self, url: str, token: str, request_timeout: float = 10.0):
@@ -48,6 +56,11 @@ class WebSocketClient:
         self._runner: asyncio.Task | None = None
         self._connected = asyncio.Event()
         self._closing = False
+        # What we want to be subscribed to survives reconnects; _active maps
+        # the current connection's message ids to callbacks.
+        self._subscriptions: list[tuple[dict, EventCallback]] = []
+        self._active: dict[int, EventCallback] = {}
+        self._callback_tasks: set[asyncio.Task] = set()
 
     @property
     def connected(self) -> bool:
@@ -61,6 +74,54 @@ class WebSocketClient:
         except TimeoutError:
             await self.stop()
             raise
+
+    def start_background(self) -> None:
+        """Keep (re)connecting in the background without waiting for the first
+        connection — used when HA is not up yet at startup."""
+        if self._runner is not None and not self._runner.done():
+            return
+        self._closing = False
+        self._runner = asyncio.create_task(self._run())
+
+    async def subscribe(self, message: dict, callback: EventCallback) -> None:
+        """Subscribe now if connected, and again after every reconnect.
+
+        Raises:
+            PermissionError: the message type is not in SUBSCRIPTION_COMMANDS.
+        """
+        if message.get("type") not in SUBSCRIPTION_COMMANDS:
+            raise PermissionError(
+                f"websocket subscription not allowed: {message.get('type')!r}"
+            )
+        self._subscriptions.append((message, callback))
+        conn = self._conn
+        if conn is None or not self.connected:
+            return  # _run sends it after the next auth_ok
+        try:
+            await self._send_subscription(conn, message, callback)
+        except Exception as exc:
+            log.warning("websocket subscribe failed (%s) — retrying on reconnect", exc)
+
+    async def _send_subscription(self, conn: Any, message: dict, callback: EventCallback) -> None:
+        msg_id = self._next_id
+        self._next_id += 1
+        self._active[msg_id] = callback
+        await conn.send(json.dumps({**message, "id": msg_id}))
+
+    async def _resubscribe(self, conn: Any) -> None:
+        # Index loop over the live list, not a snapshot: a subscribe() that
+        # lands while we are sending is picked up here instead of being lost.
+        index = 0
+        while index < len(self._subscriptions):
+            message, callback = self._subscriptions[index]
+            await self._send_subscription(conn, message, callback)
+            index += 1
+
+    async def _run_callback(self, callback: EventCallback, event: dict) -> None:
+        try:
+            await callback(event)
+        except Exception:
+            log.exception("websocket event callback failed")
 
     async def stop(self) -> None:
         self._closing = True
@@ -79,6 +140,8 @@ class WebSocketClient:
             await self._conn.close()
             self._conn = None
         self._connected.clear()
+        for task in list(self._callback_tasks):
+            task.cancel()
         self._fail_pending(ConnectionError("websocket client stopped"))
 
     async def _send_request(self, msg_type: str, **payload: Any) -> Any:
@@ -144,6 +207,7 @@ class WebSocketClient:
                 async with websockets.connect(self._url) as conn:
                     await self._auth(conn)
                     self._conn = conn
+                    await self._resubscribe(conn)
                     self._connected.set()
                     backoff = 1
                     log.info("websocket connected: %s", self._url)
@@ -161,6 +225,7 @@ class WebSocketClient:
         self._connected.clear()
         self._conn = None
         self._cache.clear()
+        self._active.clear()  # subscription ids belong to one connection
         self._fail_pending(exc)
 
     async def _auth(self, conn: Any) -> None:
@@ -173,7 +238,23 @@ class WebSocketClient:
             raise ConnectionError(f"websocket auth failed: {msg.get('message', '')}")
 
     def _dispatch(self, msg: dict) -> None:
-        fut = self._pending.pop(msg.get("id", -1), None)
+        msg_id = msg.get("id", -1)
+        if msg.get("type") == "event":
+            callback = self._active.get(msg_id)
+            if callback is not None:
+                # A task, so a slow handler never blocks the reader loop.
+                task = asyncio.create_task(self._run_callback(callback, msg.get("event") or {}))
+                self._callback_tasks.add(task)
+                task.add_done_callback(self._callback_tasks.discard)
+            return
+        if msg_id in self._active:
+            # The ack of a subscription; only a rejection needs handling.
+            if not msg.get("success"):
+                error = msg.get("error") or {}
+                log.warning("websocket subscription rejected: %s", error.get("message", ""))
+                self._active.pop(msg_id, None)
+            return
+        fut = self._pending.pop(msg_id, None)
         if fut is None or fut.done():
             return
         if msg.get("success"):
