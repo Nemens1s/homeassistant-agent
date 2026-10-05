@@ -44,6 +44,16 @@ SUBSCRIPTION_COMMANDS: tuple[str, ...] = ("subscribe_trigger",)
 EventCallback = Callable[[dict], Awaitable[None]]
 
 
+def ws_is_ready(ws: Any) -> bool:
+    """True when *ws* can serve a request right now. A client that is still
+    (re)connecting counts as not ready, so callers degrade at once instead of
+    waiting out the request timeout. Test fakes without a `connected`
+    attribute count as ready."""
+    if ws is None:
+        return False
+    return bool(getattr(ws, "connected", True))
+
+
 class WebSocketClient:
     def __init__(self, url: str, token: str, request_timeout: float = 10.0):
         self._url = url

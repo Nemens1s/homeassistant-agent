@@ -240,3 +240,11 @@ def test_lifespan_builds_fast_path_when_needle_enabled(monkeypatch):
         pass
     assert captured["fast_path"] is not None
     registry._reset_for_tests()
+
+
+def test_websocket_client_kept_when_ha_is_down():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        ws = client.app.state.ws
+        assert ws is not None  # reconnecting in the background, not dropped
+        assert ws.connected is False

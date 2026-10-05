@@ -248,3 +248,13 @@ def test_toggle_returns_503_without_websocket():
             json={"enabled": True},
         )
     assert resp.status_code == 503
+
+
+def test_get_actions_503_while_websocket_reconnecting():
+    from types import SimpleNamespace
+
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        client.app.state.ws = SimpleNamespace(connected=False)
+        resp = client.get("/api/actions")
+    assert resp.status_code == 503

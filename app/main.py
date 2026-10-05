@@ -31,7 +31,7 @@ from app.config import Settings, load_settings
 from app.i18n import build_language_adapter, set_language_attributes
 from app.i18n.store import LangOverlay, apply_overlay
 from app.ha.rest import RestClient
-from app.ha.websocket import WebSocketClient
+from app.ha.websocket import WebSocketClient, ws_is_ready
 from app.tools.context import ToolContext
 
 log = logging.getLogger("agent")
@@ -187,8 +187,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 await ws.start(connect_timeout=cfg.ws_connect_timeout)
             except Exception as exc:
-                log.warning("websocket unavailable (%s) — area/automation tools degraded", exc)
-                ws = None
+                # Keep the client: it reconnects in the background, so a slow HA
+                # boot degrades the websocket tools (and event notes) only until
+                # HA is up, not until the add-on restarts.
+                log.warning("websocket not connected yet (%s) — retrying in the background", exc)
+                ws.start_background()
 
             ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
             # Load the tool registry before building the fast path: it guards on
@@ -512,7 +515,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
 
         ws = app.state.ws
-        if ws is None:
+        if not ws_is_ready(ws):
             raise HTTPException(status_code=503, detail="websocket unavailable")
 
         registry_entries = await ws.request("config/entity_registry/list")
@@ -558,7 +561,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail="not an AI-controlled entity")
 
         ws = app.state.ws
-        if ws is None:
+        if not ws_is_ready(ws):
             raise HTTPException(status_code=503, detail="websocket unavailable")
 
         if entity_id.startswith("automation."):
