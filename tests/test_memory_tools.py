@@ -113,8 +113,7 @@ async def test_schedule_on_state_change_stores_note_with_scope(store):
 async def test_schedule_on_state_change_rejects_unwatched_entity(store):
     result = await _call(
         "schedule_on_state_change", _ctx(store),
-        entity_id="light.kitchen", instruction="Turn it off.",
-    )
+        entity_id="light.kitchen", instruction="Turn it off.", to_state="any", no_single_action=True)
     assert result.error_code == "entity_not_watched"
     assert result.data == {"watched": [VACUUM]}
     assert _pending(store) == []
@@ -123,24 +122,21 @@ async def test_schedule_on_state_change_rejects_unwatched_entity(store):
 async def test_schedule_on_state_change_feature_disabled(store):
     result = await _call(
         "schedule_on_state_change", _ctx(store, watched_entities=[]),
-        entity_id=VACUUM, instruction="x",
-    )
+        entity_id=VACUUM, instruction="x", to_state="any", no_single_action=True)
     assert result.error_code == "feature_disabled"
 
 
 async def test_schedule_on_state_change_without_store():
     result = await _call(
         "schedule_on_state_change", _ctx(None),
-        entity_id=VACUUM, instruction="x",
-    )
+        entity_id=VACUUM, instruction="x", to_state="any", no_single_action=True)
     assert result.error_code == "notes_unavailable"
 
 
 async def test_schedule_on_state_change_clamps_ttl(store):
     result = await _call(
         "schedule_on_state_change", _ctx(store),
-        entity_id=VACUUM, instruction="x", expires_in_hours=1000,
-    )
+        entity_id=VACUUM, instruction="x", expires_in_hours=1000, to_state="any", no_single_action=True)
     assert result.data["expires_in_hours"] == 168
 
 
@@ -148,8 +144,7 @@ async def test_instruction_is_stored_in_english_with_original(store):
     lang = FakeLang({"Останови пылесос.": "Stop the vacuum."})
     await _call(
         "schedule_on_state_change", _ctx(store, lang=lang),
-        entity_id=VACUUM, instruction="Останови пылесос.",
-    )
+        entity_id=VACUUM, instruction="Останови пылесос.", to_state="any", no_single_action=True)
     note = _pending(store)[0]
     assert note.instruction == "Stop the vacuum."
     assert note.instruction_original == "Останови пылесос."
@@ -158,15 +153,14 @@ async def test_instruction_is_stored_in_english_with_original(store):
 async def test_event_note_schema_lists_watched_entities(store):
     defn = registry.get("schedule_on_state_change")
     model = defn.dynamic_params(_ctx(store))
-    model(entity_id=VACUUM, instruction="x")
+    model(entity_id=VACUUM, to_state="any", instruction="x")
     with pytest.raises(ValidationError):
-        model(entity_id="light.kitchen", instruction="x")
+        model(entity_id="light.kitchen", to_state="any", instruction="x")
 
 
 async def test_schedule_at_time_at(store):
     result = await _call(
-        "schedule_at_time", _ctx(store), at="18:00", instruction="Call mum.",
-    )
+        "schedule_at_time", _ctx(store), at="18:00", instruction="Call mum.", no_single_action=True)
     assert result.data["fire_at"] == "18:00 05-10-2026"
     note = _pending(store)[0]
     assert note.fire_at_local == "2026-10-05 18:00"
@@ -175,43 +169,38 @@ async def test_schedule_at_time_at(store):
 
 async def test_schedule_at_time_in_minutes(store):
     result = await _call(
-        "schedule_at_time", _ctx(store), in_minutes=30, instruction="Check the oven.",
-    )
+        "schedule_at_time", _ctx(store), in_minutes=30, instruction="Check the oven.", no_single_action=True)
     assert result.data["fire_at"] == "10:02 05-10-2026"
 
 
 async def test_schedule_at_time_past_date(store):
     result = await _call(
-        "schedule_at_time", _ctx(store), at="08:00 05-10-2026", instruction="x",
-    )
+        "schedule_at_time", _ctx(store), at="08:00 05-10-2026", instruction="x", no_single_action=True)
     assert result.error_code == "in_past"
 
 
 async def test_schedule_at_time_needs_exactly_one_time(store):
-    result = await _call("schedule_at_time", _ctx(store), instruction="x")
+    result = await _call("schedule_at_time", _ctx(store), instruction="x", no_single_action=True)
     assert result.error_code == "invalid_params"
 
 
 async def test_schedule_at_time_clock_unreadable(store):
     result = await _call(
         "schedule_at_time", _ctx(store, rest=FakeRest(clock=None)),
-        at="18:00", instruction="x",
-    )
+        at="18:00", instruction="x", no_single_action=True)
     assert result.error_code == "clock_unavailable"
 
 
 async def test_schedule_at_time_feature_disabled(store):
     result = await _call(
-        "schedule_at_time", _ctx(store, clock_entity=""), at="18:00", instruction="x",
-    )
+        "schedule_at_time", _ctx(store, clock_entity=""), at="18:00", instruction="x", no_single_action=True)
     assert result.error_code == "feature_disabled"
 
 
 async def test_list_and_cancel(store):
     ctx = _ctx(store)
     saved = await _call(
-        "schedule_on_state_change", ctx, entity_id=VACUUM, to_state="cleaning", instruction="Stop it.",
-    )
+        "schedule_on_state_change", ctx, entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", no_single_action=True)
     listed = await _call("list_scheduled", ctx)
     rows = listed.data["rows"]
     assert rows[0]["id"] == saved.data["id"]
@@ -234,8 +223,7 @@ def _status_ctx(store):
 async def test_ui_label_resolves_to_raw_state(store):
     result = await _call(
         "schedule_on_state_change", _status_ctx(store),
-        entity_id=STATUS, to_state="Segment cleaning", instruction="Stop it.",
-    )
+        entity_id=STATUS, to_state="Segment cleaning", instruction="Stop it.", no_single_action=True)
     assert result.data["to_state"] == ["segment_cleaning"]
     assert _pending(store)[0].to_state == "segment_cleaning"
 
@@ -243,8 +231,7 @@ async def test_ui_label_resolves_to_raw_state(store):
 async def test_partial_state_expands_to_every_matching_option(store):
     result = await _call(
         "schedule_on_state_change", _status_ctx(store),
-        entity_id=STATUS, to_state="cleaning", instruction="Stop it.",
-    )
+        entity_id=STATUS, to_state="cleaning", instruction="Stop it.", no_single_action=True)
     expected = ["cleaning", "segment_cleaning", "spot_cleaning"]
     assert result.data["to_state"] == expected
     now = datetime.now(timezone.utc)
@@ -254,8 +241,7 @@ async def test_partial_state_expands_to_every_matching_option(store):
 async def test_unknown_state_lists_valid_options(store):
     result = await _call(
         "schedule_on_state_change", _status_ctx(store),
-        entity_id=STATUS, to_state="vacuuming", instruction="Stop it.",
-    )
+        entity_id=STATUS, to_state="vacuuming", instruction="Stop it.", no_single_action=True)
     assert result.error_code == "invalid_state"
     assert result.data == {"valid_states": STATUS_OPTIONS}
     assert _pending(store) == []
@@ -264,8 +250,7 @@ async def test_unknown_state_lists_valid_options(store):
 async def test_entity_without_options_keeps_state_as_given(store):
     result = await _call(
         "schedule_on_state_change", _ctx(store),
-        entity_id=VACUUM, to_state="cleaning", instruction="Stop it.",
-    )
+        entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", no_single_action=True)
     assert result.data["to_state"] == ["cleaning"]
 
 
@@ -275,7 +260,7 @@ def test_schedule_tools_do_not_ask_for_tags():
 
 
 @pytest.mark.parametrize("name, args", [
-    ("schedule_on_state_change", {"entity_id": VACUUM, "instruction": "x"}),
+    ("schedule_on_state_change", {"entity_id": VACUUM, "to_state": "any", "instruction": "x"}),
     ("schedule_at_time", {"at": "18:00", "instruction": "x"}),
 ])
 async def test_scheduling_refused_without_action_tier(store, name, args):
@@ -293,16 +278,14 @@ async def test_scheduling_refused_without_action_tier(store, name, args):
 async def test_vacuum_states_resolve_without_options_attribute(store, requested, stored):
     result = await _call(
         "schedule_on_state_change", _ctx(store),
-        entity_id=VACUUM, to_state=requested, instruction="x",
-    )
+        entity_id=VACUUM, to_state=requested, instruction="x", no_single_action=True)
     assert result.data["to_state"] == [stored]
 
 
 async def test_unknown_vacuum_state_lists_domain_states(store):
     result = await _call(
         "schedule_on_state_change", _ctx(store),
-        entity_id=VACUUM, to_state="vacuuming", instruction="x",
-    )
+        entity_id=VACUUM, to_state="vacuuming", instruction="x", no_single_action=True)
     assert result.error_code == "invalid_state"
     assert "cleaning" in result.data["valid_states"]
 
@@ -311,8 +294,7 @@ async def test_binary_sensor_states_resolve(store):
     sensor = "binary_sensor.front_door"
     result = await _call(
         "schedule_on_state_change", _ctx(store, watched_entities=[sensor]),
-        entity_id=sensor, to_state="On", instruction="x",
-    )
+        entity_id=sensor, to_state="On", instruction="x", no_single_action=True)
     assert result.data["to_state"] == ["on"]
 
 
@@ -338,7 +320,7 @@ async def test_reminder_only_task(store):
 
 async def test_task_without_action_or_reminder_goes_to_agent(store):
     await _call("schedule_on_state_change", _ctx(store), entity_id=VACUUM,
-                to_state="cleaning", instruction="Turn on the lights in whichever room I am in.")
+                to_state="cleaning", instruction="Turn on the lights in whichever room I am in.", no_single_action=True)
     assert _pending(store)[0].kind == "agent"
 
 
@@ -365,3 +347,38 @@ async def test_list_scheduled_shows_action_and_reminder(store):
     row = (await _call("list_scheduled", ctx)).data["rows"][0]
     assert row["action"] == "script.ai_action_stop_vacuum"
     assert row["reminder"] == "Tidy up."
+
+
+def test_to_state_is_required():
+    model = registry.get("schedule_on_state_change").params_model
+    with pytest.raises(ValidationError):
+        model(entity_id=VACUUM, instruction="x", action_entity_id="script.ai_action_stop_vacuum")
+
+
+async def test_explicit_any_fires_on_any_change(store):
+    result = await _call(
+        "schedule_on_state_change", _ctx(store), entity_id=VACUUM, to_state="any",
+        instruction="Tell me.", reminder="The vacuum changed.",
+    )
+    assert result.data["to_state"] is None
+    assert _pending(store)[0].to_state is None
+
+
+@pytest.mark.parametrize("name, args", [
+    ("schedule_on_state_change", {"entity_id": VACUUM, "to_state": "cleaning"}),
+    ("schedule_at_time", {"at": "18:00"}),
+])
+async def test_neither_action_nor_reminder_is_refused_with_choices(store, name, args):
+    result = await _call(name, _ctx(store), instruction="Stop the vacuum.", **args)
+    assert result.error_code == "action_or_reminder_required"
+    assert result.data["valid_actions"] == ["script.ai_action_stop_vacuum"]
+    assert _pending(store) == []
+
+
+async def test_no_single_action_opts_into_agent_fallback(store):
+    result = await _call(
+        "schedule_on_state_change", _ctx(store), entity_id=VACUUM, to_state="cleaning",
+        instruction="Turn on the lights in whichever room I am in.", no_single_action=True,
+    )
+    assert result.status == "ok"
+    assert _pending(store)[0].kind == "agent"

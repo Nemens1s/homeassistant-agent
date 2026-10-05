@@ -56,6 +56,23 @@ async def _ai_action_ids(ctx) -> list[str]:
     return ids
 
 
+async def require_action_or_reminder(ctx, params):
+    """A task must say what happens when it fires. Small models skip optional
+    fields, so 'neither' is refused - with the valid actions in front of the
+    model - unless it explicitly opts into the LLM fallback."""
+    if params.action_entity_id or params.reminder or params.no_single_action:
+        return None
+    from app.tools.base import ToolResult
+
+    return ToolResult.error(
+        "action_or_reminder_required",
+        "Say what happens then: pick action_entity_id from valid_actions, or put the "
+        "message for the user in reminder. Only if no single action fits, set "
+        "no_single_action=true.",
+        data={"valid_actions": await _ai_action_ids(ctx)},
+    )
+
+
 async def validated_action(ctx, entity_id: str, params: dict):
     """check_action plus the list of valid choices, so a wrong pick made while
     scheduling is corrected in the same conversation, not discovered at 18:00."""

@@ -5,7 +5,12 @@ from pydantic import BaseModel, Field, create_model
 
 from app.agent.run_scope import current_scope
 from app.tools.base import Tier, ToolDefinition, ToolResult
-from app.tools.helpers.notes import english_instruction, task_kind, validated_action
+from app.tools.helpers.notes import (
+    english_instruction,
+    require_action_or_reminder,
+    task_kind,
+    validated_action,
+)
 from app.tools.registry import register
 
 _ENTITY_HELP = "The watched entity whose state change triggers the task."
@@ -62,11 +67,9 @@ def resolve_states(requested: str, states: dict[str, str]) -> list[str]:
 
 class Params(BaseModel):
     entity_id: str = Field(description=_ENTITY_HELP)
-    to_state: str | None = Field(
-        None,
-        description="Trigger only when the entity changes to this state, e.g. 'cleaning' "
-        "or 'on'. A partial word matches every state containing it. Omit to trigger "
-        "on any change.",
+    to_state: str = Field(
+        description="The state that triggers it, e.g. 'cleaning' or 'on'. A partial word "
+        "matches every state containing it. Use 'any' only for any change at all.",
     )
     instruction: str = Field(description="What to do then, as one self-contained sentence.")
     action_entity_id: str | None = Field(
@@ -79,6 +82,11 @@ class Params(BaseModel):
     )
     reminder: str | None = Field(
         None, description="A short message to send the user then, if they want to be told something."
+    )
+    no_single_action: bool = Field(
+        False,
+        description="Only true when no single action from list_actions fits; you will "
+        "then be called back to work it out.",
     )
     expires_in_hours: int | None = Field(
         None, description="Drop the task if it has not triggered after this many hours (default 24)."
@@ -119,6 +127,9 @@ async def handler(params: Params, ctx) -> ToolResult:
             f"{params.entity_id!r} is not watched, so a task on it would never trigger.",
             data={"watched": watched},
         )
+    missing = await require_action_or_reminder(ctx, params)
+    if missing is not None:
+        return missing
     if params.action_entity_id:
         error = await validated_action(ctx, params.action_entity_id, params.action_params)
         if error is not None:
@@ -126,8 +137,10 @@ async def handler(params: Params, ctx) -> ToolResult:
 
     # Enum sensors (e.g. a vacuum status) list their raw states in `options`;
     # the UI shows labels like "Segment cleaning" that would never match.
+    # 'any' is an explicit choice now (to_state is required): a small model
+    # left it empty and the task fired on the vacuum's next change of any kind.
     states = []
-    if params.to_state:
+    if params.to_state.strip().lower() != "any":
         state = await ctx.rest.get_state(params.entity_id)
         valid = known_states(params.entity_id, state.get("attributes") or {})
         if valid:

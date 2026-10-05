@@ -61,6 +61,10 @@ New optional parameters, replacing `kind`:
 - `action_params: dict`. Arguments for that script.
 - `reminder: str`. A short message for the user, in English.
 
+**Required choices (added after the first local test).** A 2B model left every optional field empty, which saved a task that fired on *any* vacuum change and went to the LLM. So:
+- `to_state` is **required**. Any change at all must be asked for explicitly with `"any"`.
+- A task with neither `action_entity_id` nor `reminder` is refused with `action_or_reminder_required` and the `valid_actions` list. Only `no_single_action=true` opts a task into the LLM fallback.
+
 Checks when the task is saved. Each failure returns an error envelope, and nothing is saved:
 1. `action_entity_id`, when given, must be an AI-controllable action: an `automation.ai_*` or `script.ai_*` in `allowed_domains`, and not `notify_action`. Otherwise `not_ai_controllable` / `use_notify_user`, with the list of valid actions from the `list_actions` logic.
 2. For a script, `action_params` are checked against its fields using `trigger_action`'s existing `_validate_script_params`. Otherwise `invalid_params`.

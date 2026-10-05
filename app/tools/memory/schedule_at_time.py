@@ -4,7 +4,12 @@ from pydantic import BaseModel, Field
 from app.agent.run_scope import current_scope
 from app.events.clock import FireTimeError, current_local_time, format_clock, resolve_fire_at
 from app.tools.base import Tier, ToolDefinition, ToolResult
-from app.tools.helpers.notes import english_instruction, task_kind, validated_action
+from app.tools.helpers.notes import (
+    english_instruction,
+    require_action_or_reminder,
+    task_kind,
+    validated_action,
+)
 from app.tools.registry import register
 
 
@@ -27,6 +32,11 @@ class Params(BaseModel):
     reminder: str | None = Field(
         None, description="A short message to send the user then, if they want to be told something."
     )
+    no_single_action: bool = Field(
+        False,
+        description="Only true when no single action from list_actions fits; you will "
+        "then be called back to work it out.",
+    )
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -46,6 +56,9 @@ async def handler(params: Params, ctx) -> ToolResult:
         return ToolResult.error(
             "clock_unavailable", f"Could not read the clock {ctx.settings.clock_entity!r}."
         )
+    missing = await require_action_or_reminder(ctx, params)
+    if missing is not None:
+        return missing
     if params.action_entity_id:
         error = await validated_action(ctx, params.action_entity_id, params.action_params)
         if error is not None:
