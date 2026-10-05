@@ -44,6 +44,16 @@ _TOOL_ROUTING = (
     "one failed → load_skill."
 )
 
+_MEMORY_NOTES = (
+    "\n\nNOTES FOR LATER: when the user wants something to happen later - "
+    "'once/when/after X happens, do Y' or 'at 18:00 / in 20 minutes, do Y' - do NOT "
+    "act now. Save a note instead: save_event_note for a device state change, "
+    "save_time_note for a clock time. Use kind='reminder' when the user wants to be "
+    "told something, kind='action' when the house should do something. Then confirm "
+    "in one sentence what you saved. Messages that start with [EVENT] come from the "
+    "home itself, not the user: follow them exactly."
+)
+
 
 def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     prompt = settings.system_prompt + _TOOL_ROUTING
@@ -74,6 +84,8 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
             "create an automation for it — do not investigate further. Every action "
             "also requires the home's AI-actions switch to be on, or it is refused."
         )
+    if settings.watched_entities or settings.clock_entity:
+        prompt += _MEMORY_NOTES
     return prompt
 
 

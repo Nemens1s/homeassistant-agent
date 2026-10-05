@@ -168,3 +168,16 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
     assert built is not None
     _backend, menu_provider = built
     assert menu_provider._prefixes == (AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION)
+
+
+def test_system_prompt_explains_notes_when_enabled(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
+    prompt = build_system_prompt(s, tmp_path)
+    assert "save_event_note" in prompt
+    assert "save_time_note" in prompt
+    assert "[EVENT]" in prompt
+
+
+def test_system_prompt_omits_notes_when_disabled(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=[], clock_entity="")
+    assert "save_event_note" not in build_system_prompt(s, tmp_path)
