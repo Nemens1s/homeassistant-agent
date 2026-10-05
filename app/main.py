@@ -250,7 +250,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
                 # Event-triggered notes: the runner reads app.state.agent at fire
                 # time, the listener subscribes now (or on the first connect).
-                runner = EventRunner(lambda: app.state.agent, cfg)
+                runner = EventRunner(lambda: app.state.agent, cfg, ctx)
                 listener = EventListener(ws, notes, runner, cfg, rest)
                 await listener.start()
                 app.state.event_listener = listener
