@@ -146,3 +146,27 @@ def test_any_of_states_match(store):
     assert _ids(store.match_state(VACUUM, "segment_cleaning", NOW)) == [note_id]
     assert store.match_state(VACUUM, "washing_the_mop", NOW) == []
     assert store.match_state(VACUUM, "segment", NOW) == []  # whole states only
+
+
+def test_action_and_reminder_round_trip(store):
+    note_id = store.add_state_note(
+        entity_id=VACUUM, to_state="cleaning", instruction="Stop the vacuum.",
+        instruction_original=None, kind="both", language="en",
+        expires_at=NOW + timedelta(hours=24), now=NOW, source_thread_id="t1",
+        action_entity_id="script.ai_action_stop_vacuum", action_params={"room": "hall"},
+        reminder="Tidy up the floor.",
+    )
+    note = store.list_pending(NOW)[0]
+    assert note.id == note_id
+    assert note.action_entity_id == "script.ai_action_stop_vacuum"
+    assert note.action_params == {"room": "hall"}
+    assert note.reminder == "Tidy up the floor."
+    assert note.outcome is None
+
+
+def test_record_outcome(store):
+    note_id = _state_note(store)
+    store.mark_fired([note_id], NOW)
+    store.record_outcome(note_id, "done", "Stop Vacuum ✓")
+    note = store.list_recent()[0]
+    assert (note.outcome, note.result) == ("done", "Stop Vacuum ✓")

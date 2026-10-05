@@ -19,7 +19,7 @@ import json
 import logging
 import sqlite3
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
 from app.events.clock import to_key
@@ -43,7 +43,12 @@ CREATE TABLE IF NOT EXISTS memory_notes (
     tags                 TEXT NOT NULL DEFAULT '[]',
     status               TEXT NOT NULL DEFAULT 'pending',
     fired_at             TEXT,
-    source_thread_id     TEXT
+    source_thread_id     TEXT,
+    action_entity_id     TEXT,
+    action_params        TEXT NOT NULL DEFAULT '{}',
+    reminder             TEXT,
+    outcome              TEXT,
+    result               TEXT
 );
 CREATE INDEX IF NOT EXISTS memory_notes_state ON memory_notes(status, entity_id);
 CREATE INDEX IF NOT EXISTS memory_notes_time ON memory_notes(status, fire_at_local);
@@ -54,9 +59,11 @@ _COLUMNS = (
     "id", "trigger_kind", "kind", "created_at", "entity_id", "to_state",
     "expires_at", "fire_at_local", "expires_at_local", "instruction",
     "instruction_original", "language", "tags", "status", "fired_at",
-    "source_thread_id",
+    "source_thread_id", "action_entity_id", "action_params", "reminder",
+    "outcome", "result",
 )
 _TAGS_INDEX = _COLUMNS.index("tags")
+_PARAMS_INDEX = _COLUMNS.index("action_params")
 
 
 def _utc(moment: datetime) -> str:
@@ -81,6 +88,11 @@ class Note:
     status: str  # pending | fired | expired | cancelled
     fired_at: str | None
     source_thread_id: str | None
+    action_entity_id: str | None = None  # the ai_* action run directly when it fires
+    action_params: dict = field(default_factory=dict)
+    reminder: str | None = None  # English text sent to the user when it fires
+    outcome: str | None = None  # done | failed | no_action | agent (set when fired)
+    result: str | None = None  # short human-readable line for the Notes page
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -92,6 +104,10 @@ def _row_to_note(row: tuple) -> Note:
         values[_TAGS_INDEX] = json.loads(values[_TAGS_INDEX] or "[]")
     except ValueError:
         values[_TAGS_INDEX] = []
+    try:
+        values[_PARAMS_INDEX] = json.loads(values[_PARAMS_INDEX] or "{}")
+    except ValueError:
+        values[_PARAMS_INDEX] = {}
     return Note(*values)
 
 
@@ -118,7 +134,10 @@ class NoteStore:
     def add_state_note(self, *, entity_id: str, to_state: str | None, instruction: str,
                        instruction_original: str | None, kind: str, language: str,
                        expires_at: datetime, now: datetime,
-                       source_thread_id: str | None, tags: list[str] = ()) -> int | None:
+                       source_thread_id: str | None, tags: list[str] = (),
+                       action_entity_id: str | None = None,
+                       action_params: dict | None = None,
+                       reminder: str | None = None) -> int | None:
         return self._insert({
             "trigger_kind": "state",
             "kind": kind,
@@ -131,12 +150,18 @@ class NoteStore:
             "language": language,
             "tags": json.dumps(list(tags)),
             "source_thread_id": source_thread_id,
+            "action_entity_id": action_entity_id,
+            "action_params": json.dumps(action_params or {}),
+            "reminder": reminder,
         })
 
     def add_time_note(self, *, fire_at_local: datetime, expires_at_local: datetime,
                       instruction: str, instruction_original: str | None, kind: str,
                       language: str, now: datetime,
-                      source_thread_id: str | None, tags: list[str] = ()) -> int | None:
+                      source_thread_id: str | None, tags: list[str] = (),
+                      action_entity_id: str | None = None,
+                      action_params: dict | None = None,
+                      reminder: str | None = None) -> int | None:
         return self._insert({
             "trigger_kind": "time",
             "kind": kind,
@@ -148,6 +173,9 @@ class NoteStore:
             "language": language,
             "tags": json.dumps(list(tags)),
             "source_thread_id": source_thread_id,
+            "action_entity_id": action_entity_id,
+            "action_params": json.dumps(action_params or {}),
+            "reminder": reminder,
         })
 
     def cancel(self, note_id: int) -> bool:
@@ -164,6 +192,12 @@ class NoteStore:
                 "WHERE id = ? AND status = 'pending'",
                 (_utc(now), note_id),
             )
+
+    def record_outcome(self, note_id: int, outcome: str, result: str) -> None:
+        self._execute(
+            "UPDATE memory_notes SET outcome = ?, result = ? WHERE id = ?",
+            (outcome, result, note_id),
+        )
 
     # ---------- reads ----------
     def list_pending(self, now: datetime) -> list[Note]:
