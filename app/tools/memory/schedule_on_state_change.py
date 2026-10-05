@@ -42,7 +42,6 @@ class Params(BaseModel):
     kind: Literal["action", "reminder"] = Field(
         description="'reminder' = tell the user something; 'action' = make the house do something."
     )
-    tags: list[str] = Field(default_factory=list, description="Optional short labels.")
     expires_in_hours: int | None = Field(
         None, description="Drop the task if it has not triggered after this many hours (default 24)."
     )
@@ -106,7 +105,6 @@ async def handler(params: Params, ctx) -> ToolResult:
         instruction_original=original,
         kind=params.kind,
         language=scope.language,
-        tags=params.tags,
         expires_at=now + timedelta(hours=hours),
         now=now,
         source_thread_id=scope.thread_id,

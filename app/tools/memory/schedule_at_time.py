@@ -21,7 +21,6 @@ class Params(BaseModel):
     kind: Literal["action", "reminder"] = Field(
         description="'reminder' = tell the user something; 'action' = make the house do something."
     )
-    tags: list[str] = Field(default_factory=list, description="Optional short labels.")
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -49,7 +48,6 @@ async def handler(params: Params, ctx) -> ToolResult:
         instruction_original=original,
         kind=params.kind,
         language=scope.language,
-        tags=params.tags,
         now=datetime.now(timezone.utc),
         source_thread_id=scope.thread_id,
     )

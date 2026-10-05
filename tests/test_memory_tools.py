@@ -257,3 +257,8 @@ async def test_entity_without_options_keeps_state_as_given(store):
         entity_id=VACUUM, to_state="cleaning", instruction="Stop it.", kind="action",
     )
     assert result.data["to_state"] == ["cleaning"]
+
+
+def test_schedule_tools_do_not_ask_for_tags():
+    for name in ("schedule_on_state_change", "schedule_at_time"):
+        assert "tags" not in registry.get(name).params_model.model_fields, name

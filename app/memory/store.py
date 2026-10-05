@@ -77,7 +77,7 @@ class Note:
     instruction: str  # always English
     instruction_original: str | None  # what the user said, when it differed
     language: str  # the user's language, for notifications
-    tags: list[str]
+    tags: list[str]  # not set by any tool today; kept for future labels
     status: str  # pending | fired | expired | cancelled
     fired_at: str | None
     source_thread_id: str | None
@@ -117,8 +117,8 @@ class NoteStore:
     # ---------- writes ----------
     def add_state_note(self, *, entity_id: str, to_state: str | None, instruction: str,
                        instruction_original: str | None, kind: str, language: str,
-                       tags: list[str], expires_at: datetime, now: datetime,
-                       source_thread_id: str | None) -> int | None:
+                       expires_at: datetime, now: datetime,
+                       source_thread_id: str | None, tags: list[str] = ()) -> int | None:
         return self._insert({
             "trigger_kind": "state",
             "kind": kind,
@@ -135,8 +135,8 @@ class NoteStore:
 
     def add_time_note(self, *, fire_at_local: datetime, expires_at_local: datetime,
                       instruction: str, instruction_original: str | None, kind: str,
-                      language: str, tags: list[str], now: datetime,
-                      source_thread_id: str | None) -> int | None:
+                      language: str, now: datetime,
+                      source_thread_id: str | None, tags: list[str] = ()) -> int | None:
         return self._insert({
             "trigger_kind": "time",
             "kind": kind,

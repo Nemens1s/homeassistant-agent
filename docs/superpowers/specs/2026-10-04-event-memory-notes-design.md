@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS memory_notes (
   instruction          TEXT NOT NULL,             -- always English
   instruction_original TEXT,                      -- as given, when it differed
   language             TEXT NOT NULL DEFAULT 'en',-- user's language for notifications
-  tags                 TEXT NOT NULL DEFAULT '[]',
+  tags                 TEXT NOT NULL DEFAULT '[]',  -- unused by tools today
   status               TEXT NOT NULL DEFAULT 'pending', -- pending|fired|expired|cancelled
   fired_at             TEXT,
   source_thread_id     TEXT
@@ -297,8 +297,8 @@ There are two save tools, not one tool with a trigger-type union, because small 
 
 | Tool | Params | Behaviour |
 |---|---|---|
-| `schedule_on_state_change` | `entity_id`, `to_state?`, `instruction`, `kind: action\|reminder`, `tags?`, `expires_in_hours?` | Rejects with `entity_not_watched` (data: the watched list) unless the entity is watched. Clamps the TTL to `memory_note_max_ttl_hours`. Returns `{id, entity_id, to_state, expires_at}`. |
-| `schedule_at_time` | `at?: "HH:MM" or "HH:MM DD-MM-YYYY"`, `in_minutes?: int`, `instruction`, `kind`, `tags?` | Exactly one of `at` / `in_minutes` is required (`invalid_params` otherwise). "Now" comes from `current_local_time(ctx)`; if it is `None`, returns `clock_unavailable`. A bare `HH:MM` that has already passed today means tomorrow. A past full date is rejected with `in_past`. Stores `fire_at_local` and `expires_at_local = fire_at + grace`. Returns `{id, fire_at: "HH:MM DD-MM-YYYY"}` in the clock's format, so the agent can echo it back. |
+| `schedule_on_state_change` | `entity_id`, `to_state?`, `instruction`, `kind: action\|reminder`, `expires_in_hours?` | Rejects with `entity_not_watched` (data: the watched list) unless the entity is watched. Clamps the TTL to `memory_note_max_ttl_hours`. Returns `{id, entity_id, to_state, expires_at}`. |
+| `schedule_at_time` | `at?: "HH:MM" or "HH:MM DD-MM-YYYY"`, `in_minutes?: int`, `instruction`, `kind` | Exactly one of `at` / `in_minutes` is required (`invalid_params` otherwise). "Now" comes from `current_local_time(ctx)`; if it is `None`, returns `clock_unavailable`. A bare `HH:MM` that has already passed today means tomorrow. A past full date is rejected with `in_past`. Stores `fire_at_local` and `expires_at_local = fire_at + grace`. Returns `{id, fire_at: "HH:MM DD-MM-YYYY"}` in the clock's format, so the agent can echo it back. |
 | `list_scheduled` | none | Pending notes: `id`, trigger (entity/state or fire time), kind, instruction (English), created, expires. |
 | `cancel_scheduled` | `id` | Sets the status to `cancelled`. Returns `not_found` for unknown or non-pending ids. |
 
