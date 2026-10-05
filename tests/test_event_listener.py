@@ -19,6 +19,21 @@ class FakeWS:
         self.subscriptions.append((message, callback))
 
 
+class FakeSwitchRest:
+    """Point-reads of the AI-actions switch."""
+
+    def __init__(self, state="on", fail=False):
+        self.state = state
+        self.fail = fail
+        self.reads = 0
+
+    async def get_state(self, entity_id):
+        self.reads += 1
+        if self.fail:
+            raise ConnectionError("HA down")
+        return {"entity_id": entity_id, "state": self.state}
+
+
 class FakeRunner:
     def __init__(self, store):
         self.store = store
@@ -72,10 +87,11 @@ def _time_note(store, fire_at):
     )
 
 
-def _listener(store, **overrides):
+def _listener(store, rest=None, **overrides):
     ws = FakeWS()
     runner = FakeRunner(store)
-    return EventListener(ws, store, runner, _settings(**overrides)), ws, runner
+    rest = rest or FakeSwitchRest()
+    return EventListener(ws, store, runner, _settings(**overrides), rest), ws, runner
 
 
 def test_subscription_ignores_attribute_changes():
@@ -155,3 +171,43 @@ async def test_garbage_clock_state_is_ignored(store):
     listener, _, runner = _listener(store)
     await listener.handle_event(_event(CLOCK, "17:59 05-10-2026", "not a time"))
     assert runner.runs == []
+
+
+@pytest.mark.parametrize("rest", [
+    FakeSwitchRest(state="off"),
+    FakeSwitchRest(state="unavailable"),
+    FakeSwitchRest(fail=True),
+])
+async def test_switch_off_or_unreadable_keeps_notes_pending(store, rest):
+    note_id = _vacuum_note(store)
+    listener, _, runner = _listener(store, rest=rest)
+    await listener.handle_event(_event(VACUUM, "docked", "cleaning"))
+    assert runner.runs == []  # no LLM call
+    pending = store.list_pending(datetime.now(timezone.utc))
+    assert [note.id for note in pending] == [note_id]  # can still fire later
+
+
+async def test_note_fires_once_switch_is_back_on(store):
+    rest = FakeSwitchRest(state="off")
+    note_id = _vacuum_note(store)
+    listener, _, runner = _listener(store, rest=rest)
+    await listener.handle_event(_event(VACUUM, "docked", "cleaning"))
+    rest.state = "on"
+    await listener.handle_event(_event(VACUUM, "docked", "cleaning"))
+    assert runner.runs[0]["ids"] == [note_id]
+
+
+async def test_unmatched_events_do_not_read_the_switch(store):
+    rest = FakeSwitchRest()
+    listener, _, _ = _listener(store, rest=rest)
+    await listener.handle_event(_event(VACUUM, "docked", "cleaning"))
+    await listener.handle_event(_event(CLOCK, "17:58 05-10-2026", "17:59 05-10-2026"))
+    assert rest.reads == 0
+
+
+async def test_empty_switch_setting_disables_the_gate(store):
+    rest = FakeSwitchRest(state="off")
+    note_id = _vacuum_note(store)
+    listener, _, runner = _listener(store, rest=rest, ai_actions_switch="")
+    await listener.handle_event(_event(VACUUM, "docked", "cleaning"))
+    assert runner.runs[0]["ids"] == [note_id]

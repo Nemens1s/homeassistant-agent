@@ -331,7 +331,7 @@ Without a guard, "once the vacuum starts, stop it" could be classified by Needle
 | WS disconnected | Listener idles. Subscription re-sent on reconnect. Missed state events are not replayed. Time notes catch up on the next tick, within their grace period. |
 | Clock entity unavailable | No ticks, so time notes wait. Once the clock returns, they fire if still inside the grace period, otherwise they expire. `save_time_note` returns `clock_unavailable`. |
 | Feature switched off (empty `watched_entities` / `clock_entity`) | That trigger type isn't subscribed, and its save tool returns `feature_disabled`. |
-| AI switch off when a note fires | `trigger_action` and `notify_user` both return `ai_disabled`, so nothing is delivered. The note stays `fired`, and the attempt is visible in the `events` thread and telemetry. Accepted: the user turned the AI off on purpose. |
+| AI switch off when a note fires | The listener point-reads `ai_actions_switch` (fail-closed, like the adapter) before marking notes fired. Off or unreadable ⇒ no agent run, no LLM call, notes stay `pending` and can still fire before they expire (a due time note re-checks on each clock tick). `trigger_action` / `notify_user` keep their own gate as a second line. |
 | lang-mt down | Notes are stored as given (`language` still recorded). Notifications are sent in English. |
 | Agent run raises | Logged with the note ids. Listener keeps running. Notes stay `fired`. |
 | Note store errors | Logged. Matching returns `[]`, so the event is ignored, and tools return `notes_unavailable`. |

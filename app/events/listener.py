@@ -34,11 +34,12 @@ def _state_of(state_obj) -> str:
 
 
 class EventListener:
-    def __init__(self, ws, notes, runner, settings) -> None:
+    def __init__(self, ws, notes, runner, settings, rest) -> None:
         self._ws = ws
         self._notes = notes
         self._runner = runner
         self._settings = settings
+        self._rest = rest  # point-reads of the AI-actions switch
 
     def _entities(self) -> list[str]:
         entities = []
@@ -87,10 +88,27 @@ class EventListener:
         trigger = Trigger(kind="state", entity_id=entity_id, from_state=old, to_state=new)
         await self._fire(trigger, notes)
 
+    async def _ai_switch_on(self) -> bool:
+        """The home-level AI switch, read fail-closed like the tool adapter's
+        gate: only a readable "on" lets an event run. "" disables the gate."""
+        switch = self._settings.ai_actions_switch
+        if not switch:
+            return True
+        try:
+            state = await self._rest.get_state(switch)
+        except Exception:
+            return False
+        return state.get("state") == "on"
+
     async def _fire(self, trigger: Trigger, notes: list) -> None:
         note_ids = []
         for note in notes:
             note_ids.append(note.id)
+        # Checked before marking fired: with the switch off the notes stay
+        # pending (and may still fire before they expire) and no LLM runs.
+        if not await self._ai_switch_on():
+            log.info("events: AI actions switched off — notes %s left pending", note_ids)
+            return
         # Fired BEFORE the run: a crash mid-run must not make a note fire twice.
         self._notes.mark_fired(note_ids, datetime.now(timezone.utc))
         log.info("events: firing notes=%s trigger=%s", note_ids, trigger)
