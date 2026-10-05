@@ -70,6 +70,17 @@ class in `app/config.py`; in the addon container it reads
 - `skills/` — markdown playbooks with YAML frontmatter, listed in the system
   prompt, loaded on demand via the `load_skill` tool. Skills are data;
   iterate on them without code changes.
+- `events/` — the proactive half. `listener.py` holds one `subscribe_trigger`
+  over `watched_entities` + `clock_entity`, matches each event against notes
+  in SQL, and only then runs the agent via `runner.py` (thread `events`, fast
+  path off). `clock.py` parses the World Clock sensor (`HH:MM DD-MM-YYYY`);
+  all time-note maths stays in that wall time. Most events cost no LLM call.
+- `memory/store.py` — `NoteStore`, the `memory_notes` table in the checkpoint
+  DB. One-shot notes (state or time trigger), English instruction + original
+  text, never raises.
+- `agent/run_scope.py` — per-run facts the agent never sees (user language,
+  notify suppression, thread id). Callers put them in `configurable`; the
+  adapter exposes them to handlers via `current_scope()`.
 - `main.py` — FastAPI app FACTORY (`create_app`; run with `--factory`).
   No import-time singletons anywhere — everything is built by factories
   with injected settings.
@@ -88,11 +99,16 @@ class in `app/config.py`; in the addon container it reads
 - Prefer plain, readable Python: regular `for` loops over comprehensions,
   explicit steps over clever one-liners. Optimize for readability, not
   brevity.
-- Writes are menu-only: the agent's only action tool is `trigger_automation`,
-  which triggers only `automation.ai_*` automations, and every ACTION-tier call
+- Writes are menu-only: the agent's action tools are `trigger_action` (only
+  `automation.ai_*` / `script.ai_*`) and `notify_user` (only
+  `settings.notify_action`, itself a `script.ai_*`; it translates, and may
+  silently suppress when event confirmations are off). Every ACTION-tier call
   is gated in `tools/adapter.py` by a fail-closed point-read of
   `settings.ai_actions_switch` (default `input_boolean.ai_triggered_actions`).
-  Off/unreadable ⇒ refused (`ai_disabled` / `ai_gate_unavailable`).
+  Off/unreadable ⇒ refused (`ai_disabled` / `ai_gate_unavailable`). The memory
+  note tools are READ tier on purpose: they write agent-local state, never HA.
+- HA scripts live in the SmartHome repo (`Suur-Ameerika/ai_actions/`); this
+  repo only defines their contract.
 
 ## Where things live
 

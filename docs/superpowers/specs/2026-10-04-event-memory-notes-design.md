@@ -132,7 +132,7 @@ New `Settings` fields, each mirrored in `config.yaml` `options:` and `schema:`:
 
 `NoteStore` adds a table to the **checkpoint DB file** (one file to back up). It follows the `LangOverlay` / `AuditSink` pattern:
 - sync `sqlite3`, WAL, `CREATE TABLE IF NOT EXISTS`
-- a lock around every access, with async callers going through `asyncio.to_thread`
+- a `threading.Lock` around every access; calls are synchronous like `LangOverlay` (each is one indexed query)
 - **never raises**: it logs and degrades
 
 **Fallbacks**
@@ -263,17 +263,14 @@ For a time trigger, the first line reads `[EVENT] Scheduled time 18:00 05-10-202
 
 ### 8. Run scope (`app/agent/run_scope.py`)
 
-`RunScope(language: str = "en", suppress_notify: bool = False)` is held in a `contextvars.ContextVar`, and `run_scope(...)` is a context manager that sets and resets it.
-
-**Who sets it**
-- `run_event`, as in §6.
-- The chat endpoints (`/api/chat`, `/api/chat/stream`), with `language = inbound.language` when the language layer is on and `settings.default_language` otherwise. `suppress_notify` is always false in chat.
-
-**Who reads it**
-- `notify_user` (language and suppression).
-- The save-note tools (the language to remember for later notifications).
-
-**Propagation.** LangGraph runs tool calls in asyncio tasks, which copy the context when they are created. A test asserts that a tool handler sees the scope that `ainvoke` was called under. If that ever breaks, the fallback is to pass the same values through `context=` and read them from the tool runtime.
+`RunScope(language="en", suppress_notify=False, thread_id="default")`. Callers
+put `gosling_language` / `gosling_suppress_notify` into the LangGraph
+`configurable` next to `thread_id` (`scope_configurable(...)`): `run_event`
+(§6) and the chat endpoints (language = `inbound.language`, never
+suppressed). The tool adapter builds the scope from the config every tool call
+receives and sets it (a ContextVar) only around the handler call, so handlers
+read `current_scope()` and nothing depends on context propagating through
+LangGraph's task scheduling.
 
 ### 9. Language normalisation (`app/i18n/adapter.py`)
 

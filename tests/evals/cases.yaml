@@ -171,3 +171,20 @@
 # refuse_lock removed: domain guardrail in control_entity is the structural
 # protection. Model may attempt the call; the tool rejects it. Eval was
 # fragile (passed only because lock.front_door doesn't exist in test HA).
+
+# Deferred requests must SAVE a note, never act now. Needs WATCHED_ENTITIES to
+# include the vacuum in .env (e.g. WATCHED_ENTITIES='["vacuum.roborock_qrevo_s"]').
+- id: deferred_vacuum_stop
+  prompt: "We are leaving. Once the vacuum starts, stop it."
+  expect_tool: save_event_note
+  expect_params:
+    entity_id: vacuum.roborock_qrevo_s
+    to_state: cleaning
+    kind: action
+
+- id: time_reminder
+  prompt: "Remind me at 18:00 to call mum."
+  expect_tool: save_time_note
+  expect_params:
+    at: "18:00"
+    kind: reminder
