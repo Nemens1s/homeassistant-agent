@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, create_model
 
 from app.agent.run_scope import current_scope
 from app.tools.base import Tier, ToolDefinition, ToolResult
-from app.tools.helpers.notes import english_instruction
+from app.tools.helpers.notes import english_instruction, task_kind, validated_action
 from app.tools.registry import register
 
 _ENTITY_HELP = "The watched entity whose state change triggers the task."
@@ -69,8 +69,16 @@ class Params(BaseModel):
         "on any change.",
     )
     instruction: str = Field(description="What to do then, as one self-contained sentence.")
-    kind: Literal["action", "reminder"] = Field(
-        description="'reminder' = tell the user something; 'action' = make the house do something."
+    action_entity_id: str | None = Field(
+        None,
+        description="The action from list_actions to run then (as for trigger_action). "
+        "Omit if no single action does it.",
+    )
+    action_params: dict = Field(
+        default_factory=dict, description="Arguments for that action (its params schema)."
+    )
+    reminder: str | None = Field(
+        None, description="A short message to send the user then, if they want to be told something."
     )
     expires_in_hours: int | None = Field(
         None, description="Drop the task if it has not triggered after this many hours (default 24)."
@@ -111,6 +119,10 @@ async def handler(params: Params, ctx) -> ToolResult:
             f"{params.entity_id!r} is not watched, so a task on it would never trigger.",
             data={"watched": watched},
         )
+    if params.action_entity_id:
+        error = await validated_action(ctx, params.action_entity_id, params.action_params)
+        if error is not None:
+            return error
 
     # Enum sensors (e.g. a vacuum status) list their raw states in `options`;
     # the UI shows labels like "Segment cleaning" that would never match.
@@ -133,6 +145,9 @@ async def handler(params: Params, ctx) -> ToolResult:
     hours = params.expires_in_hours or ctx.settings.memory_note_default_ttl_hours
     hours = max(1, min(hours, ctx.settings.memory_note_max_ttl_hours))
     english, original = await english_instruction(ctx, params.instruction)
+    reminder = None
+    if params.reminder:
+        reminder, _original = await english_instruction(ctx, params.reminder)
     scope = current_scope()
     now = datetime.now(timezone.utc)
     note_id = ctx.notes.add_state_note(
@@ -140,11 +155,14 @@ async def handler(params: Params, ctx) -> ToolResult:
         to_state="|".join(states) if states else None,
         instruction=english,
         instruction_original=original,
-        kind=params.kind,
+        kind=task_kind(params.action_entity_id, reminder),
         language=scope.language,
         expires_at=now + timedelta(hours=hours),
         now=now,
         source_thread_id=scope.thread_id,
+        action_entity_id=params.action_entity_id,
+        action_params=params.action_params,
+        reminder=reminder,
     )
     if note_id is None:
         return ToolResult.error("notes_unavailable", "Could not save the task.")
@@ -152,6 +170,8 @@ async def handler(params: Params, ctx) -> ToolResult:
         "id": note_id,
         "entity_id": params.entity_id,
         "to_state": states or None,
+        "action": params.action_entity_id,
+        "reminder": reminder,
         "expires_in_hours": hours,
     })
 
@@ -161,10 +181,10 @@ register(
         name="schedule_on_state_change",
         description=(
             "Make the house react LATER, when a device changes state - use this instead of "
-            "an automation. E.g. 'once the vacuum starts, stop it' -> the vacuum's "
-            "entity_id, to_state='cleaning', kind='action'. When it happens you are called "
-            "back and carry out `instruction` with your normal tools. Do not act now. For "
-            "a clock time use schedule_at_time."
+            "an automation. E.g. 'once the vacuum starts, stop it' -> entity_id=the vacuum, "
+            "to_state='cleaning', action_entity_id=the stop action from list_actions. Put "
+            "anything to tell the user in reminder. Do not act now. For a clock time use "
+            "schedule_at_time."
         ),
         params_model=Params,
         tier=Tier.READ,  # agent-local state only; never writes to HA

@@ -48,13 +48,14 @@ _MEMORY_NOTES = (
     "\n\nDOING THINGS LATER: you cannot create automations, and you never need to. "
     "When the user wants something to happen LATER - 'once/when/after X happens, do Y' "
     "or 'at 18:00 / in 20 minutes, do Y' - schedule it instead of creating an automation: "
-    "schedule_on_state_change when a device changes state, schedule_at_time for a clock time. "
-    "Do NOT act now and do NOT look for an automation. When the moment comes, you will "
-    "be called back with an [EVENT] message and carry out the instruction yourself with "
-    "your normal tools (list_actions, trigger_action). kind='reminder' = tell the user "
-    "something; kind='action' = make the house do something. Confirm in one sentence "
-    "what you scheduled. Messages that start with [EVENT] come from the home itself: "
-    "follow them exactly. Never tell the user to create an automation for this."
+    "schedule_on_state_change when a device changes state, schedule_at_time for a clock "
+    "time. Do NOT act now. If one action from list_actions does it, pass its entity_id as "
+    "action_entity_id (and action_params) - call list_actions first if you need to. Put "
+    "anything the user wants to be told in reminder. Only if no single action fits, leave "
+    "both out: you will be called back with an [EVENT] message and carry out the "
+    "instruction yourself. Confirm in one sentence what you scheduled. Messages that "
+    "start with [EVENT] come from the home itself: follow them exactly. Never tell the "
+    "user to create an automation for this."
 )
 
 

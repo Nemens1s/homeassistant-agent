@@ -207,6 +207,7 @@ def test_save_note_descriptions_explain_they_run_later():
     for name in ("schedule_on_state_change", "schedule_at_time"):
         description = reg.get(name).description
         assert len(description) <= 400, name
-        assert "called back" in description, name
         assert "instead of an automation" in description, name
+        assert "action_entity_id" in description, name
+        assert "reminder" in description, name
     reg._reset_for_tests()

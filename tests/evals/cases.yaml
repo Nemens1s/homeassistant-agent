@@ -180,11 +180,10 @@
   expect_params:
     entity_id: vacuum.roborock_qrevo_s
     to_state: cleaning
-    kind: action
+    action_entity_id: script.ai_action_stop_vacuum
 
 - id: time_reminder
   prompt: "Remind me at 18:00 to call mum."
   expect_tool: schedule_at_time
   expect_params:
     at: "18:00"
-    kind: reminder
