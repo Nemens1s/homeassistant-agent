@@ -248,3 +248,26 @@ def test_websocket_client_kept_when_ha_is_down():
         ws = client.app.state.ws
         assert ws is not None  # reconnecting in the background, not dropped
         assert ws.connected is False
+
+
+class RecordingAgent:
+    def __init__(self):
+        self.configs = []
+
+    async def ainvoke(self, payload, config=None):
+        self.configs.append(config)
+        return {"messages": [AIMessage(content="ok")]}
+
+
+def test_chat_passes_run_scope_to_the_graph():
+    from app.agent.run_scope import LANGUAGE_KEY, SUPPRESS_NOTIFY_KEY
+
+    app = create_app(_settings())
+    agent = RecordingAgent()
+    with TestClient(app) as client:
+        client.app.state.agent = agent
+        client.post("/api/chat", json={"message": "hello", "thread_id": "t9"})
+    configurable = agent.configs[0]["configurable"]
+    assert configurable["thread_id"] == "t9"
+    assert configurable[LANGUAGE_KEY] == "en"
+    assert configurable[SUPPRESS_NOTIFY_KEY] is False

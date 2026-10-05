@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
+from app.agent.run_scope import scope_configurable
 from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
@@ -292,10 +293,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request_id = format(trace_id, "032x") if trace_id else None
 
             try:
+                configurable = {"thread_id": req.thread_id}
+                configurable.update(scope_configurable(inbound.language))
                 result = await app.state.agent.ainvoke(
                     {"messages": [{"role": "user", "content": inbound.english_text}]},
                     config={
-                        "configurable": {"thread_id": req.thread_id},
+                        "configurable": configurable,
                         "recursion_limit": app.state.settings.recursion_limit,
                     },
                 )
@@ -382,6 +385,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         inbound.english_text,
                         req.thread_id,
                         app.state.settings.recursion_limit,
+                        extra_configurable=scope_configurable(inbound.language),
                     ):
                         if event.get("type") == "done":
                             # Tokens streamed in English (they cannot be

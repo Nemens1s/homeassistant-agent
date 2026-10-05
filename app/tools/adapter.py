@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
 
+from app.agent.run_scope import scope_from_config, use_scope
 from app.tools import registry
 from app.tools.base import ToolDefinition, ToolResult, entity_domain
 from app.tools.context import ToolContext
@@ -147,7 +148,8 @@ def to_structured_tool(
             if block is not None:
                 result = block
             else:
-                result = await _invoke_handler(defn, params_model, ctx, kwargs)
+                with use_scope(scope_from_config(config)):
+                    result = await _invoke_handler(defn, params_model, ctx, kwargs)
         duration_ms = round((time.monotonic() - started) * 1000)
         log.info(
             "tool=%s tier=%s status=%s duration_ms=%s args=%s",
