@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent Gosling — Notes</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="actions.css" />
+<link rel="stylesheet" href="notes.css" />
+</head>
+<body>
+  <header>
+    <h2>Agent Gosling</h2>
+    <nav class="tabs">
+      <a href="index.html" class="tab">Chat</a>
+      <a href="metrics.html" class="tab">Metrics</a>
+      <a href="actions.html" class="tab">Actions</a>
+      <a href="notes.html" class="tab active">Notes</a>
+    </nav>
+  </header>
+
+  <main class="actions-main">
+    <div id="error-banner" class="banner" hidden></div>
+    <div id="loading" class="actions-loading">Loading…</div>
+    <div id="notes-content" hidden>
+      <section class="actions-section">
+        <h3 class="actions-section-title">Pending</h3>
+        <p id="pending-empty" class="actions-loading" hidden>No pending notes.</p>
+        <ul class="actions-ul" id="pending-list"></ul>
+      </section>
+      <details class="actions-section">
+        <summary class="actions-section-title">History</summary>
+        <ul class="actions-ul" id="history-list"></ul>
+      </details>
+      <a class="notes-events-link" href="index.html?thread=events">Open the event runs thread</a>
+    </div>
+  </main>
+
+  <script src="notes.js"></script>
+</body>
+</html>

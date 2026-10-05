@@ -602,6 +602,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return {"ok": True}
 
+    def _note_store():
+        from fastapi import HTTPException
+
+        notes = getattr(app.state, "notes", None)
+        if notes is None:
+            raise HTTPException(status_code=503, detail="note store unavailable")
+        return notes
+
+    @app.get("/api/notes")
+    async def list_notes(status: str = "pending") -> dict:
+        from datetime import datetime, timezone
+
+        notes = _note_store()
+        if status == "all":
+            rows = notes.list_recent(limit=100)
+        else:
+            rows = notes.list_pending(datetime.now(timezone.utc))
+        result = []
+        for note in rows:
+            result.append(note.to_dict())
+        return {"notes": result}
+
+    @app.delete("/api/notes/{note_id}")
+    async def delete_note(note_id: int) -> dict:
+        from fastapi import HTTPException
+
+        notes = _note_store()
+        if not notes.cancel(note_id):
+            raise HTTPException(status_code=404, detail="no pending note with that id")
+        return {"ok": True}
+
     # Mounted last so /api/* wins. Frontend must use relative fetch paths
     # ("api/chat", not "/api/chat") — HA ingress serves us under a prefix.
     app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
