@@ -43,10 +43,13 @@ function buildRow(note, pending) {
   const meta = document.createElement("span");
   meta.className = "note-meta";
   let details = `${note.kind} · ${triggerText(note)} · saved ${localTime(note.created_at)}`;
+  if (note.action_entity_id) details += ` · runs ${note.action_entity_id}`;
+  if (note.reminder) details += ` · reminds "${note.reminder}"`;
   if (pending) {
     details += ` · expires ${expiresText(note)}`;
   } else {
     details += ` · ${note.status}`;
+    if (note.result) details += ` → ${note.result}`;
   }
   meta.textContent = details;
 

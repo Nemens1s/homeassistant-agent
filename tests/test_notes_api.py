@@ -76,3 +76,13 @@ def test_notes_unavailable_is_503():
         client.app.state.notes = None
         assert client.get("/api/notes").status_code == 503
         assert client.delete("/api/notes/1").status_code == 503
+
+
+def test_history_includes_outcome():
+    store, _pending, fired = _store_with_notes()
+    store.record_outcome(fired, "done", "Stop Vacuum ✓")
+    with TestClient(create_app(_settings())) as client:
+        client.app.state.notes = store
+        body = client.get("/api/notes?status=all").json()
+    row = body["notes"][0]
+    assert (row["outcome"], row["result"]) == ("done", "Stop Vacuum ✓")
