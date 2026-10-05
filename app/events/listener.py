@@ -82,7 +82,7 @@ class EventListener:
 
     async def _on_state(self, entity_id: str, old: str, new: str) -> None:
         notes = self._notes.match_state(entity_id, new, datetime.now(timezone.utc))
-        log.debug("event entity=%s from=%s to=%s matched=%d", entity_id, old, new, len(notes))
+        log.info("events: entity=%s %s → %s matched=%d", entity_id, old, new, len(notes))
         if not notes:
             return
         trigger = Trigger(kind="state", entity_id=entity_id, from_state=old, to_state=new)

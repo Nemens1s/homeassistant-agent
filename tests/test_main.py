@@ -288,3 +288,15 @@ def test_lifespan_subscribes_the_event_listener():
         assert len(ws._subscriptions) == 1
         message = ws._subscriptions[0][0]
         assert message["trigger"]["entity_id"] == ["sensor.europe_tallinn"]
+
+
+def test_create_app_makes_agent_info_logs_visible():
+    import logging
+
+    create_app(_settings())
+    for name in ("agent", "fast_path"):
+        logger = logging.getLogger(name)
+        assert logger.getEffectiveLevel() <= logging.INFO, name
+        assert logger.handlers, name  # uvicorn configures only its own loggers
+    create_app(_settings())  # idempotent: building twice adds no second handler
+    assert len(logging.getLogger("agent").handlers) == 1

@@ -40,6 +40,24 @@ from app.tools.context import ToolContext
 
 log = logging.getLogger("agent")
 
+# App loggers that should reach stdout. Uvicorn configures only its own
+# loggers, so without this every agent.* INFO line (tool audit, event
+# matches, firings) is silently dropped and only warnings get through.
+_APP_LOGGERS = ("agent", "fast_path")
+
+
+def _configure_app_logging() -> None:
+    formatter = logging.Formatter("%(levelname)s:     %(name)s %(message)s")
+    for name in _APP_LOGGERS:
+        logger = logging.getLogger(name)
+        if logger.handlers:
+            continue  # idempotent: create_app may run more than once
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        if logger.level == logging.NOTSET:
+            logger.setLevel(logging.INFO)
+
 
 def _assert_otlp_is_lan(endpoint: str) -> None:
     """Refuse to start if the OTLP endpoint resolves to a public IP.
@@ -135,6 +153,7 @@ class ToggleRequest(BaseModel):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
+    _configure_app_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

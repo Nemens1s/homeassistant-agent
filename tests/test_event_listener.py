@@ -211,3 +211,25 @@ async def test_empty_switch_setting_disables_the_gate(store):
     listener, _, runner = _listener(store, rest=rest, ai_actions_switch="")
     await listener.handle_event(_event(VACUUM, "docked", "cleaning"))
     assert runner.runs[0]["ids"] == [note_id]
+
+
+async def test_watched_state_change_is_logged_at_info(store, caplog):
+    import logging
+
+    listener, _, _ = _listener(store)
+    with caplog.at_level(logging.INFO, logger="agent.events"):
+        await listener.handle_event(_event(VACUUM, "docked", "cleaning"))
+    messages = []
+    for record in caplog.records:
+        if record.levelno == logging.INFO:
+            messages.append(record.getMessage())
+    assert any(f"entity={VACUUM}" in m and "matched=0" in m for m in messages)
+
+
+async def test_clock_tick_without_due_tasks_is_silent(store, caplog):
+    import logging
+
+    listener, _, _ = _listener(store)
+    with caplog.at_level(logging.DEBUG, logger="agent.events"):
+        await listener.handle_event(_event(CLOCK, "17:58 05-10-2026", "17:59 05-10-2026"))
+    assert caplog.records == []
