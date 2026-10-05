@@ -246,3 +246,50 @@ async def test_no_required_field_in_schema_triggers_without_args():
     resp = await mw.awrap_model_call(_request([HumanMessage("lights on")]), _fail_handler)
     assert isinstance(resp, AIMessage)
     assert resp.tool_calls[0]["args"]["entity_id"] == "script.ai_action_lights_on"
+
+
+from app.agent.middleware.fast_path_middleware import has_deferral_cue
+
+
+@pytest.mark.parametrize("text", [
+    "Once the vacuum starts, stop it",
+    "when we get home remind me to cook",
+    "Remind me to call mum",
+    "turn off the lights in 20 minutes",
+    "at 18:00 turn on the lights",
+    "send the vacuum to the kitchen tomorrow",
+])
+def test_deferral_cues(text):
+    assert has_deferral_cue(text)
+
+
+@pytest.mark.parametrize("text", [
+    "turn on the lights",
+    "stop the vacuum",
+    "goodnight",
+    "set the living room brightness to 40",
+])
+def test_immediate_requests_have_no_cue(text):
+    assert not has_deferral_cue(text)
+
+
+@pytest.mark.asyncio
+async def test_deferred_request_falls_through_to_llm():
+    menu = Menu(
+        items=(MenuItem("script.ai_action_stop_vacuum", "Stop Vacuum", "stop the vacuum"),),
+        signature="v",
+    )
+    mw = FastPathMiddleware(
+        FakeBackend(Decision("script.ai_action_stop_vacuum", 0.99)), _FakeMenu(menu), threshold=0.0
+    )
+    called = {}
+
+    async def handler(request):
+        called["yes"] = True
+        return AIMessage("saving a note")
+
+    resp = await mw.awrap_model_call(
+        _request([HumanMessage("Once the vacuum starts, stop it")]), handler
+    )
+    assert called == {"yes": True}
+    assert resp.content == "saving a note"
