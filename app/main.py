@@ -32,6 +32,8 @@ from app.config import Settings, load_settings
 from app.i18n import build_language_adapter, set_language_attributes
 from app.i18n.store import LangOverlay, apply_overlay
 from app.ha.rest import RestClient
+from app.events.listener import EventListener
+from app.events.runner import EventRunner
 from app.memory.store import NoteStore
 from app.ha.websocket import WebSocketClient, ws_is_ready
 from app.tools.context import ToolContext
@@ -226,6 +228,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.rest = rest
                 app.state.ws = ws
                 app.state.agent = agent
+
+                # Event-triggered notes: the runner reads app.state.agent at fire
+                # time, the listener subscribes now (or on the first connect).
+                runner = EventRunner(lambda: app.state.agent, cfg)
+                listener = EventListener(ws, notes, runner, cfg)
+                await listener.start()
+                app.state.event_listener = listener
 
                 # Register prompt + toolset snapshots now that the agent is built.
                 if snapshot_conn is not None:

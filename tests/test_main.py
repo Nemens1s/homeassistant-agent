@@ -278,3 +278,13 @@ def test_lifespan_builds_note_store():
     with TestClient(app) as client:
         assert client.app.state.notes is not None
         assert client.app.state.notes.available
+
+
+def test_lifespan_subscribes_the_event_listener():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        ws = client.app.state.ws
+        # HA is down in tests: the subscription waits for the first connect.
+        assert len(ws._subscriptions) == 1
+        message = ws._subscriptions[0][0]
+        assert message["trigger"]["entity_id"] == ["sensor.europe_tallinn"]
