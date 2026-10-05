@@ -32,6 +32,10 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.list_devices",
     "app.tools.read.list_skills",
     "app.tools.read.load_skill",
+    "app.tools.memory.save_event_note",
+    "app.tools.memory.save_time_note",
+    "app.tools.memory.list_memory_notes",
+    "app.tools.memory.cancel_memory_note",
     "app.tools.action.trigger_action",
 )
 

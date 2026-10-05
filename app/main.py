@@ -32,6 +32,7 @@ from app.config import Settings, load_settings
 from app.i18n import build_language_adapter, set_language_attributes
 from app.i18n.store import LangOverlay, apply_overlay
 from app.ha.rest import RestClient
+from app.memory.store import NoteStore
 from app.ha.websocket import WebSocketClient, ws_is_ready
 from app.tools.context import ToolContext
 
@@ -159,6 +160,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if cfg.language_layer_enabled and cfg.checkpoint_db_path:
             overlay = LangOverlay(cfg.checkpoint_db_path)
         app.state.lang_overlay = overlay
+        # Memory notes share the checkpoint DB file (in-memory when it is unset).
+        note_store = NoteStore(cfg.checkpoint_db_path)
+        notes = note_store if note_store.available else None
+        app.state.notes = notes
 
         # Nothing leaves the LAN: kill LangSmith env vars and enforce a
         # private-address-only constraint on the OTLP endpoint.
@@ -194,7 +199,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.warning("websocket not connected yet (%s) — retrying in the background", exc)
                 ws.start_background()
 
-            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit, lang=language)
+            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit, notes=notes, lang=language)
             # Load the tool registry before building the fast path: it guards on
             # registry.get("trigger_action"), and build_agent (which also
             # loads the registry) runs later. load_all is idempotent.
@@ -243,6 +248,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     pass
             if overlay is not None:
                 overlay.close()
+            note_store.close()
             await _teardown(rest, ws, audit=audit, telemetry_provider=telemetry_provider,
                             language=language)
 

@@ -12,6 +12,8 @@ ALL_TOOLS = {
     "trigger_action", "list_actions", "get_battery_status", "get_vacuum_state",
     "get_weather", "get_person_locations", "get_history", "get_activity",
     "get_error_log", "get_automations", "get_areas", "list_devices",
+    "save_event_note", "save_time_note", "list_memory_notes", "cancel_memory_note",
+    "notify_user",
 }
 
 CASES = yaml.safe_load(
@@ -86,3 +88,12 @@ def test_router_never_hides_the_expected_eval_tool():
         if expected not in selected:
             failures.append(f"{case['id']}: {expected} hidden for {case['prompt']!r}")
     assert not failures, "router hid tools needed by eval cases:\n" + "\n".join(failures)
+
+
+def test_deferred_request_offers_note_tools():
+    selected = select_tool_names(ALL_TOOLS, "We are leaving. Once the vacuum starts, stop it.")
+    assert "save_event_note" in selected
+    selected = select_tool_names(ALL_TOOLS, "Remind me at 18:00 to call mum")
+    assert "save_time_note" in selected
+    selected = select_tool_names(ALL_TOOLS, "never mind, cancel my reminder")
+    assert {"list_memory_notes", "cancel_memory_note"} <= selected

@@ -38,6 +38,16 @@ _ROOM_OVERVIEW: tuple[str, ...] = (
     "all rooms", "every room", "what do i have", "what's in", "whats in", "in my",
 )
 
+# "Do it later" phrasing → the note tools. Generous on purpose: a stray match
+# only adds a schema, a miss makes the model act NOW instead of saving a note.
+_DEFERRED: tuple[str, ...] = (
+    "remind", "remember", "note", "once ", "when ", "after ", "later",
+    "tomorrow", "tonight", "next time", "as soon as",
+)
+_NOTE_ADMIN: tuple[str, ...] = (
+    "remind", "note", "cancel", "pending", "scheduled", "never mind", "nevermind",
+)
+
 # tool -> trigger substrings (matched against the lowercased message). Generous by
 # design: false positives just add a schema; false negatives hide a shortcut.
 _KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -68,6 +78,10 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
     # Both device-level room tools share the overview triggers (see _ROOM_OVERVIEW).
     "get_areas": _ROOM_OVERVIEW,
     "list_devices": _ROOM_OVERVIEW,
+    "save_event_note": _DEFERRED,
+    "save_time_note": _DEFERRED + ("minutes", "hours", " at ", "o'clock"),
+    "list_memory_notes": _NOTE_ADMIN,
+    "cancel_memory_note": _NOTE_ADMIN,
 }
 
 

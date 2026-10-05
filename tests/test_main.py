@@ -271,3 +271,10 @@ def test_chat_passes_run_scope_to_the_graph():
     assert configurable["thread_id"] == "t9"
     assert configurable[LANGUAGE_KEY] == "en"
     assert configurable[SUPPRESS_NOTIFY_KEY] is False
+
+
+def test_lifespan_builds_note_store():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        assert client.app.state.notes is not None
+        assert client.app.state.notes.available
