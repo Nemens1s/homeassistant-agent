@@ -27,6 +27,7 @@ log = logging.getLogger("agent.events")
 EVENTS_THREAD_ID = "events"
 _NOTIFY_LIMIT = 500  # notify_user's message max_length
 _ACTION_TOOLS = ("trigger_action", "notify_user")
+_ALIAS_PREFIX = "AI Action:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +98,10 @@ class EventRunner:
             name = ((state or {}).get("attributes") or {}).get("friendly_name")
         except Exception:
             name = None
+        if name and name.lower().startswith(_ALIAS_PREFIX.lower()):
+            # House convention: scripts are aliased "AI Action: …"; the user
+            # should read "Done: Stop Vacuum.", not "Done: AI Action: Stop Vacuum."
+            name = name[len(_ALIAS_PREFIX):].strip()
         return name or "the scheduled action"
 
     async def _run_direct_safely(self, note) -> None:

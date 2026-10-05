@@ -298,3 +298,19 @@ async def test_action_name_survives_an_empty_state_body(store):
     runner, _ = _runner(store, rest)
     await runner.run(STATE_TRIGGER, [note])
     assert _outcome(store, note.id)[0] in ("done", "failed")  # recorded, no crash
+
+
+async def test_ai_action_alias_prefix_is_stripped_from_the_name(store):
+    class PrefixedRest(FakeRest):
+        async def get_state(self, entity_id):
+            state = await super().get_state(entity_id)
+            if entity_id == STOP:
+                state["attributes"] = {"friendly_name": "AI Action: Stop Vacuum"}
+            return state
+
+    rest = PrefixedRest()
+    note = _add(store, action=STOP)
+    runner, _ = _runner(store, rest)
+    await runner.run(STATE_TRIGGER, [note])
+    assert _notifications(rest) == ["Done: Stop Vacuum."]
+    assert _outcome(store, note.id) == ("done", "Stop Vacuum ✓")
