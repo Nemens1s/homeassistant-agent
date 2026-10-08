@@ -117,11 +117,17 @@ class NoteStore:
         self._conn: sqlite3.Connection | None = None
         target = path or ":memory:"
         try:
-            conn = sqlite3.connect(target, check_same_thread=False)
+            # Autocommit: every statement is its own transaction, so this
+            # connection never sits on a stale read snapshot. The checkpoint
+            # DB is shared with other connections; a write from an old
+            # snapshot fails at once with "database is locked", and in the
+            # implicit-transaction mode that failure left the transaction
+            # open, so every later write failed too.
+            conn = sqlite3.connect(target, check_same_thread=False,
+                                   isolation_level=None, timeout=10.0)
             if path:
                 conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
-            conn.commit()
             self._conn = conn
         except Exception:
             log.warning("memory: note store unavailable at %s — notes disabled", target, exc_info=True)
@@ -257,7 +263,6 @@ class NoteStore:
         try:
             with self._lock:
                 cur = self._conn.execute(sql, list(values.values()))
-                self._conn.commit()
                 return cur.lastrowid
         except Exception:
             log.warning("memory: could not save note", exc_info=True)
@@ -269,7 +274,6 @@ class NoteStore:
         try:
             with self._lock:
                 cur = self._conn.execute(sql, params)
-                self._conn.commit()
                 return cur.rowcount
         except Exception:
             log.warning("memory: note update failed", exc_info=True)
