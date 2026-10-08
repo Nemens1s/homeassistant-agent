@@ -17,3 +17,8 @@ AI_SCRIPT_PREFIX = "script.ai_"
 # Narrower prefix used by the Needle fast-path menu: only real (non-test)
 # action scripts, not dev/test stubs.
 AI_SCRIPT_PREFIX_ACTION = "script.ai_action"
+
+# An action is on the fast-path menu only when its HA description opts in with
+# one of these markers; the text after the marker is what Needle matches on.
+# Anything without a marker (e.g. the notify script) is agent-only.
+FAST_PATH_MARKERS: tuple[str, ...] = ("NEEDLE:", "FAST-PATH:")
