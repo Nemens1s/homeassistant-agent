@@ -10,7 +10,7 @@ import json
 import time
 from dataclasses import dataclass, field
 
-from app.constants import AI_AUTOMATION_PREFIX
+from app.constants import AI_AUTOMATION_PREFIX, FAST_PATH_MARKERS
 from app.ha.websocket import ws_is_ready
 
 
@@ -38,11 +38,6 @@ def _signature(items: list[MenuItem]) -> str:
 def _by_id(item: MenuItem) -> str:
     return item.entity_id
 
-
-# An action is on the fast-path menu only when its HA description opts in with
-# one of these markers; the text after the marker is what Needle matches on.
-# Anything without a marker (e.g. the notify script) is agent-only.
-FAST_PATH_MARKERS: tuple[str, ...] = ("NEEDLE:", "FAST-PATH:")
 
 
 def fast_path_opt_in(ha_description: str) -> bool:
