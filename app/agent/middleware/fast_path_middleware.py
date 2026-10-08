@@ -7,17 +7,32 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.agent.middleware.tool_subset_middleware import latest_human_text
 from app.telemetry import conventions
 from app.telemetry.snapshots import menu_hash, register_menu
 
 log = logging.getLogger("fast_path")
 
 FASTPATH_PREFIX = "fastpath-"
+
+# A request about the future ("once the vacuum starts, stop it") must reach the
+# LLM, which saves a note — classifying it would run the action right now.
+# Errs toward the LLM: a false positive costs latency, never correctness.
+_DEFERRAL_CUE = re.compile(
+    r"\b(when|once|after|if|remind\w*|later|tomorrow|tonight|next time|as soon as)\b"
+    r"|\bin \d+\b|\bat \d{1,2}[:.]\d{2}\b",
+    re.IGNORECASE,
+)
+
+
+def has_deferral_cue(text: str) -> bool:
+    return bool(_DEFERRAL_CUE.search(text or ""))
 
 
 def _reply_from_envelope(raw: str, name: str, params: dict | None = None) -> str:
@@ -68,6 +83,16 @@ class FastPathMiddleware(AgentMiddleware):
         except Exception:
             pass
 
+    def _record_skip(self, reason: str) -> None:
+        """A classify span that only carries why the fast path was skipped."""
+        if self._tracer is None:
+            return
+        try:
+            with self._tracer.start_as_current_span(conventions.SPAN_CLASSIFY) as span:
+                self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, reason)
+        except Exception:
+            pass
+
     async def awrap_model_call(self, request, handler):
         messages = request.messages
         last = messages[-1] if messages else None
@@ -90,13 +115,10 @@ class FastPathMiddleware(AgentMiddleware):
         # First step of a turn → classify.
         if isinstance(last, HumanMessage):
             if _opted_out(request):
-                # Emit a disabled span when tracer is set, then fall through.
-                if self._tracer is not None:
-                    try:
-                        with self._tracer.start_as_current_span(conventions.SPAN_CLASSIFY) as span:
-                            self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "disabled")
-                    except Exception:
-                        pass
+                self._record_skip("disabled")
+                return await handler(request)
+            if has_deferral_cue(latest_human_text(messages)):
+                self._record_skip("deferred")
                 return await handler(request)
 
             result = await self._classify_with_telemetry(last.content)

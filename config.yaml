@@ -27,10 +27,12 @@ options:
     Real-world actions (turning on lights, starting the vacuum, etc.) can
     only be performed by triggering automations — you cannot control devices
     directly.
-    When the user asks you to perform an action, first thing: look up the available
-    automations and trigger the one that matches the request.
-    If no automation matches, tell the user the action is not possible yet
-    and that they should create an automation for it. Do not investigate further
+    When the user asks you to perform an action now, first thing: look up the
+    available actions and trigger the one that matches the request.
+    If none matches, tell the user the action is not possible yet. Do not
+    investigate further.
+    If the user wants something to happen later (when something happens, or at
+    a time), schedule it instead - never tell them to create an automation.
     Once a tool returns an answer, do not overthink it — present the
     information as you found it.
     Be concise and factual, follow instructions precisely, and do not do
@@ -83,6 +85,15 @@ options:
   telemetry_db_path: "/data/telemetry.sqlite"
   telemetry_retention_days: 0
   otlp_endpoint: ""
+  # Event-triggered memory notes. Empty watched_entities = state notes off;
+  # empty clock_entity = time notes off.
+  watched_entities: []
+  clock_entity: "sensor.europe_tallinn"
+  event_confirmations_enabled: true
+  memory_note_default_ttl_hours: 24
+  memory_note_max_ttl_hours: 168
+  time_note_grace_minutes: 120
+  notify_action: "script.ai_action_notify"
 backup_exclude:
   - "telemetry.sqlite*"
 schema:
@@ -129,3 +140,10 @@ schema:
   telemetry_db_path: "str?"
   telemetry_retention_days: "int"
   otlp_endpoint: "str?"
+  watched_entities: ["str"]
+  clock_entity: "str"
+  event_confirmations_enabled: "bool"
+  memory_note_default_ttl_hours: "int(1,720)"
+  memory_note_max_ttl_hours: "int(1,720)"
+  time_note_grace_minutes: "int(1,1440)"
+  notify_action: "str"

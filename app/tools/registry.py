@@ -32,7 +32,12 @@ _DEFAULT_MODULES: tuple[str, ...] = (
     "app.tools.read.list_devices",
     "app.tools.read.list_skills",
     "app.tools.read.load_skill",
+    "app.tools.memory.schedule_on_state_change",
+    "app.tools.memory.schedule_at_time",
+    "app.tools.memory.list_scheduled",
+    "app.tools.memory.cancel_scheduled",
     "app.tools.action.trigger_action",
+    "app.tools.action.notify_user",
 )
 
 

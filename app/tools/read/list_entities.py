@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows
 from app.tools.helpers.lookups import device_name, entity_area_ids, resolve_area
 from app.tools.registry import register
+from app.tools.context import ws_ready
 
 # Constrained choices so a small model picks from a menu instead of inventing a
 # value. "" means "no filter". Uncommon values are intentionally omitted — extend
@@ -73,7 +74,7 @@ async def handler(params: Params, ctx) -> ToolResult:
     # device and area each narrow the entity set; if both are given, intersect.
     restrict: set[str] | None = None
     if params.device or params.area:
-        if ctx.ws is None:
+        if not ws_ready(ctx):
             return ToolResult.error(
                 "ws_unavailable",
                 "Filtering by device or area needs the websocket connection.",

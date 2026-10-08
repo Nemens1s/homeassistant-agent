@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass, field
 
 from app.constants import AI_AUTOMATION_PREFIX
+from app.ha.websocket import ws_is_ready
 
 
 @dataclass(frozen=True)
@@ -38,9 +39,23 @@ def _by_id(item: MenuItem) -> str:
     return item.entity_id
 
 
+# An action is on the fast-path menu only when its HA description opts in with
+# one of these markers; the text after the marker is what Needle matches on.
+# Anything without a marker (e.g. the notify script) is agent-only.
+FAST_PATH_MARKERS: tuple[str, ...] = ("NEEDLE:", "FAST-PATH:")
+
+
+def fast_path_opt_in(ha_description: str) -> bool:
+    for marker in FAST_PATH_MARKERS:
+        if marker in ha_description:
+            return True
+    return False
+
+
 def needle_description(ha_description: str) -> str:
-    if "NEEDLE:" in ha_description:
-        return ha_description.split("NEEDLE:")[-1].strip()
+    for marker in FAST_PATH_MARKERS:
+        if marker in ha_description:
+            return ha_description.split(marker)[-1].strip()
     return ha_description
 
 
@@ -111,11 +126,13 @@ async def _entity_unique_ids(ws) -> dict[str, str]:
 
 
 class MenuProvider:
-    def __init__(self, rest, ttl_s: int = 60, prefixes=(AI_AUTOMATION_PREFIX,), ws=None):
+    def __init__(self, rest, ttl_s: int = 60, prefixes=(AI_AUTOMATION_PREFIX,), ws=None,
+                 exclude: tuple[str, ...] = ()):
         self._rest = rest
         self._ws = ws
         self._ttl_s = ttl_s
         self._prefixes = tuple(prefixes)
+        self._exclude = frozenset(exclude)  # e.g. the notify script: notify_user only
         self._cached: Menu | None = None
         self._fetched_at = 0.0
         self._desc_cache: dict[str, str] = {}  # entity_id → description; session-persistent
@@ -131,12 +148,14 @@ class MenuProvider:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith(self._prefixes):
                 continue
+            if entity_id in self._exclude:
+                continue
             attrs = state.get("attributes") or {}
             name = attrs.get("friendly_name") or entity_id
             candidates.append((entity_id, name))
         new_eids = [eid for eid, _ in candidates if eid not in self._desc_cache]
         if new_eids:
-            unique_ids = await _entity_unique_ids(self._ws) if self._ws is not None else {}
+            unique_ids = await _entity_unique_ids(self._ws) if ws_is_ready(self._ws) else {}
             tasks = []
             for eid in new_eids:
                 if eid.startswith("script."):
@@ -151,10 +170,13 @@ class MenuProvider:
                 self._params_cache[eid] = params
         items = []
         for entity_id, name in candidates:
+            description = self._desc_cache.get(entity_id, "")
+            if not fast_path_opt_in(description):
+                continue
             items.append(MenuItem(
                 entity_id=entity_id,
                 name=name,
-                description=needle_description(self._desc_cache.get(entity_id, "")),
+                description=needle_description(description),
                 parameters=self._params_cache.get(entity_id, {}),
             ))
         items.sort(key=_by_id)

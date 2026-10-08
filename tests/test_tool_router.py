@@ -12,6 +12,8 @@ ALL_TOOLS = {
     "trigger_action", "list_actions", "get_battery_status", "get_vacuum_state",
     "get_weather", "get_person_locations", "get_history", "get_activity",
     "get_error_log", "get_automations", "get_areas", "list_devices",
+    "schedule_on_state_change", "schedule_at_time", "list_scheduled", "cancel_scheduled",
+    "notify_user",
 }
 
 CASES = yaml.safe_load(
@@ -86,3 +88,17 @@ def test_router_never_hides_the_expected_eval_tool():
         if expected not in selected:
             failures.append(f"{case['id']}: {expected} hidden for {case['prompt']!r}")
     assert not failures, "router hid tools needed by eval cases:\n" + "\n".join(failures)
+
+
+def test_deferred_request_offers_note_tools():
+    selected = select_tool_names(ALL_TOOLS, "We are leaving. Once the vacuum starts, stop it.")
+    assert "schedule_on_state_change" in selected
+    selected = select_tool_names(ALL_TOOLS, "Remind me at 18:00 to call mum")
+    assert "schedule_at_time" in selected
+    selected = select_tool_names(ALL_TOOLS, "never mind, cancel my reminder")
+    assert {"list_scheduled", "cancel_scheduled"} <= selected
+
+
+def test_event_run_offers_notify_user():
+    selected = select_tool_names(ALL_TOOLS, "[EVENT] vacuum.x changed docked → cleaning.")
+    assert "notify_user" in selected

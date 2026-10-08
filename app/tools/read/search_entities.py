@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows, entity_domain
 from app.tools.helpers.lookups import area_names, entity_area_ids
 from app.tools.registry import register
+from app.tools.context import ws_ready
 
 
 class Params(BaseModel):
@@ -52,7 +53,7 @@ async def handler(params: Params, ctx) -> ToolResult:
 
     area_map: dict[str, str] = {}
     label_map: dict[str, list[str]] = {}
-    if ctx.ws is not None:
+    if ws_ready(ctx):
         names = await area_names(ctx)
         # include all categories: a matched diagnostic entity should still show its area
         by_area = await entity_area_ids(ctx, exclude_categories=())
@@ -74,7 +75,7 @@ async def handler(params: Params, ctx) -> ToolResult:
             "friendly_name": s.get("attributes", {}).get("friendly_name", ""),
             "controllable": domain in controllable,
         }
-        if ctx.ws is not None:
+        if ws_ready(ctx):
             row["area"] = area_map.get(s["entity_id"], "")
             lbls = label_map.get(s["entity_id"])
             if lbls:

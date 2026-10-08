@@ -18,6 +18,8 @@ async def handler(params: Params, ctx) -> ToolResult:
         entity_id = s["entity_id"]
         if not entity_id.startswith((AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX)):
             continue
+        if entity_id == ctx.settings.notify_action:
+            continue  # notifications go through notify_user only
         if entity_id.startswith("automation.") and s["state"] == "off":
             continue
         row = {

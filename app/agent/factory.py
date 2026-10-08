@@ -44,6 +44,20 @@ _TOOL_ROUTING = (
     "one failed → load_skill."
 )
 
+_MEMORY_NOTES = (
+    "\n\nDOING THINGS LATER: you cannot create automations, and you never need to. "
+    "When the user wants something to happen LATER - 'once/when/after X happens, do Y' "
+    "or 'at 18:00 / in 20 minutes, do Y' - schedule it instead of creating an automation: "
+    "schedule_on_state_change when a device changes state, schedule_at_time for a clock "
+    "time. Do NOT act now. If one action from list_actions does it, pass its entity_id as "
+    "action_entity_id (and action_params) - call list_actions first if you need to. Put "
+    "anything the user wants to be told in reminder. Only if no single action fits, set "
+    "no_single_action=true: you will be called back with an [EVENT] message and carry "
+    "out the instruction yourself. Confirm in one sentence what you scheduled. Messages that "
+    "start with [EVENT] come from the home itself: follow them exactly. Never tell the "
+    "user to create an automation for this."
+)
+
 
 def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     prompt = settings.system_prompt + _TOOL_ROUTING
@@ -64,16 +78,19 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
         )
     if settings.max_tier >= 2:
         prompt += (
-            "\n\nACTIONS: real-world actions (turning on lights, starting the vacuum, "
-            "etc.) can only be performed by triggering AI-controllable automations — "
-            "those whose entity_id starts with 'automation.ai_'. You cannot control "
-            "lights, switches, or other entities directly. When the user asks you to "
-            "perform an action, first call list_actions to see the available "
-            "automations, then trigger the matching one with trigger_action. If none "
-            "matches, tell the user the action is not possible yet and that they should "
-            "create an automation for it — do not investigate further. Every action "
-            "also requires the home's AI-actions switch to be on, or it is refused."
+            "\n\nACTIONS (to do NOW): real-world actions (turning on lights, stopping the "
+            "vacuum, etc.) can only be performed by triggering AI-controllable automations "
+            "or scripts - entity_ids starting with 'automation.ai_' or 'script.ai_'. You "
+            "cannot control lights, switches, or other entities directly. To act now, first "
+            "call list_actions, then trigger the matching one with trigger_action. If none "
+            "matches, tell the user the action is not possible yet. Every action also "
+            "requires the home's AI-actions switch to be on, or it is refused. If the user "
+            "wants it to happen LATER (when something happens, or at a time), this section "
+            "does not apply - see DOING THINGS LATER; never tell the user to create an "
+            "automation for that."
         )
+    if settings.watched_entities or settings.clock_entity:
+        prompt += _MEMORY_NOTES
     return prompt
 
 

@@ -77,10 +77,14 @@ class _ThinkBuffer:
 
 
 async def stream_events(
-    agent, message: str, thread_id: str, recursion_limit: int
+    agent, message: str, thread_id: str, recursion_limit: int,
+    extra_configurable: dict | None = None,
 ) -> AsyncIterator[dict]:
+    configurable = {"thread_id": thread_id}
+    if extra_configurable:
+        configurable.update(extra_configurable)
     config = {
-        "configurable": {"thread_id": thread_id},
+        "configurable": configurable,
         "recursion_limit": recursion_limit,
     }
     think_buf = _ThinkBuffer()

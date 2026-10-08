@@ -36,7 +36,10 @@ function newUUID() {
   });
 }
 
-let threadId = localStorage.getItem('thread');
+// ?thread=events opens a specific thread (e.g. the harness's event runs)
+// without replacing the user's own remembered thread.
+const requestedThread = new URLSearchParams(location.search).get('thread');
+let threadId = requestedThread || localStorage.getItem('thread');
 if (!threadId) {
   threadId = newUUID();
   localStorage.setItem('thread', threadId);

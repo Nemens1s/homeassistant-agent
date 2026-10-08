@@ -193,3 +193,47 @@ async def test_outbound_returns_english_when_translation_fails(glossary):
 
     assert reply == "The light is on."
     assert inbound.error == "mt_placeholder_lost"
+
+
+async def test_to_english_translates_and_reports_source(glossary):
+    mt = FakeMT([MT("Call mum.", "ru")])
+    english, src = await _adapter(mt, glossary).to_english("Позвони маме.")
+    assert (english, src) == ("Call mum.", "ru")
+    assert mt.calls[0]["src"] == "auto"
+    assert mt.calls[0]["tgt"] == "en"
+
+
+async def test_to_english_keeps_english_text(glossary):
+    mt = FakeMT([MT("Stop the vacuum.", "en", translated=False)])
+    result = await _adapter(mt, glossary).to_english("Stop the vacuum.")
+    assert result == ("Stop the vacuum.", "en")
+
+
+async def test_to_english_fails_open(glossary):
+    mt = FakeMT([LangMTError("mt_unavailable")])
+    result = await _adapter(mt, glossary).to_english("Позвони маме.")
+    assert result == ("Позвони маме.", "en")
+
+
+async def test_from_english_skips_english(glossary):
+    mt = FakeMT([])
+    assert await _adapter(mt, glossary).from_english("Done.", "en") == "Done."
+    assert mt.calls == []
+
+
+async def test_from_english_translates(glossary):
+    mt = FakeMT([MT("Готово.", "en")])
+    assert await _adapter(mt, glossary).from_english("Done.", "ru") == "Готово."
+    assert mt.calls[0]["src"] == "en"
+    assert mt.calls[0]["tgt"] == "ru"
+
+
+async def test_from_english_fails_open(glossary):
+    mt = FakeMT([LangMTError("mt_timeout")])
+    assert await _adapter(mt, glossary).from_english("Done.", "ru") == "Done."
+
+
+async def test_noop_adapter_language_helpers():
+    noop = NoopLanguageAdapter()
+    assert await noop.to_english("Позвони") == ("Позвони", "en")
+    assert await noop.from_english("Done.", "ru") == "Done."

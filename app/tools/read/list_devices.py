@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from app.tools.base import Tier, ToolDefinition, ToolResult
 from app.tools.helpers.lookups import device_name
 from app.tools.registry import register
+from app.tools.context import ws_ready
 
 
 class Params(BaseModel):
@@ -11,7 +12,7 @@ class Params(BaseModel):
 
 
 async def handler(params: Params, ctx) -> ToolResult:
-    if ctx.ws is None:
+    if not ws_ready(ctx):
         return ToolResult.error("ws_unavailable", "Device listing needs the websocket connection.")
 
     devices = await ctx.ws.request_cached("config/device_registry/list")

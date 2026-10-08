@@ -240,3 +240,63 @@ def test_lifespan_builds_fast_path_when_needle_enabled(monkeypatch):
         pass
     assert captured["fast_path"] is not None
     registry._reset_for_tests()
+
+
+def test_websocket_client_kept_when_ha_is_down():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        ws = client.app.state.ws
+        assert ws is not None  # reconnecting in the background, not dropped
+        assert ws.connected is False
+
+
+class RecordingAgent:
+    def __init__(self):
+        self.configs = []
+
+    async def ainvoke(self, payload, config=None):
+        self.configs.append(config)
+        return {"messages": [AIMessage(content="ok")]}
+
+
+def test_chat_passes_run_scope_to_the_graph():
+    from app.agent.run_scope import LANGUAGE_KEY, SUPPRESS_NOTIFY_KEY
+
+    app = create_app(_settings())
+    agent = RecordingAgent()
+    with TestClient(app) as client:
+        client.app.state.agent = agent
+        client.post("/api/chat", json={"message": "hello", "thread_id": "t9"})
+    configurable = agent.configs[0]["configurable"]
+    assert configurable["thread_id"] == "t9"
+    assert configurable[LANGUAGE_KEY] == "en"
+    assert configurable[SUPPRESS_NOTIFY_KEY] is False
+
+
+def test_lifespan_builds_note_store():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        assert client.app.state.notes is not None
+        assert client.app.state.notes.available
+
+
+def test_lifespan_subscribes_the_event_listener():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        ws = client.app.state.ws
+        # HA is down in tests: the subscription waits for the first connect.
+        assert len(ws._subscriptions) == 1
+        message = ws._subscriptions[0][0]
+        assert message["trigger"]["entity_id"] == ["sensor.europe_tallinn"]
+
+
+def test_create_app_makes_agent_info_logs_visible():
+    import logging
+
+    create_app(_settings())
+    for name in ("agent", "fast_path"):
+        logger = logging.getLogger(name)
+        assert logger.getEffectiveLevel() <= logging.INFO, name
+        assert logger.handlers, name  # uvicorn configures only its own loggers
+    create_app(_settings())  # idempotent: building twice adds no second handler
+    assert len(logging.getLogger("agent").handlers) == 1

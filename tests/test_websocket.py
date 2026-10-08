@@ -200,3 +200,120 @@ async def test_disconnect_clears_cache(server_url):
     assert client._cache == {}
     assert not client.connected
     await client.stop()
+
+
+SUBSCRIBE = {
+    "type": "subscribe_trigger",
+    "trigger": {"platform": "state", "entity_id": ["vacuum.x"], "to": None},
+}
+
+
+def _event_server(state):
+    """Fake HA: acks each subscribe_trigger, then sends one event on its id.
+    With state['drop_first'] it closes the connection after the first one."""
+
+    async def handler(ws):
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        async for raw in ws:
+            msg = json.loads(raw)
+            if msg["type"] != "subscribe_trigger":
+                continue
+            state["subscribes"].append(msg)
+            await ws.send(json.dumps(
+                {"id": msg["id"], "type": "result", "success": True, "result": None}
+            ))
+            await ws.send(json.dumps({
+                "id": msg["id"],
+                "type": "event",
+                "event": {"variables": {"trigger": {"entity_id": "vacuum.x"}}},
+            }))
+            if state.get("drop_first") and len(state["subscribes"]) == 1:
+                await ws.close()
+                return
+
+    return handler
+
+
+@pytest.fixture
+async def event_server():
+    state = {"subscribes": []}
+    async with websockets.serve(_event_server(state), "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        yield f"ws://127.0.0.1:{port}", state
+
+
+async def test_subscribe_delivers_events(event_server):
+    url, state = event_server
+    received = asyncio.Queue()
+
+    async def on_event(event):
+        await received.put(event)
+
+    client = WebSocketClient(url, "secret")
+    await client.start(connect_timeout=5)
+    await client.subscribe(SUBSCRIBE, on_event)
+    event = await asyncio.wait_for(received.get(), timeout=5)
+    assert event["variables"]["trigger"]["entity_id"] == "vacuum.x"
+    assert state["subscribes"][0]["trigger"]["to"] is None
+    await client.stop()
+
+
+async def test_subscribe_before_connect_is_sent_on_connect(event_server):
+    url, state = event_server
+    received = asyncio.Queue()
+
+    async def on_event(event):
+        await received.put(event)
+
+    client = WebSocketClient(url, "secret")
+    await client.subscribe(SUBSCRIBE, on_event)  # not connected yet: only stored
+    assert state["subscribes"] == []
+    client.start_background()
+    await asyncio.wait_for(received.get(), timeout=5)
+    assert len(state["subscribes"]) == 1
+    await client.stop()
+
+
+async def test_subscription_is_resent_after_reconnect(event_server):
+    url, state = event_server
+    state["drop_first"] = True
+    received = asyncio.Queue()
+
+    async def on_event(event):
+        await received.put(event)
+
+    client = WebSocketClient(url, "secret")
+    await client.start(connect_timeout=5)
+    await client.subscribe(SUBSCRIBE, on_event)
+    await asyncio.wait_for(received.get(), timeout=5)
+    # second event arrives only if the client reconnected AND resubscribed
+    await asyncio.wait_for(received.get(), timeout=10)
+    assert len(state["subscribes"]) == 2
+    assert state["subscribes"][1]["id"] != state["subscribes"][0]["id"]
+    await client.stop()
+
+
+async def test_subscribe_rejects_other_commands():
+    client = WebSocketClient("ws://127.0.0.1:1", "secret")
+
+    async def on_event(event):
+        pass
+
+    with pytest.raises(PermissionError):
+        await client.subscribe({"type": "subscribe_events"}, on_event)
+
+
+async def test_failing_callback_does_not_break_the_client(event_server):
+    url, _state = event_server
+
+    async def boom(event):
+        raise ValueError("handler bug")
+
+    client = WebSocketClient(url, "secret")
+    await client.start(connect_timeout=5)
+    await client.subscribe(SUBSCRIBE, boom)
+    await asyncio.sleep(0.2)
+    assert client.connected
+    await client.stop()

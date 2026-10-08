@@ -81,7 +81,7 @@ def test_build_agent_compiles_with_read_tools():
     tier1 = {t.name for t in registry.tools_for_tier(1)}
     tier2 = {t.name for t in registry.tools_for_tier(2)}
     assert tier1  # registry loaded
-    assert tier2 - tier1 == {"trigger_action"}
+    assert tier2 - tier1 == {"trigger_action", "notify_user"}
     assert {"get_entity_state", "list_entities", "load_skill"} <= tier1
     registry._reset_for_tests()
 
@@ -158,6 +158,7 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
         max_tier = 2
         needle_remote_url = "http://needle.test"
         needle_menu_ttl_s = 60
+        notify_action = "script.ai_action_notify"
 
     class Ctx:
         ws = None
@@ -167,3 +168,46 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
     assert built is not None
     _backend, menu_provider = built
     assert menu_provider._prefixes == (AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION)
+
+
+def test_system_prompt_explains_notes_when_enabled(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
+    prompt = build_system_prompt(s, tmp_path)
+    assert "schedule_on_state_change" in prompt
+    assert "schedule_at_time" in prompt
+    assert "[EVENT]" in prompt
+
+
+def test_system_prompt_omits_notes_when_disabled(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=[], clock_entity="")
+    assert "schedule_on_state_change" not in build_system_prompt(s, tmp_path)
+
+
+def test_actions_paragraph_defers_later_requests_to_notes(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", max_tier=2, watched_entities=["vacuum.x"])
+    prompt = build_system_prompt(s, tmp_path)
+    actions = prompt[prompt.index("ACTIONS (to do NOW):"):]
+    # "do it later" must not end in "go create an automation"
+    assert "LATER" in actions
+    assert "never tell the user to create an automation" in prompt.lower()
+
+
+def test_notes_paragraph_explains_the_callback(tmp_path):
+    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
+    prompt = build_system_prompt(s, tmp_path)
+    assert "you will be called back" in prompt.lower()
+    assert "instead of creating an automation" in prompt.lower()
+
+
+def test_save_note_descriptions_explain_they_run_later():
+    from app.tools import registry as reg
+
+    reg._reset_for_tests()
+    reg.load_all(("app.tools.memory.schedule_on_state_change", "app.tools.memory.schedule_at_time"))
+    for name in ("schedule_on_state_change", "schedule_at_time"):
+        description = reg.get(name).description
+        assert len(description) <= 400, name
+        assert "instead of an automation" in description, name
+        assert "action_entity_id" in description, name
+        assert "reminder" in description, name
+    reg._reset_for_tests()

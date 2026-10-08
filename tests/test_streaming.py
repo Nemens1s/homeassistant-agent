@@ -63,3 +63,21 @@ async def test_tool_result_error_status():
     agent = FakeAgent([(tool_msg, {}), (AIMessageChunk(content="sorry"), {})])
     events = await _collect(agent)
     assert events[0] == {"type": "tool_result", "name": "get_history", "status": "error"}
+
+
+async def test_stream_events_merges_extra_configurable():
+    from app.agent.streaming import stream_events
+
+    seen = {}
+
+    class Agent:
+        async def astream(self, payload, config=None, stream_mode=None):
+            seen["config"] = config
+            return
+            yield  # makes this an async generator
+
+    async for _event in stream_events(
+        Agent(), "hi", "t1", 5, extra_configurable={"gosling_language": "ru"}
+    ):
+        pass
+    assert seen["config"]["configurable"] == {"thread_id": "t1", "gosling_language": "ru"}

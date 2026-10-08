@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
+from app.agent.run_scope import scope_configurable
 from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
@@ -31,10 +32,31 @@ from app.config import Settings, load_settings
 from app.i18n import build_language_adapter, set_language_attributes
 from app.i18n.store import LangOverlay, apply_overlay
 from app.ha.rest import RestClient
-from app.ha.websocket import WebSocketClient
+from app.events.listener import EventListener
+from app.events.runner import EventRunner
+from app.memory.store import NoteStore
+from app.ha.websocket import WebSocketClient, ws_is_ready
 from app.tools.context import ToolContext
 
 log = logging.getLogger("agent")
+
+# App loggers that should reach stdout. Uvicorn configures only its own
+# loggers, so without this every agent.* INFO line (tool audit, event
+# matches, firings) is silently dropped and only warnings get through.
+_APP_LOGGERS = ("agent", "fast_path")
+
+
+def _configure_app_logging() -> None:
+    formatter = logging.Formatter("%(levelname)s:     %(name)s %(message)s")
+    for name in _APP_LOGGERS:
+        logger = logging.getLogger(name)
+        if logger.handlers:
+            continue  # idempotent: create_app may run more than once
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        if logger.level == logging.NOTSET:
+            logger.setLevel(logging.INFO)
 
 
 def _assert_otlp_is_lan(endpoint: str) -> None:
@@ -131,6 +153,7 @@ class ToggleRequest(BaseModel):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
+    _configure_app_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -158,6 +181,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if cfg.language_layer_enabled and cfg.checkpoint_db_path:
             overlay = LangOverlay(cfg.checkpoint_db_path)
         app.state.lang_overlay = overlay
+        # Memory notes share the checkpoint DB file (in-memory when it is unset).
+        note_store = NoteStore(cfg.checkpoint_db_path)
+        notes = note_store if note_store.available else None
+        app.state.notes = notes
 
         # Nothing leaves the LAN: kill LangSmith env vars and enforce a
         # private-address-only constraint on the OTLP endpoint.
@@ -187,10 +214,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 await ws.start(connect_timeout=cfg.ws_connect_timeout)
             except Exception as exc:
-                log.warning("websocket unavailable (%s) — area/automation tools degraded", exc)
-                ws = None
+                # Keep the client: it reconnects in the background, so a slow HA
+                # boot degrades the websocket tools (and event notes) only until
+                # HA is up, not until the add-on restarts.
+                log.warning("websocket not connected yet (%s) — retrying in the background", exc)
+                ws.start_background()
 
-            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit)
+            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit, notes=notes, lang=language)
             # Load the tool registry before building the fast path: it guards on
             # registry.get("trigger_action"), and build_agent (which also
             # loads the registry) runs later. load_all is idempotent.
@@ -218,6 +248,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.ws = ws
                 app.state.agent = agent
 
+                # Event-triggered notes: the runner reads app.state.agent at fire
+                # time, the listener subscribes now (or on the first connect).
+                runner = EventRunner(lambda: app.state.agent, cfg, ctx)
+                listener = EventListener(ws, notes, runner, cfg, rest)
+                await listener.start()
+                app.state.event_listener = listener
+
                 # Register prompt + toolset snapshots now that the agent is built.
                 if snapshot_conn is not None:
                     try:
@@ -239,6 +276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     pass
             if overlay is not None:
                 overlay.close()
+            note_store.close()
             await _teardown(rest, ws, audit=audit, telemetry_provider=telemetry_provider,
                             language=language)
 
@@ -289,10 +327,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request_id = format(trace_id, "032x") if trace_id else None
 
             try:
+                configurable = {"thread_id": req.thread_id}
+                configurable.update(scope_configurable(inbound.language))
                 result = await app.state.agent.ainvoke(
                     {"messages": [{"role": "user", "content": inbound.english_text}]},
                     config={
-                        "configurable": {"thread_id": req.thread_id},
+                        "configurable": configurable,
                         "recursion_limit": app.state.settings.recursion_limit,
                     },
                 )
@@ -379,6 +419,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         inbound.english_text,
                         req.thread_id,
                         app.state.settings.recursion_limit,
+                        extra_configurable=scope_configurable(inbound.language),
                     ):
                         if event.get("type") == "done":
                             # Tokens streamed in English (they cannot be
@@ -512,7 +553,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
 
         ws = app.state.ws
-        if ws is None:
+        if not ws_is_ready(ws):
             raise HTTPException(status_code=503, detail="websocket unavailable")
 
         registry_entries = await ws.request("config/entity_registry/list")
@@ -558,7 +599,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail="not an AI-controlled entity")
 
         ws = app.state.ws
-        if ws is None:
+        if not ws_is_ready(ws):
             raise HTTPException(status_code=503, detail="websocket unavailable")
 
         if entity_id.startswith("automation."):
@@ -578,6 +619,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if req.enabled:
                 await ws.management_request("call_service", domain="script", service="reload")
 
+        return {"ok": True}
+
+    def _note_store():
+        from fastapi import HTTPException
+
+        notes = getattr(app.state, "notes", None)
+        if notes is None:
+            raise HTTPException(status_code=503, detail="note store unavailable")
+        return notes
+
+    @app.get("/api/notes")
+    async def list_notes(status: str = "pending") -> dict:
+        from datetime import datetime, timezone
+
+        notes = _note_store()
+        if status == "all":
+            rows = notes.list_recent(limit=100)
+        else:
+            rows = notes.list_pending(datetime.now(timezone.utc))
+        result = []
+        for note in rows:
+            result.append(note.to_dict())
+        return {"notes": result}
+
+    @app.delete("/api/notes/{note_id}")
+    async def delete_note(note_id: int) -> dict:
+        from fastapi import HTTPException
+
+        notes = _note_store()
+        if not notes.cancel(note_id):
+            raise HTTPException(status_code=404, detail="no pending note with that id")
         return {"ok": True}
 
     # Mounted last so /api/* wins. Frontend must use relative fetch paths

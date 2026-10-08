@@ -57,6 +57,12 @@ class NoopLanguageAdapter:
     async def outbound(self, reply_en: str, inbound: Inbound) -> str:
         return reply_en
 
+    async def to_english(self, text: str) -> tuple[str, str]:
+        return text, "en"
+
+    async def from_english(self, text: str, language: str) -> str:
+        return text
+
     async def aclose(self) -> None:
         return None
 
@@ -189,20 +195,51 @@ class LanguageAdapter:
             return reply
 
     async def _outbound(self, reply_en: str, inbound: Inbound) -> str:
-        protected = self._glossary.protect(reply_en, languages=["en"])
+        reply, error = await self._from_english(reply_en, inbound.language)
+        if error is not None:
+            log.warning("lang: outbound failed (%s) — replying in English", error)
+            inbound.error = error
+        return reply
+
+    async def _from_english(self, text: str, language: str) -> tuple[str, str | None]:
+        """English → *language* with entity names protected. Returns the text
+        and an error code; on failure the English text comes back unchanged."""
+        protected = self._glossary.protect(text, languages=["en"])
         try:
             result = await self._client.translate(
-                protected.text,
-                src="en",
-                tgt=inbound.language,
-                allowed=self._languages,
+                protected.text, src="en", tgt=language, allowed=self._languages
             )
         except LangMTError as exc:
-            log.warning("lang: outbound failed (%s) — replying in English", exc.code)
-            inbound.error = exc.code
-            return reply_en
+            return text, exc.code
+        return self._glossary.restore(result.text, protected, language), None
 
-        return self._glossary.restore(result.text, protected, inbound.language)
+    # ---------- harness text (notes, notifications) ----------
+    async def to_english(self, text: str) -> tuple[str, str]:
+        """Translate free text (a memory note) to English for storage.
+        Returns (english, source language). Fail-open: the text as-is."""
+        if not text:
+            return text, "en"
+        protected = self._glossary.protect(text)
+        try:
+            result = await self._client.translate(
+                protected.text, src="auto", tgt="en", allowed=self._languages
+            )
+        except LangMTError as exc:
+            log.warning("lang: to_english failed (%s) — keeping the original text", exc.code)
+            return text, "en"
+        if result.src == "en" or not result.translated:
+            return text, "en"
+        return self._glossary.restore(result.text, protected, "en"), result.src
+
+    async def from_english(self, text: str, language: str) -> str:
+        """Translate harness-produced English (a notification) into *language*.
+        Fail-open: English."""
+        if language == "en" or not text:
+            return text
+        translated, error = await self._from_english(text, language)
+        if error is not None:
+            log.warning("lang: from_english failed (%s) — sending English", error)
+        return translated
 
     async def aclose(self) -> None:
         await self._client.aclose()
