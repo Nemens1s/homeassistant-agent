@@ -188,6 +188,7 @@ def test_visible_addon_options_are_minimal():
     for key in cfg["schema"]:
         if key not in cfg["options"]:
             assert str(cfg["schema"][key]).endswith("?") or isinstance(cfg["schema"][key], list), key
+    assert cfg["options"]["languages"] == ["en"]
 
 
 def test_every_schema_key_is_a_settings_field():
@@ -197,9 +198,14 @@ def test_every_schema_key_is_a_settings_field():
         assert key in fields, key
 
 
-def test_paths_come_from_env_when_absent_from_options(tmp_path, monkeypatch):
+@pytest.mark.parametrize("env_var, field", [
+    ("CHECKPOINT_DB_PATH", "checkpoint_db_path"),
+    ("TELEMETRY_DB_PATH", "telemetry_db_path"),
+    ("GLOSSARY_PATH", "glossary_path"),
+])
+def test_paths_come_from_env_when_absent_from_options(tmp_path, monkeypatch, env_var, field):
     opts = tmp_path / "options.json"
     opts.write_text("{}")
     monkeypatch.setattr("app.config.OPTIONS_FILE", opts)
-    monkeypatch.setenv("CHECKPOINT_DB_PATH", "/data/checkpoints.sqlite")
-    assert load_settings().checkpoint_db_path == "/data/checkpoints.sqlite"
+    monkeypatch.setenv(env_var, "/data/some-path")
+    assert getattr(load_settings(), field) == "/data/some-path"

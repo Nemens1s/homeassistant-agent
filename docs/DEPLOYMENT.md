@@ -34,7 +34,7 @@ this path.
    | `event_confirmations_enabled` | `true` | Send a confirmation when a fired note acts |
    | `person_name_map` | `[]` | Rename people for the agent |
    | `language_layer_enabled` | `false` | Accept non-English messages via lang-mt |
-   | `languages` | `[en, et, ru]` | Languages detection may choose between |
+   | `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them |
 
    Everything else — sampling knobs (`temperature`, `top_p`, `num_ctx`, ...),
    `llm_provider`, `system_prompt`, `recursion_limit`, `max_rows`,

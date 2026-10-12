@@ -33,8 +33,6 @@ options:
   language_layer_enabled: false
   languages:
     - en
-    - et
-    - ru
 backup_exclude:
   - "telemetry.sqlite*"
 schema:

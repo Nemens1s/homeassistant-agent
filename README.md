@@ -43,7 +43,7 @@ options" below).
 | `event_confirmations_enabled` | `true` | Send a confirmation message when a fired note acts |
 | `person_name_map` | `[]` | Rename people for the agent (`ha_name` → `name`) |
 | `language_layer_enabled` | `false` | Accept non-English messages via the lang-mt translation service |
-| `languages` | `[en, et, ru]` | Languages detection may choose between |
+| `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them |
 
 Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
 
