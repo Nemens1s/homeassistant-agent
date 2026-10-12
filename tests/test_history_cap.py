@@ -77,7 +77,7 @@ class FakeRest:
 
 def _capped_agent(monkeypatch, responses, cap):
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, max_tier=1, max_history_messages=cap,
+    settings = Settings(_env_file=None, allow_actions=False, max_history_messages=cap,
                         enable_tool_subsetting=False)
     ctx = ToolContext(settings=settings, rest=FakeRest(), ws=None)
     monkeypatch.setattr(factory_mod, "build_llm", lambda s: ScriptedModel(responses=responses))

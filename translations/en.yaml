@@ -216,24 +216,3 @@ configuration:
       skills ship in the image. Drop markdown files into the skills folder
       (see docs/examples/skills/ for the format) and turn this on to let the
       agent load them with load_skill.
-  max_tier:
-    name: "Deprecated: use Allow actions"
-    description: >-
-      Legacy setting from 0.4.24 and earlier. 2 turns actions on even when
-      Allow actions is off; clear it (or set 1) to switch actions off.
-  needle_enabled:
-    name: "Deprecated: use Fast path"
-    description: Legacy setting; on turns the fast path on.
-  needle_remote_url:
-    name: "Deprecated: use Fast path service URL"
-    description: Legacy setting; used only when Fast path service URL is empty.
-  needle_confidence_threshold:
-    name: "Deprecated: use Fast path confidence threshold"
-    description: >-
-      Legacy setting; used only when Fast path confidence threshold is 0 or
-      unset.
-  system_prompt:
-    name: "Deprecated: use Extra instructions"
-    description: >-
-      Legacy setting; used as Extra instructions when those are empty (the old
-      shipped default prompt is ignored).
