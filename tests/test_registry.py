@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import BaseModel
 
@@ -47,3 +49,18 @@ def test_tools_for_tier_filters_and_sorts():
     assert [t.name for t in read_only] == ["alpha", "zeta"]
     everything = registry.tools_for_tier(2)
     assert [t.name for t in everything] == ["alpha", "beta", "zeta"]
+
+
+_HOME_SPECIFIC = ("roborock", "qrevo", "tallinn")
+
+
+def test_no_home_specific_names_in_tool_text():
+    registry._reset_for_tests()
+    registry.load_all()
+    offenders = []
+    for t in registry.all_tools():
+        text = (t.description + json.dumps(t.params_model.model_json_schema())).lower()
+        for word in _HOME_SPECIFIC:
+            if word in text:
+                offenders.append((t.name, word))
+    assert offenders == []

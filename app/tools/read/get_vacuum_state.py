@@ -33,7 +33,7 @@ register(
     ToolDefinition(
         name="get_vacuum_state",
         description=(
-            "Get the Roborock vacuum's CURRENT state and room. "
+            "Get the robot vacuum's CURRENT state and room. "
             "Use only for present-tense questions: is it cleaning right now, where is it, has it just docked. "
             "For historical questions ('did it run yesterday?', 'when did it last clean?'), use get_history instead."
         ),

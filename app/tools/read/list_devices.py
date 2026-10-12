@@ -8,7 +8,7 @@ from app.tools.context import ws_ready
 
 class Params(BaseModel):
     area: str = Field(default="", description="Optional area/room name filter, e.g. 'Kitchen'.")
-    name: str = Field(default="", description="Optional substring to search in device name, e.g. 'roborock'.")
+    name: str = Field(default="", description="Optional substring to search in device name, e.g. 'vacuum'.")
 
 
 async def handler(params: Params, ctx) -> ToolResult:
@@ -68,7 +68,7 @@ register(
             "List hardware devices (not HA entities), device names only. THE tool for "
             "'what devices are in <room>' / 'what's in <room>' / 'what do I have' — a clean "
             "device-level view without noisy entities. "
-            "No args → all devices. area='Kitchen' → devices in that one room. name='roborock' → search by name. "
+            "No args → all devices. area='Kitchen' → devices in that one room. name='vacuum' → search by name. "
             "Drilling into one device's individual entities+states is a separate, narrower lookup."
         ),
         params_model=Params,
