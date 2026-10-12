@@ -52,7 +52,6 @@ def test_needle_defaults_are_off_and_safe():
     s = Settings(_env_file=None)
     assert s.needle_enabled is False
     assert s.needle_confidence_threshold == 0.0  # trust-the-call (tuned weights have no confidence)
-    assert s.needle_menu_ttl_s == 60
     assert s.needle_remote_url == ""
 
 
@@ -68,6 +67,29 @@ def test_load_settings_from_options_json(tmp_path, monkeypatch):
 def test_script_domain_allowed_by_default():
     s = Settings(_env_file=None)
     assert "script" in s.allowed_domains
+
+
+def test_dead_options_are_gone():
+    s = Settings(_env_file=None)
+    assert not hasattr(s, "otlp_endpoint")
+    assert not hasattr(s, "telemetry_retention_days")
+    assert not hasattr(s, "needle_menu_ttl_s")
+
+
+def test_old_options_json_with_dead_keys_still_loads(tmp_path, monkeypatch):
+    opts = tmp_path / "options.json"
+    opts.write_text(json.dumps({"otlp_endpoint": "", "telemetry_retention_days": 0,
+                                "needle_menu_ttl_s": 60}))
+    monkeypatch.setattr("app.config.OPTIONS_FILE", opts)
+    load_settings()  # must not raise
+
+
+def test_shipped_addon_options_allow_script():
+    import yaml
+    from pathlib import Path
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    assert "script" in cfg["options"]["allowed_domains"]
+    assert "automation" in cfg["options"]["allowed_domains"]
 
 
 from pathlib import Path
