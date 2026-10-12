@@ -73,7 +73,16 @@ _MEMORY_NOTES = (
 
 
 def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
-    prompt = _BASE_PROMPT + _TOOL_ROUTING
+    # CHOOSING A TOOL is appended last (just before HOUSEHOLD INSTRUCTIONS),
+    # not right after the base prompt: with the base shortened to drop the
+    # action/scheduling sentences (moved into the conditional blocks below),
+    # putting the routing rules immediately next to the base put them too far
+    # from the user's question for this install's small model to reliably
+    # follow — e.g. "what devices are in the Living room?" picked get_areas
+    # over list_devices. Keeping ROUTING closest to the query fixed it; see
+    # .superpowers/sdd/2026-10-12-config-ux-cleanup/task-3.1-report.md
+    # ("Fix round 1").
+    prompt = _BASE_PROMPT
     metas = list_skills(skills_dir)
     if metas:
         skill_lines = []
@@ -103,6 +112,7 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
         )
     if settings.watched_entities or settings.clock_entity:
         prompt += _MEMORY_NOTES
+    prompt += _TOOL_ROUTING
     extra = settings.extra_instructions.strip()
     if extra:
         prompt += "\n\nHOUSEHOLD INSTRUCTIONS:\n" + extra
