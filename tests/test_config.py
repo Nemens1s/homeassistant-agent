@@ -140,7 +140,7 @@ _EVENT_MEMORY_KEYS = (
 def test_event_memory_defaults():
     s = Settings(_env_file=None)
     assert s.watched_entities == []
-    assert s.clock_entity == "sensor.europe_tallinn"
+    assert s.clock_entity == ""
     assert s.event_confirmations_enabled is True
     assert s.memory_note_default_ttl_hours == 24
     assert s.memory_note_max_ttl_hours == 168
@@ -151,9 +151,13 @@ def test_event_memory_defaults():
 def test_addon_config_mirrors_event_memory_settings():
     config_path = Path(__file__).parent.parent / "config.yaml"
     config = yaml.safe_load(config_path.read_text())
+    _VISIBLE_EVENT_MEMORY_KEYS = (
+        "watched_entities", "clock_entity", "event_confirmations_enabled", "notify_action",
+    )
     for key in _EVENT_MEMORY_KEYS:
-        assert key in config["options"], key
         assert key in config["schema"], key
+        if key in _VISIBLE_EVENT_MEMORY_KEYS:
+            assert key in config["options"], key
 
 
 import pytest
@@ -171,3 +175,31 @@ def test_scheduling_durations_must_be_positive(field):
 def test_notify_action_is_normalised():
     s = Settings(_env_file=None, notify_action="  Script.AI_Action_Notify ")
     assert s.notify_action == "script.ai_action_notify"
+
+
+def test_visible_addon_options_are_minimal():
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    assert set(cfg["options"]) == {
+        "llm_url", "llm_model", "api_key", "allow_actions", "ai_actions_switch",
+        "notify_action", "watched_entities", "clock_entity",
+        "event_confirmations_enabled", "person_name_map",
+        "language_layer_enabled", "languages",
+    }
+    for key in cfg["schema"]:
+        if key not in cfg["options"]:
+            assert str(cfg["schema"][key]).endswith("?") or isinstance(cfg["schema"][key], list), key
+
+
+def test_every_schema_key_is_a_settings_field():
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    fields = set(Settings.model_fields)
+    for key in cfg["schema"]:
+        assert key in fields, key
+
+
+def test_paths_come_from_env_when_absent_from_options(tmp_path, monkeypatch):
+    opts = tmp_path / "options.json"
+    opts.write_text("{}")
+    monkeypatch.setattr("app.config.OPTIONS_FILE", opts)
+    monkeypatch.setenv("CHECKPOINT_DB_PATH", "/data/checkpoints.sqlite")
+    assert load_settings().checkpoint_db_path == "/data/checkpoints.sqlite"

@@ -17,6 +17,7 @@ def _settings():
         ha_token="t",
         llm_url="http://127.0.0.1:59998",
         ws_connect_timeout=0.5,
+        clock_entity="sensor.europe_tallinn",
     )
 
 

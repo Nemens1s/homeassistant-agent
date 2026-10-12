@@ -17,8 +17,42 @@ this path.
 3. Install, then on the **Configuration** tab set at minimum:
    - `llm_url`: `http://<laptop-ip>:11434` (Ollama) or your llama.cpp base URL
    - `llm_model`: a model pulled on that server (e.g. `qwen3.5:4b`)
-   Everything else has sane defaults; the Supervisor writes your choices to
-   `/data/options.json`, which the app reads at startup.
+   The Configuration tab only shows the minimal option set below; the
+   Supervisor writes your choices to `/data/options.json`, which the app
+   reads at startup.
+
+   | Key | Default | Notes |
+   |---|---|---|
+   | `llm_url` | `` | Ollama, llama.cpp (llama-server), or any OpenAI-compatible base URL |
+   | `llm_model` | `` | Model tag served by the LLM backend |
+   | `api_key` | `` | Cloud provider key (only litellm providers) |
+   | `allow_actions` | `false` | `true` unlocks `trigger_action`/`notify_user`/scheduling |
+   | `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
+   | `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
+   | `watched_entities` | `[]` | Entities watched for state-triggered notes; empty = off |
+   | `clock_entity` | `` | World Clock sensor for time-triggered notes/scheduling; empty = off |
+   | `event_confirmations_enabled` | `true` | Send a confirmation when a fired note acts |
+   | `person_name_map` | `[]` | Rename people for the agent |
+   | `language_layer_enabled` | `false` | Accept non-English messages via lang-mt |
+   | `languages` | `[en, et, ru]` | Languages detection may choose between |
+
+   Everything else — sampling knobs (`temperature`, `top_p`, `num_ctx`, ...),
+   `llm_provider`, `system_prompt`, `recursion_limit`, `max_rows`,
+   `max_history_messages`, `enable_tool_subsetting`, `fast_path_*`,
+   `person_name_exclude`, the language-layer tuning knobs
+   (`lang_mt_url`/`default_language`/`min_confidence`/`lang_mt_timeout_s`),
+   `telemetry_enabled`, and the note-scheduling knobs
+   (`memory_note_default_ttl_hours`, `memory_note_max_ttl_hours`,
+   `time_note_grace_minutes`) — has a code default and stays hidden from the
+   Configuration tab until you add it explicitly. `checkpoint_db_path`,
+   `telemetry_db_path`, and `glossary_path` are no longer options at all;
+   `run.sh` fixes them via `CHECKPOINT_DB_PATH`/`TELEMETRY_DB_PATH`/
+   `GLOSSARY_PATH` environment variables.
+
+   If you run a multilingual model without the language layer turned on,
+   set `enable_tool_subsetting: false` — the tool-subsetting heuristic is
+   tuned on English tool descriptions and can mis-rank tools for
+   non-English prompts.
 4. Start it. The **Log** tab shows startup + every tool call
    (`agent.tools` lines). The sidebar panel ("HA Agent") opens the chat UI
    through ingress.

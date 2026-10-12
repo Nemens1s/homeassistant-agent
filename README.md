@@ -26,19 +26,44 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 
 ## Key Options
 
+The Configuration tab shows only this minimal set; everything else has a
+sane default and stays hidden until you explicitly set it (see "Advanced
+options" below).
+
 | Key | Default | Notes |
 |---|---|---|
-| `llm_provider` | `auto` | Auto-detects the backend at startup: Ollama via `/api/tags`, llama.cpp via `/props`, or (if `api_key` is set) an OpenAI-compatible cloud endpoint. Set explicitly to skip the probe. |
-| `llm_url` | — | Ollama URL, llama.cpp (llama-server) URL, or any OpenAI-compatible base URL |
-| `llm_model` | — | Model tag served by the LLM backend |
+| `llm_url` | `` | Ollama URL, llama.cpp (llama-server) URL, or any OpenAI-compatible base URL |
+| `llm_model` | `` | Model tag served by the LLM backend |
 | `api_key` | `` | Cloud provider key (stored as password) |
 | `allow_actions` | `false` | `false` = read-only; `true` = allows `trigger_action`/`notify_user`/scheduling |
-| `temperature` | `0.0` | |
-| `recursion_limit` | `15` | Max agent steps per request |
-| `max_rows` | `50` | Max entity rows returned per tool call |
-| `checkpoint_db_path` | `/data/checkpoints.sqlite` | SQLite conversation persistence; empty = in-memory |
+| `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
+| `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
+| `watched_entities` | `[]` | Entities the agent may watch for state-triggered notes; empty = off |
+| `clock_entity` | `` | World Clock sensor for time-triggered notes/scheduling; empty = off |
+| `event_confirmations_enabled` | `true` | Send a confirmation message when a fired note acts |
+| `person_name_map` | `[]` | Rename people for the agent (`ha_name` → `name`) |
+| `language_layer_enabled` | `false` | Accept non-English messages via the lang-mt translation service |
+| `languages` | `[en, et, ru]` | Languages detection may choose between |
 
 Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
+
+### Advanced options
+
+Everything else (LLM sampling knobs like `temperature`/`top_p`/`num_ctx`,
+`llm_provider`, `system_prompt`, `recursion_limit`, `max_rows`,
+`max_history_messages`, `enable_tool_subsetting`, the `fast_path_*` keys,
+`person_name_exclude`, the `lang_mt_*`/`default_language`/`min_confidence`
+language-layer tuning, `telemetry_enabled`, and the `memory_note_*`/
+`time_note_grace_minutes` note-scheduling knobs) stays in the add-on schema
+with a code default and is hidden from the Configuration tab until you add
+it yourself. `checkpoint_db_path`, `telemetry_db_path`, and `glossary_path`
+are no longer configurable at all — the add-on fixes them to `/data` and
+`/config/gosling` paths via environment variables in `run.sh`.
+
+If you run a multilingual model without turning on the language layer,
+set `enable_tool_subsetting: false` — the small-model tool-subsetting
+heuristic is tuned on English tool descriptions and can mis-rank tools for
+non-English prompts.
 
 **Provider auto-detection:** with `llm_provider: auto` (the default), the app
 probes `llm_url` once at startup — `/api/tags` for Ollama, `/props` for

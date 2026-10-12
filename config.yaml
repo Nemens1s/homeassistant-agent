@@ -16,122 +16,68 @@ watchdog: "http://[HOST]:[PORT:8099]/api/health"
 map:
   - config:ro
 options:
-  llm_provider: "auto"
-  llm_url: "http://ollama.home:11435"
-  llm_model: "openbmb/MiniCPM5-2B-GGUF:Q4_K_M"
+  llm_url: ""
+  llm_model: ""
   api_key: ""
-  system_prompt: >-
-    You are an assistant for this Home Assistant instance.
-    Answer questions about the home using the available tools, and always
-    look up real data with tools instead of guessing.
-    Real-world actions (turning on lights, starting the vacuum, etc.) can
-    only be performed by triggering automations — you cannot control devices
-    directly.
-    When the user asks you to perform an action now, first thing: look up the
-    available actions and trigger the one that matches the request.
-    If none matches, tell the user the action is not possible yet. Do not
-    investigate further.
-    If the user wants something to happen later (when something happens, or at
-    a time), schedule it instead - never tell them to create an automation.
-    Once a tool returns an answer, do not overthink it — present the
-    information as you found it.
-    Be concise and factual, follow instructions precisely, and do not do
-    anything extra that wasn't asked.
   allow_actions: false
   # empty string disables the home-level AI kill switch (menu + domain guards still apply)
   ai_actions_switch: "input_boolean.ai_triggered_actions"
-  temperature: 0.0
-  top_p: 0.95
-  min_p: 0.05
-  top_k: 40
-  repeat_penalty: 1.1
-  seed: 42
-  reasoning: false
-  num_predict: 2048
-  num_ctx: 16384
-  num_gpu: 36
-  keep_alive: -1
-  recursion_limit: 15
-  max_rows: 50
-  # /data persists across App restarts; empty string keeps memory in-RAM
-  checkpoint_db_path: "/data/checkpoints.sqlite"
-  # cap stored history per thread to the last N messages (0 = keep everything)
-  max_history_messages: 40
-  enable_tool_subsetting: true
-  fast_path_enabled: false
-  fast_path_confidence_threshold: 0.0
-  fast_path_url: ""
+  notify_action: "script.ai_action_notify"
+  # Event-triggered memory notes. Empty watched_entities = state notes off;
+  # empty clock_entity = time notes off.
+  watched_entities: []
+  clock_entity: ""
+  event_confirmations_enabled: true
   person_name_map: []
-  person_name_exclude: []
   # Language layer: off = today's behaviour, lang-mt is never called.
   language_layer_enabled: false
-  lang_mt_url: "http://localhost:10100"
   languages:
     - en
     - et
     - ru
-  default_language: "en"
-  min_confidence: 0.5
-  lang_mt_timeout_s: 3.0
-  glossary_path: "/config/gosling/glossary.yaml"
-  # Telemetry (local SQLite). Set telemetry_enabled=false to opt out.
-  telemetry_enabled: true
-  telemetry_db_path: "/data/telemetry.sqlite"
-  # Event-triggered memory notes. Empty watched_entities = state notes off;
-  # empty clock_entity = time notes off.
-  watched_entities: []
-  clock_entity: "sensor.europe_tallinn"
-  event_confirmations_enabled: true
-  memory_note_default_ttl_hours: 24
-  memory_note_max_ttl_hours: 168
-  time_note_grace_minutes: 120
-  notify_action: "script.ai_action_notify"
 backup_exclude:
   - "telemetry.sqlite*"
 schema:
-  llm_provider: "str"
-  llm_url: "url"
+  llm_provider: "str?"
+  llm_url: "str"
   llm_model: "str"
   api_key: "password"
-  system_prompt: "str"
+  system_prompt: "str?"
   allow_actions: "bool"
   ai_actions_switch: "str"
-  temperature: "float(0,2)"
-  top_p: "float(0,1)"
-  min_p: "float(0,1)"
-  top_k: "int(0,1000)"
-  repeat_penalty: "float(0,2)"
-  seed: "int"
-  reasoning: "bool"
-  num_predict: "int(128,32768)"
-  num_ctx: "int(1024,131072)"
-  num_gpu: "int(-1,999)"
-  keep_alive: "int"
-  recursion_limit: "int(2,50)"
-  max_rows: "int(5,500)"
-  checkpoint_db_path: "str?"
-  max_history_messages: "int(0,10000)"
-  enable_tool_subsetting: "bool"
-  fast_path_enabled: "bool"
-  fast_path_confidence_threshold: "float(0,1)"
-  fast_path_url: "str"
+  temperature: "float(0,2)?"
+  top_p: "float(0,1)?"
+  min_p: "float(0,1)?"
+  top_k: "int(0,1000)?"
+  repeat_penalty: "float(0,2)?"
+  seed: "int?"
+  reasoning: "bool?"
+  num_predict: "int(128,32768)?"
+  num_ctx: "int(1024,131072)?"
+  num_gpu: "int(-1,999)?"
+  keep_alive: "int?"
+  recursion_limit: "int(2,50)?"
+  max_rows: "int(5,500)?"
+  max_history_messages: "int(0,10000)?"
+  enable_tool_subsetting: "bool?"
+  fast_path_enabled: "bool?"
+  fast_path_confidence_threshold: "float(0,1)?"
+  fast_path_url: "str?"
   person_name_map:
     - ha_name: str
       name: str
-  person_name_exclude: ["str"]
+  person_name_exclude: ["str?"]
   language_layer_enabled: "bool"
-  lang_mt_url: "str"
+  lang_mt_url: "str?"
   languages: ["str"]
-  default_language: "str"
-  min_confidence: "float(0,1)"
-  lang_mt_timeout_s: "float(0.1,60)"
-  glossary_path: "str"
-  telemetry_enabled: "bool"
-  telemetry_db_path: "str?"
+  default_language: "str?"
+  min_confidence: "float(0,1)?"
+  lang_mt_timeout_s: "float(0.1,60)?"
+  telemetry_enabled: "bool?"
   watched_entities: ["str"]
   clock_entity: "str"
   event_confirmations_enabled: "bool"
-  memory_note_default_ttl_hours: "int(1,720)"
-  memory_note_max_ttl_hours: "int(1,720)"
-  time_note_grace_minutes: "int(1,1440)"
+  memory_note_default_ttl_hours: "int(1,720)?"
+  memory_note_max_ttl_hours: "int(1,720)?"
+  time_note_grace_minutes: "int(1,1440)?"
   notify_action: "str"

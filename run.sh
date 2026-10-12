@@ -7,6 +7,9 @@ export HA_BASE_URL="http://supervisor/core"
 bashio::log.info "Starting Agent Gosling..."
 
 export AUDIT_DB_PATH=/data/audit.db
+export CHECKPOINT_DB_PATH=/data/checkpoints.sqlite
+export TELEMETRY_DB_PATH=/data/telemetry.sqlite
+export GLOSSARY_PATH=/config/gosling/glossary.yaml
 
 cd /app || exit 1
 exec uvicorn app.main:create_app --factory \

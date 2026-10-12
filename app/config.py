@@ -17,6 +17,15 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are an assistant for this Home Assistant instance. "
     "Answer questions about the home using the available tools, and always "
     "look up real data with tools instead of guessing. "
+    "Real-world actions (turning on lights, starting the vacuum, etc.) can "
+    "only be performed by triggering automations — you cannot control devices "
+    "directly. "
+    "When the user asks you to perform an action now, first thing: look up the "
+    "available actions and trigger the one that matches the request. "
+    "If none matches, tell the user the action is not possible yet. Do not "
+    "investigate further. "
+    "If the user wants something to happen later (when something happens, or at "
+    "a time), schedule it instead - never tell them to create an automation. "
     "Once a tool returns an answer, do not overthink it — present the "
     "information as you found it. "
     "Be concise and factual, follow instructions precisely, and do not do "
@@ -97,7 +106,7 @@ class Settings(BaseSettings):
     # Per-thread history cap: after each run, prune stored history to the last N
     # messages (rounded to a human-turn boundary). 0 = keep full history. This
     # bounds unbounded per-thread growth, especially with a durable checkpointer.
-    max_history_messages: int = 0
+    max_history_messages: int = 40
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
 
     # Fast path (optional): an external service that maps a request straight to
@@ -135,7 +144,7 @@ class Settings(BaseSettings):
     # clock reaches a time. Empty watched_entities = state notes off; empty
     # clock_entity = time notes off.
     watched_entities: list[str] = []
-    clock_entity: str = "sensor.europe_tallinn"  # World Clock, "HH:MM DD-MM-YYYY"
+    clock_entity: str = ""  # World Clock entity, e.g. sensor.europe_tallinn, "HH:MM DD-MM-YYYY"
     # Off = the agent still calls notify_user after acting, but nothing is sent
     # (reminders the user asked for are always sent).
     event_confirmations_enabled: bool = True
