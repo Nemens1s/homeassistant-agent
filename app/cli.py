@@ -84,6 +84,9 @@ async def main(save_conversations: bool = False) -> None:
 
     settings = await resolve_llm_settings(settings)
     ctx = ToolContext(settings=settings, rest=rest, ws=ws, audit=audit)
+    from app.tools import registry
+    registry.load_all()
+    enabled = await registry.resolve_enabled(ctx)
     checkpointer_cm = open_checkpointer(settings)
     checkpointer = await checkpointer_cm.__aenter__()
     fast_path = None
@@ -99,7 +102,10 @@ async def main(save_conversations: bool = False) -> None:
     if telemetry_provider is not None:
         telemetry_arg = (get_tracer(), None)
 
-    agent = build_agent(settings, ctx, checkpointer=checkpointer, fast_path=fast_path, telemetry=telemetry_arg)
+    agent = build_agent(
+        settings, ctx, checkpointer=checkpointer, fast_path=fast_path,
+        telemetry=telemetry_arg, enabled=enabled,
+    )
     config = {
         "configurable": {"thread_id": "cli"},
         "recursion_limit": settings.recursion_limit,

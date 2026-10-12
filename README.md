@@ -64,7 +64,9 @@ language-layer tuning, `telemetry_enabled`, and the `memory_note_*`/
 with a code default and is hidden from the Configuration tab until you add
 it yourself. `checkpoint_db_path`, `telemetry_db_path`, and `glossary_path`
 are no longer configurable at all — the add-on fixes them to `/data` and
-`/config/gosling` paths via environment variables in `run.sh`.
+`/config/gosling` paths via environment variables in `run.sh`. `disabled_tools`
+(a list of tool names) switches specific tools off regardless of tier or
+whether a matching entity exists in this home.
 
 If you run a multilingual model without turning on the language layer,
 set `enable_tool_subsetting: false` — the small-model tool-subsetting

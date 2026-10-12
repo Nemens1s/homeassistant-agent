@@ -62,6 +62,11 @@ class ToolDefinition:
     tier: Tier
     handler: Callable[[BaseModel, Any], Awaitable[ToolResult]]
     dynamic_params: Callable[[Any], type[BaseModel]] | None = None
+    # Optional availability probe: async (ctx) -> bool. None means always
+    # available. Used by registry.resolve_enabled to drop tools that have
+    # nothing to act on in this home (e.g. no vacuum entity) — a probe that
+    # raises is treated as available (fail open; see resolve_enabled).
+    available: Callable[[Any], Awaitable[bool]] | None = None
 
 
 def entity_domain(entity_id: str) -> str:

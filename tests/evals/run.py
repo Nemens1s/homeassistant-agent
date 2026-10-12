@@ -211,7 +211,8 @@ async def main() -> int:
     registry._reset_for_tests()
     registry.load_all()
     ctx = ToolContext(settings=settings, rest=None, ws=None)  # handlers never run
-    tools = build_tools(ctx, max_tier=max_tier)
+    enabled = await registry.resolve_enabled(ctx)
+    tools = build_tools(ctx, max_tier=max_tier, enabled=enabled)
     llm = build_llm(settings)
     system = timestamped_system(build_system_prompt(settings, ctx.skills_dir))
     output: dict = {

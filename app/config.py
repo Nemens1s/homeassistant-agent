@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     # bounds unbounded per-thread growth, especially with a durable checkpointer.
     max_history_messages: int = 40
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
+    # Tool names to never offer the agent, regardless of tier or probe result.
+    # Empty = nothing switched off beyond tier gating and availability probes.
+    disabled_tools: list[str] = []
 
     # Fast path (optional): an external service that maps a request straight to
     # one ai_* action, skipping the LLM. Contract: README "Fast path". Off by

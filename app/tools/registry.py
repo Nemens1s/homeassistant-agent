@@ -9,9 +9,12 @@ tool (trigger_action) is also included.
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 
 from app.tools.base import ToolDefinition
+
+log = logging.getLogger("agent.tools")
 
 _REGISTRY: dict[str, ToolDefinition] = {}
 
@@ -70,6 +73,30 @@ def tools_for_tier(max_tier: int) -> list[ToolDefinition]:
 
     eligible.sort(key=sort_key)
     return eligible
+
+
+async def resolve_enabled(ctx) -> set[str]:
+    """Tool names to offer in this home: allowed by tier, not switched off by
+    the user, and (for helper tools) backed by a matching entity. A probe that
+    fails keeps its tool — better a useless tool than a missing one."""
+    disabled = set(ctx.settings.disabled_tools)
+    enabled: set[str] = set()
+    for t in tools_for_tier(ctx.settings.max_tier):
+        if t.name in disabled:
+            continue
+        if t.available is None:
+            enabled.add(t.name)
+            continue
+        try:
+            ok = await t.available(ctx)
+        except Exception as exc:
+            log.warning("tool=%s availability probe failed (%s); keeping it", t.name, exc)
+            ok = True
+        if ok:
+            enabled.add(t.name)
+        else:
+            log.info("tool=%s not registered: nothing in this home to use it on", t.name)
+    return enabled
 
 
 def load_all(modules: tuple[str, ...] = _DEFAULT_MODULES) -> None:

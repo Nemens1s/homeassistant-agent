@@ -119,18 +119,24 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     return prompt
 
 
-def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None, telemetry=None):
+def build_agent(
+    settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None,
+    telemetry=None, enabled=None,
+):
     """Build the agent.
 
     Args:
         telemetry: Optional tuple ``(tracer, store_conn)``.  The tracer is
             forwarded to ``TelemetryMiddleware``.  ``store_conn`` is reserved
             for fast-path persistence.
+        enabled: Optional set of tool names to offer (see
+            ``registry.resolve_enabled``). ``None`` builds every tool allowed
+            by tier, which is the current behaviour.
     """
     registry.load_all()
     llm = build_llm(settings)
     guard = LoopGuard()
-    tools = build_tools(ctx, settings.max_tier, guard=guard)
+    tools = build_tools(ctx, settings.max_tier, guard=guard, enabled=enabled)
     base_prompt = build_system_prompt(settings, ctx.skills_dir)
     budget = max(1024, settings.num_ctx - settings.num_predict - _RESPONSE_AND_SCHEMA_MARGIN)
 

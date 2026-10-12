@@ -186,3 +186,9 @@ configuration:
       Household-specific instructions appended after the built-in base
       prompt (e.g. preferred names, phrasing, or house rules). Leave blank to
       use only the built-in prompt.
+  disabled_tools:
+    name: Disabled tools
+    description: >-
+      Tool names the agent should never be offered, regardless of tier or
+      whether a matching entity exists. Empty = nothing switched off beyond
+      that.
