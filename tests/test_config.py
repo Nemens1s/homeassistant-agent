@@ -14,7 +14,7 @@ def _clean_token_env(monkeypatch):
 def test_defaults():
     s = Settings(_env_file=None)
     assert s.ha_base_url == "http://supervisor/core"
-    assert s.llm_provider == "ollama"
+    assert s.llm_provider == "auto"
     assert s.llm_model == "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
     assert s.max_tier == 1
     assert s.temperature == 0.0

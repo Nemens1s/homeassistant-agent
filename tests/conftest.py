@@ -90,3 +90,17 @@ _SETTINGS_ENV_VARS = [
 def _clear_settings_env(monkeypatch):
     for var in _SETTINGS_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _skip_llm_probe(monkeypatch):
+    """Most tests build Settings without an explicit llm_provider, so it
+    defaults to "auto". Without this, app.main's lifespan (and app.cli)
+    would probe llm_url over the network on every test run. Return cfg
+    unchanged; tests/test_llm_probe.py exercises the real probe directly.
+    """
+    async def _identity(cfg, client=None):
+        return cfg
+
+    monkeypatch.setattr("app.main.resolve_llm_settings", _identity)
+    monkeypatch.setattr("app.cli.resolve_llm_settings", _identity)

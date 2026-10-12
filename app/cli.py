@@ -16,6 +16,7 @@ from langgraph.errors import GraphRecursionError
 
 from app.agent.checkpointer import open_checkpointer
 from app.agent.factory import build_agent
+from app.agent.llm_probe import resolve_llm_settings
 from app.audit import AuditSink
 from app.constants import WRITE_DOMAINS
 from app.needle.factory import build_fast_path_backend
@@ -81,6 +82,7 @@ async def main(save_conversations: bool = False) -> None:
         print(f"warning: websocket unavailable ({exc}) — area/automation tools degraded")
         ws = None
 
+    settings = await resolve_llm_settings(settings)
     ctx = ToolContext(settings=settings, rest=rest, ws=ws, audit=audit)
     checkpointer_cm = open_checkpointer(settings)
     checkpointer = await checkpointer_cm.__aenter__()

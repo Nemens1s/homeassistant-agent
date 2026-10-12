@@ -28,8 +28,8 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 
 | Key | Default | Notes |
 |---|---|---|
-| `llm_provider` | `ollama` | `ollama` for local; anything else uses ChatOpenAI |
-| `llm_url` | — | Ollama URL, or any OpenAI-compatible base URL |
+| `llm_provider` | `auto` | Auto-detects the backend at startup: Ollama via `/api/tags`, llama.cpp via `/props`, or (if `api_key` is set) an OpenAI-compatible cloud endpoint. Set explicitly to skip the probe. |
+| `llm_url` | — | Ollama URL, llama.cpp (llama-server) URL, or any OpenAI-compatible base URL |
 | `llm_model` | — | Model tag served by the LLM backend |
 | `api_key` | `` | Cloud provider key (stored as password) |
 | `allow_actions` | `false` | `false` = read-only; `true` = allows `trigger_action`/`notify_user`/scheduling |
@@ -39,6 +39,16 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 | `checkpoint_db_path` | `/data/checkpoints.sqlite` | SQLite conversation persistence; empty = in-memory |
 
 Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
+
+**Provider auto-detection:** with `llm_provider: auto` (the default), the app
+probes `llm_url` once at startup — `/api/tags` for Ollama, `/props` for
+llama.cpp (llama-server) — and falls back to a plain OpenAI-compatible client
+if neither answers or `api_key` is set. For llama.cpp specifically, `num_ctx`
+is also read from `/props` (`default_generation_settings.n_ctx`) and used
+automatically, so you don't need to duplicate the server's context size in
+options. The probe never blocks startup indefinitely (3 s timeout per
+request) and never fails the add-on — an unreachable backend just falls back
+to the OpenAI-compatible client, same as before this behavior existed.
 
 ## Fast path
 

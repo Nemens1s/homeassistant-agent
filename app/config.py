@@ -48,7 +48,9 @@ class Settings(BaseSettings):
     ws_connect_timeout: float = 10.0
 
     # LLM backend
-    llm_provider: str = "ollama"  # "ollama", "llamacpp" (llama-server HTTP API), or any litellm provider
+    # "auto" (default) probes llm_url to pick ollama/llamacpp/openai; see
+    # app/agent/llm_probe.py. Set explicitly to skip the probe.
+    llm_provider: str = "auto"  # "ollama", "llamacpp" (llama-server HTTP API), or any litellm provider
     llm_url: str = Field(
         "http://localhost:11434",
         validation_alias=AliasChoices("LLM_URL"),

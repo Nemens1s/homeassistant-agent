@@ -16,7 +16,7 @@ watchdog: "http://[HOST]:[PORT:8099]/api/health"
 map:
   - config:ro
 options:
-  llm_provider: "llamacpp"
+  llm_provider: "auto"
   llm_url: "http://ollama.home:11435"
   llm_model: "openbmb/MiniCPM5-2B-GGUF:Q4_K_M"
   api_key: ""
