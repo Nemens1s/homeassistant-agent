@@ -29,6 +29,7 @@ this path.
    | `allow_actions` | `false` | `true` unlocks `trigger_action`/`notify_user`/scheduling |
    | `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
    | `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
+   | `extra_instructions` | `` | Household-specific text appended after the built-in base prompt |
    | `watched_entities` | `[]` | Entities watched for state-triggered notes; empty = off |
    | `clock_entity` | `` | World Clock sensor for time-triggered notes/scheduling; empty = off |
    | `event_confirmations_enabled` | `true` | Send a confirmation when a fired note acts |
@@ -36,8 +37,12 @@ this path.
    | `language_layer_enabled` | `false` | Accept non-English messages via lang-mt |
    | `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them |
 
+   The base system prompt is code-owned; `extra_instructions` is appended after it
+   under a "HOUSEHOLD INSTRUCTIONS" heading. The full assembled prompt is viewable
+   at `GET /api/prompt` and in a collapsible panel on the Metrics tab.
+
    Everything else — sampling knobs (`temperature`, `top_p`, `num_ctx`, ...),
-   `llm_provider`, `system_prompt`, `recursion_limit`, `max_rows`,
+   `llm_provider`, `recursion_limit`, `max_rows`,
    `max_history_messages`, `enable_tool_subsetting`, `fast_path_*`,
    `person_name_exclude`, the language-layer tuning knobs
    (`lang_mt_url`/`default_language`/`min_confidence`/`lang_mt_timeout_s`),

@@ -23,6 +23,7 @@ options:
   # empty string disables the home-level AI kill switch (menu + domain guards still apply)
   ai_actions_switch: "input_boolean.ai_triggered_actions"
   notify_action: "script.ai_action_notify"
+  extra_instructions: ""
   # Event-triggered memory notes. Empty watched_entities = state notes off;
   # empty clock_entity = time notes off.
   watched_entities: []
@@ -40,7 +41,6 @@ schema:
   llm_url: "str"
   llm_model: "str"
   api_key: "password"
-  system_prompt: "str?"
   allow_actions: "bool"
   ai_actions_switch: "str"
   temperature: "float(0,2)?"
@@ -79,3 +79,4 @@ schema:
   memory_note_max_ttl_hours: "int(1,720)?"
   time_note_grace_minutes: "int(1,1440)?"
   notify_action: "str"
+  extra_instructions: "str?"

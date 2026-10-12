@@ -38,7 +38,8 @@ options" below).
 | `allow_actions` | `false` | `false` = read-only; `true` = allows `trigger_action`/`notify_user`/scheduling |
 | `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
 | `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
-| `watched_entities` | `[]` | Entities the agent may watch for state-triggered notes; empty = off |
+| `extra_instructions` | `` | Household-specific text appended after the built-in base prompt (see `/api/prompt` on the Metrics tab) |
+| `watched_entities` | `[]` | Entities the agent may watch for state-triggered notes; empty = off. Up to 30 are also given to the model with their current state on every message, so it can use them directly without a search tool call |
 | `clock_entity` | `` | World Clock sensor for time-triggered notes/scheduling; empty = off |
 | `event_confirmations_enabled` | `true` | Send a confirmation message when a fired note acts |
 | `person_name_map` | `[]` | Rename people for the agent (`ha_name` → `name`) |
@@ -49,8 +50,13 @@ Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, lettin
 
 ### Advanced options
 
+The base system prompt itself is code-owned (not configurable) — `extra_instructions`
+is appended after it under a "HOUSEHOLD INSTRUCTIONS" heading. The full assembled
+prompt (base + conditional sections + your `extra_instructions`) is viewable at
+`GET /api/prompt`, and in a collapsible panel on the Metrics tab.
+
 Everything else (LLM sampling knobs like `temperature`/`top_p`/`num_ctx`,
-`llm_provider`, `system_prompt`, `recursion_limit`, `max_rows`,
+`llm_provider`, `recursion_limit`, `max_rows`,
 `max_history_messages`, `enable_tool_subsetting`, the `fast_path_*` keys,
 `person_name_exclude`, the `lang_mt_*`/`default_language`/`min_confidence`
 language-layer tuning, `telemetry_enabled`, and the `memory_note_*`/
