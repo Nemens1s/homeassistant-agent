@@ -197,3 +197,10 @@ configuration:
     description: >-
       Which vacuum.* entity get_vacuum_state uses when this home has more
       than one. Empty = the first vacuum.* sorted by entity_id.
+  skills_enabled:
+    name: Skills
+    description: >-
+      Enable user-supplied troubleshooting playbooks. Off by default — no
+      skills ship in the image. Drop markdown files into the skills folder
+      (see docs/examples/skills/ for the format) and turn this on to let the
+      agent load them with load_skill.

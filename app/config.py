@@ -186,6 +186,13 @@ class Settings(BaseSettings):
     time_note_grace_minutes: int = Field(120, ge=1)
     notify_action: str = "script.ai_action_notify"  # the only script notify_user calls
 
+    # Skills: user-supplied markdown playbooks dropped into skills_path (see
+    # docs/examples/skills/ for the format). Off by default — no skills ship
+    # in the image. load_skill is only offered when this is on and at least
+    # one skill file parses.
+    skills_enabled: bool = False
+    skills_path: str = "/config/gosling/skills"
+
     @field_validator("notify_action")
     @classmethod
     def _normalise_notify_action(cls, value: str) -> str:

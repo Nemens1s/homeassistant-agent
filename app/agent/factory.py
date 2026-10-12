@@ -53,8 +53,7 @@ _TOOL_ROUTING = (
     "- Battery questions → get_battery_status (already covers every device; no search first).\n"
     "- 'What happened' / 'did automation X fire' across the house → get_activity; "
     "'did device X run?' / state timeline of ONE entity over time → get_history.\n"
-    "- Automations (enabled? triggers? config?) → get_automations; diagnosing why "
-    "one failed → load_skill."
+    "- Automations (enabled? triggers? config?) → get_automations."
 )
 
 _MEMORY_NOTES = (
@@ -83,21 +82,23 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     # .superpowers/sdd/2026-10-12-config-ux-cleanup/task-3.1-report.md
     # ("Fix round 1").
     prompt = _BASE_PROMPT
-    metas = list_skills(skills_dir)
-    if metas:
-        skill_lines = []
-        for meta in metas:
-            skill_lines.append(f"- {meta.name}: {meta.description}")
-        lines = "\n".join(skill_lines)
-        prompt += (
-            "\n\nSKILL PLAYBOOKS — step-by-step guides for TROUBLESHOOTING and DIAGNOSIS "
-            "only (e.g. an automation didn't fire, a device stopped responding). "
-            "ONLY when the request is to diagnose or troubleshoot a problem, make your "
-            "first tool call load_skill(name) using a name exactly from this list. "
-            "For ordinary requests — listing things, checking states or history, running "
-            "or toggling devices — do NOT load a skill; use the other tools directly:\n"
-            + lines
-        )
+    if settings.skills_enabled:
+        metas = list_skills(skills_dir)
+        if metas:
+            skill_lines = []
+            for meta in metas:
+                skill_lines.append(f"- {meta.name}: {meta.description}")
+            lines = "\n".join(skill_lines)
+            prompt += (
+                "\n\nSKILL PLAYBOOKS — step-by-step guides for TROUBLESHOOTING and DIAGNOSIS "
+                "only (e.g. an automation didn't fire, a device stopped responding). "
+                "Diagnosing why an automation failed → load_skill. "
+                "ONLY when the request is to diagnose or troubleshoot a problem, make your "
+                "first tool call load_skill(name) using a name exactly from this list. "
+                "For ordinary requests — listing things, checking states or history, running "
+                "or toggling devices — do NOT load a skill; use the other tools directly:\n"
+                + lines
+            )
     if settings.max_tier >= 2:
         prompt += (
             "\n\nACTIONS (to do NOW): real-world actions (turning on lights, stopping the "

@@ -16,10 +16,23 @@ def test_build_system_prompt_lists_skills(tmp_path):
     (tmp_path / "a_skill.md").write_text(
         "---\nname: a_skill\ndescription: does a thing\n---\nbody"
     )
-    s = Settings(_env_file=None)
+    s = Settings(_env_file=None, skills_enabled=True)
     prompt = build_system_prompt(s, tmp_path)
     assert prompt.startswith("You are an assistant for this Home Assistant instance.")
     assert "- a_skill: does a thing" in prompt
+
+
+def test_skills_block_absent_when_disabled(tmp_path):
+    (tmp_path / "a.md").write_text("---\nname: a\ndescription: d\n---\nbody")
+    prompt = build_system_prompt(Settings(_env_file=None), tmp_path)
+    assert "SKILL PLAYBOOKS" not in prompt
+    assert "load_skill" not in prompt
+
+
+def test_skills_block_present_when_enabled(tmp_path):
+    (tmp_path / "a.md").write_text("---\nname: a\ndescription: d\n---\nbody")
+    prompt = build_system_prompt(Settings(_env_file=None, skills_enabled=True), tmp_path)
+    assert "- a: d" in prompt
 
 
 def test_build_system_prompt_no_skills(tmp_path):

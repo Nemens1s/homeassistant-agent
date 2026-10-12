@@ -63,3 +63,25 @@ async def test_invalid_skill_name_is_rejected_by_schema(tmp_path):
     model = defn.dynamic_params(ToolContext(settings=Settings(_env_file=None), rest=None, skills_dir=tmp_path))
     with pytest.raises(Exception):  # ValidationError — not a real skill name
         model(name="made_up")
+
+
+async def test_load_skill_unavailable_when_folder_missing(tmp_path):
+    registry._reset_for_tests()
+    registry.load_all(("app.tools.read.load_skill",))
+    ctx = ToolContext(settings=Settings(_env_file=None, skills_enabled=True), rest=None,
+                      skills_dir=tmp_path / "missing")
+    assert "load_skill" not in await registry.resolve_enabled(ctx)
+
+
+async def test_load_skill_unavailable_when_skills_disabled(tmp_path):
+    _skills_dir(tmp_path, ["only_skill"])
+    ctx = ToolContext(settings=Settings(_env_file=None, skills_enabled=False), rest=None,
+                      skills_dir=tmp_path)
+    assert "load_skill" not in await registry.resolve_enabled(ctx)
+
+
+async def test_load_skill_available_when_enabled_and_skills_exist(tmp_path):
+    _skills_dir(tmp_path, ["only_skill"])
+    ctx = ToolContext(settings=Settings(_env_file=None, skills_enabled=True), rest=None,
+                      skills_dir=tmp_path)
+    assert "load_skill" in await registry.resolve_enabled(ctx)

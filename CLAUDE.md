@@ -32,8 +32,12 @@ class in `app/config.py`; in the addon container it reads
 - `tools/base.py` — `ToolDefinition` (name, description ≤400 chars, pydantic
   params model, `Tier`, async handler), `ToolResult` envelope, `bound_rows`.
 - `tools/registry.py` — tools register at import; `_DEFAULT_MODULES` lists
-  them; `tools_for_tier(max_tier)` is the permission gate. **Adding a tool =
-  one new module + one line in `_DEFAULT_MODULES`.**
+  them; `tools_for_tier(max_tier)` is the permission gate; `resolve_enabled(ctx)`
+  additionally drops tools disabled by name or whose `available=` probe says
+  there's nothing in this home to use them on. **Adding a tool = one new
+  module + one line in `_DEFAULT_MODULES`** (plus an `available=` probe on the
+  `ToolDefinition` when the tool only makes sense if something backs it,
+  e.g. a matching entity or `settings.skills_enabled`).
 - `tools/adapter.py` — THE seam. Converts definitions to LangChain
   `StructuredTool`s and owns ALL cross-cutting behavior: exception→envelope
   mapping, audit log (`agent.tools` logger, `tool=... status=... duration_ms=...`
@@ -67,9 +71,14 @@ class in `app/config.py`; in the addon container it reads
   gets an English answer). `store.py` keeps a `lang_overlay` table in the
   checkpoint DB so `/api/history` can show native text after a reload. Spec:
   `docs/superpowers/specs/2026-09-29-multilingual-language-layer-design.md`.
-- `skills/` — markdown playbooks with YAML frontmatter, listed in the system
-  prompt, loaded on demand via the `load_skill` tool. Skills are data;
-  iterate on them without code changes.
+- `skills/` — markdown playbook parser (`list_skills`/`read_skill`). Skills
+  are user-supplied and off by default (`settings.skills_enabled`, default
+  `False`): nothing ships in `app/skills/` — users drop their own files into
+  `settings.skills_path` (default `/config/gosling/skills`); see
+  `docs/examples/skills/` for the format. When enabled, the system prompt
+  lists name+description one-liners and `load_skill` loads one on demand;
+  `load_skill`'s `available=` probe keeps it off the tool menu unless skills
+  are enabled and at least one file parses.
 - `events/` — the proactive half. `listener.py` holds one `subscribe_trigger`
   over `watched_entities` + `clock_entity`, matches each event against notes
   in SQL, and only then hands them to `runner.py`: a task with a saved

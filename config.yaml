@@ -80,5 +80,6 @@ schema:
   time_note_grace_minutes: "int(1,1440)?"
   disabled_tools: ["str"]
   vacuum_entity: "str?"
+  skills_enabled: "bool?"
   notify_action: "str"
   extra_instructions: "str?"

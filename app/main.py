@@ -123,7 +123,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from app.telemetry.snapshots import register_prompt, register_toolset
         from app.telemetry.store import open_store
         from app.agent.factory import build_system_prompt
-        from app.skills import list_skills
 
         write_domains = WRITE_DOMAINS if cfg.allow_actions else ()
         rest = RestClient(cfg.ha_base_url, cfg.ha_token,
