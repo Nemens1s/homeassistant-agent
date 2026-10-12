@@ -1,5 +1,5 @@
 name: "Agent Gosling"
-version: "0.4.24"
+version: "0.4.25"
 slug: agent_gosling
 description: "Chat agent over Home Assistant state, powered by a local models (cloud models optional via LiteLLM)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
@@ -43,6 +43,7 @@ options:
     - switch
     - fan
     - automation
+    - script
   # empty string disables the home-level AI kill switch (menu + domain guards still apply)
   ai_actions_switch: "input_boolean.ai_triggered_actions"
   temperature: 0.0
@@ -65,7 +66,6 @@ options:
   enable_tool_subsetting: true
   needle_enabled: false
   needle_confidence_threshold: 0.0
-  needle_menu_ttl_s: 60
   needle_remote_url: ""
   person_name_map: []
   person_name_exclude: []
@@ -80,11 +80,9 @@ options:
   min_confidence: 0.5
   lang_mt_timeout_s: 3.0
   glossary_path: "/config/gosling/glossary.yaml"
-  # Telemetry (local SQLite + optional OTLP). Set telemetry_enabled=false to opt out.
+  # Telemetry (local SQLite). Set telemetry_enabled=false to opt out.
   telemetry_enabled: true
   telemetry_db_path: "/data/telemetry.sqlite"
-  telemetry_retention_days: 0
-  otlp_endpoint: ""
   # Event-triggered memory notes. Empty watched_entities = state notes off;
   # empty clock_entity = time notes off.
   watched_entities: []
@@ -123,7 +121,6 @@ schema:
   enable_tool_subsetting: "bool"
   needle_enabled: "bool"
   needle_confidence_threshold: "float(0,1)"
-  needle_menu_ttl_s: "int(1,3600)"
   needle_remote_url: "str"
   person_name_map:
     - ha_name: str
@@ -138,8 +135,6 @@ schema:
   glossary_path: "str"
   telemetry_enabled: "bool"
   telemetry_db_path: "str?"
-  telemetry_retention_days: "int"
-  otlp_endpoint: "str?"
   watched_entities: ["str"]
   clock_entity: "str"
   event_confirmations_enabled: "bool"

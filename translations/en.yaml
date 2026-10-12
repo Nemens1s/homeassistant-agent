@@ -118,9 +118,6 @@ configuration:
     description: >-
       Fire only when Needle confidence is at or above this. 0.0 fires on any
       emitted call (correct for fine-tuned weights that report no confidence).
-  needle_menu_ttl_s:
-    name: Needle menu TTL
-    description: How long (seconds) to cache the Needle menu/grammar.
   needle_remote_url:
     name: Needle service URL
     description: URL of the remote Needle inference service.
@@ -186,16 +183,3 @@ configuration:
       SQLite file the traces are written to. /data persists across add-on
       restarts. An empty string disables telemetry regardless of the switch
       above; the file is excluded from add-on backups.
-  telemetry_retention_days:
-    name: Telemetry retention
-    description: >-
-      Intended age limit (days) for stored traces; 0 = keep everything.
-      Automatic pruning is not implemented yet, so this value currently has no
-      effect and the file grows until you delete it.
-  otlp_endpoint:
-    name: OTLP endpoint
-    description: >-
-      Reserved for exporting traces to a collector (e.g.
-      http://otelcol.home:4318). No exporter is wired up yet, so setting it
-      changes nothing except that the add-on refuses to start if the address is
-      not on your LAN. Leave blank.

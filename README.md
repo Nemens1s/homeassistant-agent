@@ -33,7 +33,7 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 | `llm_model` | — | Model tag served by the LLM backend |
 | `api_key` | `` | Cloud provider key (stored as password) |
 | `max_tier` | `1` | `1` = read-only; `2` = control tools |
-| `allowed_domains` | `["light","switch","automation"]` | Domains the agent may control at `max_tier=2` |
+| `allowed_domains` | `["light","switch","fan","automation","script"]` | Domains the agent may control at `max_tier=2` |
 | `temperature` | `0.0` | |
 | `recursion_limit` | `15` | Max agent steps per request |
 | `max_rows` | `50` | Max entity rows returned per tool call |

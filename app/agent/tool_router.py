@@ -52,7 +52,7 @@ _NOTE_ADMIN: tuple[str, ...] = (
 # design: false positives just add a schema; false negatives hide a shortcut.
 _KEYWORDS: dict[str, tuple[str, ...]] = {
     "get_battery_status": ("batter", "charge", "charging", "power level", "low power"),
-    "get_vacuum_state": ("vacuum", "roomba", "roborock", "hoover", "robot", "cleaning", "clean the"),
+    "get_vacuum_state": ("vacuum", "roomba", "hoover", "robot", "cleaning", "clean the"),
     "get_weather": ("weather", "forecast", "rain", "sunny", "snow", "wind", "outside", "humidity outside"),
     "get_person_locations": (
         # bare "home" catches "Is <name> home?"; over-exposing the person tool is

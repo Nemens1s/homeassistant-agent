@@ -11,6 +11,8 @@ from app.tools import registry
 
 log = logging.getLogger("fast_path")
 
+_MENU_TTL_S = 60  # menu/grammar cache TTL
+
 
 def build_fast_path_backend(cfg, rest, ctx):
     """Return (RemoteNeedleBackend, MenuProvider), or None when the fast path should not run.
@@ -28,7 +30,7 @@ def build_fast_path_backend(cfg, rest, ctx):
         log.warning("needle enabled but trigger_action not registered; fast path off")
         return None
     backend = RemoteNeedleBackend(cfg.needle_remote_url)
-    menu_provider = MenuProvider(rest, ttl_s=cfg.needle_menu_ttl_s,
+    menu_provider = MenuProvider(rest, ttl_s=_MENU_TTL_S,
                                  prefixes=(AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION),
                                  ws=ctx.ws, exclude=(cfg.notify_action,))
     return backend, menu_provider

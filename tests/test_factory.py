@@ -157,7 +157,6 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
         needle_enabled = True
         max_tier = 2
         needle_remote_url = "http://needle.test"
-        needle_menu_ttl_s = 60
         notify_action = "script.ai_action_notify"
 
     class Ctx:

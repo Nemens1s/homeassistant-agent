@@ -95,7 +95,6 @@ class Settings(BaseSettings):
     # (the head is not tuned), so a nonzero threshold would block EVERYTHING with
     # a tuned model. Raise it only if running the calibrated BASE model.
     needle_confidence_threshold: float = 0.0
-    needle_menu_ttl_s: int = 60          # menu/grammar cache TTL
 
     # Language layer. Off by default: when
     # disabled the HTTP edge behaves exactly as before and lang-mt is never
@@ -108,14 +107,10 @@ class Settings(BaseSettings):
     lang_mt_timeout_s: float = 3.0
     glossary_path: str = "/config/gosling/glossary.yaml"
 
-    # Telemetry (OTel + local SQLite). Set telemetry_enabled=False to opt out.
+    # Telemetry (local SQLite). Set telemetry_enabled=False to opt out.
     # telemetry_db_path: local SQLite file; empty = telemetry disabled.
-    # telemetry_retention_days: 0 = keep forever (pruning is a future task).
-    # otlp_endpoint: OTLP HTTP exporter — Phase 2 only; ignored here.
     telemetry_enabled: bool = True
     telemetry_db_path: str = "/data/telemetry.sqlite"
-    telemetry_retention_days: int = 0
-    otlp_endpoint: str = ""
 
     # Event-triggered memory notes (spec 2026-10-04). The agent saves one-shot
     # notes; the harness fires them when a watched entity changes state or the

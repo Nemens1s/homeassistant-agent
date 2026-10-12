@@ -52,6 +52,13 @@ def get(name: str) -> ToolDefinition | None:
     return _REGISTRY.get(name)
 
 
+def all_tools() -> list[ToolDefinition]:
+    result = []
+    for t in _REGISTRY.values():
+        result.append(t)
+    return result
+
+
 def tools_for_tier(max_tier: int) -> list[ToolDefinition]:
     eligible = []
     for t in _REGISTRY.values():
