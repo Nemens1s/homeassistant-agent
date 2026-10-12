@@ -164,6 +164,43 @@ def test_tool_subsetting_flag_toggles_middleware():
     assert not any(isinstance(m, ToolSubsetMiddleware) for m in mws(False))
 
 
+def test_watched_entities_middleware_placed_after_tool_subset():
+    from app.agent.factory import build_middleware
+    from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
+    from app.tools.adapter import LoopGuard
+
+    s = Settings(_env_file=None, enable_tool_subsetting=True, watched_entities=["vacuum.x"])
+    middleware = build_middleware(s, LoopGuard(), "prompt", 1024, rest=object())
+
+    tool_subset_index = None
+    watched_index = None
+    for i, m in enumerate(middleware):
+        if isinstance(m, ToolSubsetMiddleware):
+            tool_subset_index = i
+        if isinstance(m, WatchedEntitiesMiddleware):
+            watched_index = i
+    assert tool_subset_index is not None
+    assert watched_index is not None
+    assert watched_index > tool_subset_index
+
+
+def test_watched_entities_middleware_absent_without_rest_or_ids():
+    from app.agent.factory import build_middleware
+    from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
+    from app.tools.adapter import LoopGuard
+
+    s_no_ids = Settings(_env_file=None, watched_entities=[])
+    s_no_rest = Settings(_env_file=None, watched_entities=["vacuum.x"])
+    assert not any(
+        isinstance(m, WatchedEntitiesMiddleware)
+        for m in build_middleware(s_no_ids, LoopGuard(), "prompt", 1024, rest=object())
+    )
+    assert not any(
+        isinstance(m, WatchedEntitiesMiddleware)
+        for m in build_middleware(s_no_rest, LoopGuard(), "prompt", 1024)
+    )
+
+
 def test_fast_path_menu_spans_automation_and_script_prefixes():
     from app.constants import AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION
     from app.needle.factory import build_fast_path_backend

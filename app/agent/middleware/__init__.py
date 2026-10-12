@@ -7,6 +7,7 @@ from app.agent.middleware.history_cap_middleware import HistoryCapMiddleware
 from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware
 from app.agent.middleware.fast_path_middleware import FastPathMiddleware
+from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
 from app.config import Settings
 from app.tools.adapter import LoopGuard
 
@@ -19,6 +20,7 @@ def build_middleware(
     fast_path=None,
     telemetry_tracer=None,
     telemetry_store_conn=None,
+    rest=None,
 ) -> list[AgentMiddleware]:
     middleware: list[AgentMiddleware] = [
         ContextWindowMiddleware(base_prompt, budget),
@@ -29,6 +31,11 @@ def build_middleware(
     if settings.enable_tool_subsetting:
         # First so it trims the menu before the model call is assembled.
         middleware.insert(0, ToolSubsetMiddleware())
+    if settings.watched_entities and rest is not None:
+        # After ContextWindowMiddleware so trimming runs first, and after
+        # ToolSubsetMiddleware (index 0) so routing sees the raw user text
+        # before this middleware appends the home_context block.
+        middleware.append(WatchedEntitiesMiddleware(rest, settings.watched_entities))
     # TelemetryMiddleware is inserted immediately before FastPath (outer to it, inner to all else).
     if telemetry_tracer is not None:
         from app.agent.middleware.telemetry_middleware import TelemetryMiddleware

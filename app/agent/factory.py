@@ -150,6 +150,7 @@ def build_agent(settings: Settings, ctx: ToolContext, checkpointer=None, fast_pa
             fast_path=fast_path,
             telemetry_tracer=telemetry_tracer,
             telemetry_store_conn=telemetry_store_conn,
+            rest=ctx.rest,
         ),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )
