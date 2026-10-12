@@ -77,7 +77,7 @@ def store():
 
 
 def _ctx(store, rest=None, lang=None, **overrides):
-    values = {"watched_entities": [VACUUM], "max_tier": 2, "clock_entity": "sensor.europe_tallinn"}
+    values = {"watched_entities": [VACUUM], "allow_actions": True, "clock_entity": "sensor.europe_tallinn"}
     values.update(overrides)
     settings = Settings(_env_file=None, **values)
     return ToolContext(
@@ -264,7 +264,7 @@ def test_schedule_tools_do_not_ask_for_tags():
     ("schedule_at_time", {"at": "18:00", "instruction": "x"}),
 ])
 async def test_scheduling_refused_without_action_tier(store, name, args):
-    result = await _call(name, _ctx(store, max_tier=1), **args)
+    result = await _call(name, _ctx(store, allow_actions=False), **args)
     assert result.error_code == "feature_disabled"
     assert "max_tier" in result.error_message
     assert _pending(store) == []

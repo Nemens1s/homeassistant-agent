@@ -29,7 +29,7 @@ class FakeRest:
 
 def _scripted_agent(monkeypatch, responses):
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, max_tier=1)
+    settings = Settings(_env_file=None, allow_actions=False)
     ctx = ToolContext(settings=settings, rest=FakeRest(), ws=None)
     model = ScriptedModel(responses=responses)
     monkeypatch.setattr(factory_mod, "build_llm", lambda s: model)

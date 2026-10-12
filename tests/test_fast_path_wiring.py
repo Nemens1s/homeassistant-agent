@@ -14,7 +14,7 @@ def _types(mws):
 
 
 def test_fastpath_added_when_provided_and_tier2():
-    s = Settings(_env_file=None, max_tier=2, enable_tool_subsetting=False)
+    s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False)
     mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()))
     assert "FastPathMiddleware" in _types(mws)
     # outermost-first: FastPath is the last (innermost) entry
@@ -22,12 +22,12 @@ def test_fastpath_added_when_provided_and_tier2():
 
 
 def test_fastpath_absent_without_tier2():
-    s = Settings(_env_file=None, max_tier=1, enable_tool_subsetting=False)
+    s = Settings(_env_file=None, allow_actions=False, enable_tool_subsetting=False)
     mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()))
     assert "FastPathMiddleware" not in _types(mws)
 
 
 def test_fastpath_absent_when_none():
-    s = Settings(_env_file=None, max_tier=2, enable_tool_subsetting=False)
+    s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False)
     mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=None)
     assert "FastPathMiddleware" not in _types(mws)

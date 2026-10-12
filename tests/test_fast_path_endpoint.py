@@ -38,7 +38,7 @@ class FakeRest:
 
 async def test_fast_path_hit_persists_full_turn(monkeypatch):
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, max_tier=2)  # tier-2 → trigger_action registered
+    settings = Settings(_env_file=None, allow_actions=True)  # tier-2 → trigger_action registered
     ctx = ToolContext(settings=settings, rest=FakeRest(), ws=None)
     # Scripted with an entry that must NOT be consumed (the fast path short-circuits).
     model = ScriptedModel(responses=[AIMessage(content="LLM SHOULD NOT RUN")])
@@ -68,7 +68,7 @@ async def test_fast_path_decline_falls_through_to_llm(monkeypatch):
     scripted LLM, which should be consumed. This partially restores fallback
     coverage removed when FastPathRouter was deleted."""
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, max_tier=2)
+    settings = Settings(_env_file=None, allow_actions=True)
     ctx = ToolContext(settings=settings, rest=FakeRest(), ws=None)
     # No entity_id returned by the backend → falls through regardless of threshold.
     model = ScriptedModel(responses=[AIMessage(content="LLM ran the fallback")])

@@ -52,7 +52,7 @@ class FakeRest:
 
 async def test_scheduled_stop_runs_without_model_at_fire_time(monkeypatch):
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, max_tier=2, watched_entities=[VACUUM])
+    settings = Settings(_env_file=None, allow_actions=True, watched_entities=[VACUUM])
     store = NoteStore("")
     rest = FakeRest()
     ctx = ToolContext(settings=settings, rest=rest, ws=None, notes=store)

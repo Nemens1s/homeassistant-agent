@@ -121,7 +121,7 @@ def test_middleware_ordering_with_telemetry():
     tp.add_span_processor(SimpleSpanProcessor(exp))
     dummy_tracer = tp.get_tracer("test-ordering")
 
-    s = Settings(max_tier=2, enable_tool_subsetting=False)
+    s = Settings(allow_actions=True, enable_tool_subsetting=False)
     mws = build_middleware(
         s,
         LoopGuard(),

@@ -1,5 +1,5 @@
 name: "Agent Gosling"
-version: "0.4.29"
+version: "0.4.30"
 slug: agent_gosling
 description: "Chat agent over Home Assistant state, powered by a local models (cloud models optional via LiteLLM)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
@@ -34,6 +34,7 @@ options:
   language_layer_enabled: false
   languages:
     - en
+  disabled_tools: []
 backup_exclude:
   - "telemetry.sqlite*"
 schema:
@@ -83,11 +84,3 @@ schema:
   skills_enabled: "bool?"
   notify_action: "str"
   extra_instructions: "str?"
-  # Deprecated keys from <= 0.4.24, kept in the schema (not in options:) so
-  # the Supervisor does not drop them from an upgraded options.json.
-  # app/config.py _legacy_keys maps them onto the new settings.
-  max_tier: "int?"
-  needle_enabled: "bool?"
-  needle_remote_url: "str?"
-  needle_confidence_threshold: "float(0,1)?"
-  system_prompt: "str?"

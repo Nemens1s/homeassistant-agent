@@ -78,7 +78,7 @@ def _add(store, action=None, reminder=None, instruction="Stop the vacuum.", lang
 
 
 def _runner(store, rest, agent=None, **overrides):
-    values = {"max_tier": 2}
+    values = {"allow_actions": True}
     values.update(overrides)
     settings = Settings(_env_file=None, **values)
     ctx = ToolContext(settings=settings, rest=rest, ws=None, notes=store)
