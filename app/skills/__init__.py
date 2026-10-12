@@ -9,10 +9,13 @@ silently exposed under its filename — see _parse_frontmatter."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+log = logging.getLogger("agent.skills")
 
 
 @dataclass(slots=True)
@@ -31,7 +34,12 @@ def _parse_frontmatter(text: str) -> tuple[dict, str] | None:
         close = next(i for i, l in enumerate(lines[1:], 1) if l.strip() == "---")
     except StopIteration:
         return None
-    meta = yaml.safe_load("\n".join(lines[1:close])) or {}
+    try:
+        meta = yaml.safe_load("\n".join(lines[1:close])) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(meta, dict):
+        return None
     body = "\n".join(lines[close + 1:]).strip()
     return meta, body
 
@@ -41,6 +49,7 @@ def list_skills(skills_dir: Path) -> list[SkillMeta]:
     for path in sorted(skills_dir.glob("*.md")):
         parsed = _parse_frontmatter(path.read_text())
         if parsed is None:
+            log.warning("skipping skill file %s: missing or invalid frontmatter", path.name)
             continue
         meta, _ = parsed
         metas.append(

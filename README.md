@@ -12,6 +12,9 @@ Runs as a HA App with an ingress-based chat UI and optionally as a voice assista
 3. On the **Configuration** tab set at minimum `llm_url` and `llm_model`, then Start.
 4. The sidebar panel opens the chat UI through Ingress.
 
+Upgrading from 0.4.24 or earlier? Old options keep working — see
+[Upgrading from 0.4.24](docs/DEPLOYMENT.md#upgrading-from-0424).
+
 ### Assist companion component
 
 Lets Agent Gosling act as the conversation agent in HA voice pipelines.

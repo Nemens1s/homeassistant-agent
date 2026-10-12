@@ -86,3 +86,15 @@ def test_broken_skill_file_is_skipped(tmp_path):
 
 def test_no_skills_ship_in_image():
     assert list(Path("app/skills").glob("*.md")) == []
+
+
+def test_skipped_skill_file_logs_a_warning_naming_it(tmp_path, caplog):
+    (tmp_path / "bare.md").write_text("# Just a body\n")
+    (tmp_path / "badyaml.md").write_text("---\nname: [unclosed\n---\nbody")
+    (tmp_path / "good.md").write_text("---\nname: good\ndescription: d\n---\nbody")
+    with caplog.at_level("WARNING", logger="agent.skills"):
+        metas = list_skills(tmp_path)
+    assert len(metas) == 1
+    assert "bare.md" in caplog.text
+    assert "badyaml.md" in caplog.text
+    assert "good.md" not in caplog.text

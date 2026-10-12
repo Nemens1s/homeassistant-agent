@@ -28,7 +28,7 @@ from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.constants import WRITE_DOMAINS
 from app.needle.factory import build_fast_path_backend
-from app.config import Settings, load_settings
+from app.config import Settings, load_settings, warn_if_llm_unset
 from app.i18n import build_language_adapter, set_language_attributes
 from app.i18n.store import LangOverlay, apply_overlay
 from app.ha.rest import RestClient
@@ -116,6 +116,7 @@ class ToggleRequest(BaseModel):
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
     _configure_app_logging()
+    warn_if_llm_unset(cfg)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
