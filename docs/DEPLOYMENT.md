@@ -71,16 +71,6 @@ Update (Supervisor rebuilds the image). App data (`/data`, which will
 hold `audit.db` and `conversations.db` from iterations 2–3) survives
 updates and is included in HA backups.
 
-### Upgrading from 0.4.24
-
-0.4.25 reworked the Configuration tab. Old keys (`max_tier`, `needle_*`,
-`system_prompt`) are no longer read; set their replacements directly.
-
-- **Re-enter the LLM URL and model if they were never saved.** If you ran
-  with the old defaults and never saved the Configuration tab, `llm_url` and
-  `llm_model` are now empty; the log shows "llm_url is not set". Set both
-  and restart.
-
 ## 2. Standalone docker build (CI / smoke-testing the image)
 
 `Dockerfile` starts with `ARG BUILD_FROM` because the HA builder injects the
