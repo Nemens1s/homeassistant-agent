@@ -25,6 +25,7 @@ from app.agent.run_scope import scope_configurable
 from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
+from app.constants import WRITE_DOMAINS
 from app.needle.factory import build_fast_path_backend
 from app.config import Settings, load_settings
 from app.i18n import build_language_adapter, set_language_attributes
@@ -123,9 +124,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from app.agent.factory import build_system_prompt
         from app.skills import list_skills
 
-        write_domains = (
-            tuple(cfg.allowed_domains) if cfg.max_tier >= 2 else ()
-        )
+        write_domains = WRITE_DOMAINS if cfg.allow_actions else ()
         rest = RestClient(cfg.ha_base_url, cfg.ha_token,
                           allowed_write_domains=write_domains)
         audit = AuditSink(cfg.audit_db_path)

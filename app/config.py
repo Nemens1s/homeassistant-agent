@@ -8,7 +8,7 @@ environment. In dev, everything comes from .env / environment variables.
 import json
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 OPTIONS_FILE = Path("/data/options.json")
@@ -26,6 +26,19 @@ DEFAULT_SYSTEM_PROMPT = (
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_keys(cls, data):
+        # Old options.json files carry max_tier (1|2). Map it unless the new
+        # key is already set, so upgrades from a pre-allow_actions add-on
+        # config keep working without a Supervisor re-save.
+        if isinstance(data, dict) and "max_tier" in data:
+            data = dict(data)
+            legacy = data.pop("max_tier")
+            if "allow_actions" not in data:
+                data["allow_actions"] = int(legacy) >= 2
+        return data
 
     # Home Assistant
     ha_base_url: str = "http://supervisor/core"
@@ -70,8 +83,8 @@ class Settings(BaseSettings):
 
     # Agent behavior
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
-    max_tier: int = 1
-    allowed_domains: list[str] = ["light", "switch", "fan", "automation", "script"]
+    # off = read-only; on = trigger_action/notify_user/scheduling are available.
+    allow_actions: bool = False
     ai_actions_switch: str = "input_boolean.ai_triggered_actions"  # master gate; "" disables
     recursion_limit: int = 15
     max_rows: int = 50
@@ -148,6 +161,15 @@ class Settings(BaseSettings):
         for e in self.person_name_map:
             lookup[e["ha_name"]] = e["name"]
         return lookup
+
+    @property
+    def max_tier(self) -> int:
+        # Tier is an internal concept (tools/base.Tier); users only see
+        # allow_actions. Kept so every settings.max_tier call site keeps
+        # working unchanged.
+        if self.allow_actions:
+            return 2
+        return 1
 
     @property
     def ws_url(self) -> str:

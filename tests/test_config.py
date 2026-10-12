@@ -64,9 +64,28 @@ def test_load_settings_from_options_json(tmp_path, monkeypatch):
     assert s.num_ctx == 4096
 
 
-def test_script_domain_allowed_by_default():
+def test_allow_actions_default_off():
     s = Settings(_env_file=None)
-    assert "script" in s.allowed_domains
+    assert s.allow_actions is False
+    assert s.max_tier == 1
+
+
+def test_allow_actions_maps_to_tier_2():
+    assert Settings(_env_file=None, allow_actions=True).max_tier == 2
+
+
+def test_legacy_max_tier_key_still_works():
+    assert Settings(_env_file=None, max_tier=2).allow_actions is True
+    assert Settings(_env_file=None, max_tier=1).allow_actions is False
+
+
+def test_allow_actions_wins_over_legacy_max_tier():
+    assert Settings(_env_file=None, allow_actions=False, max_tier=2).allow_actions is False
+
+
+def test_allowed_domains_is_gone_and_ignored():
+    s = Settings(_env_file=None, allowed_domains=["light"])
+    assert not hasattr(s, "allowed_domains")
 
 
 def test_dead_options_are_gone():
@@ -84,12 +103,13 @@ def test_old_options_json_with_dead_keys_still_loads(tmp_path, monkeypatch):
     load_settings()  # must not raise
 
 
-def test_shipped_addon_options_allow_script():
+def test_shipped_addon_options_allow_actions_off_by_default():
     import yaml
     from pathlib import Path
     cfg = yaml.safe_load(Path("config.yaml").read_text())
-    assert "script" in cfg["options"]["allowed_domains"]
-    assert "automation" in cfg["options"]["allowed_domains"]
+    assert cfg["options"]["allow_actions"] is False
+    assert "allowed_domains" not in cfg["options"]
+    assert "max_tier" not in cfg["options"]
 
 
 from pathlib import Path

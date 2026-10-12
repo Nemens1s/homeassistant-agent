@@ -95,12 +95,6 @@ async def test_rejects_non_ai_notify_action():
     assert rest.calls == []
 
 
-async def test_requires_script_domain():
-    rest = FakeRest()
-    result = await _call("notify_user", _ctx(rest, allowed_domains=["light"]), message="x")
-    assert result.error_code == "domain_not_allowed"
-
-
 def test_message_length_is_capped():
     with pytest.raises(ValidationError):
         registry.get("notify_user").params_model(message="x" * 501)

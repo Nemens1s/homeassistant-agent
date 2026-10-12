@@ -37,13 +37,7 @@ options:
     information as you found it.
     Be concise and factual, follow instructions precisely, and do not do
     anything extra that wasn't asked.
-  max_tier: 1
-  allowed_domains:
-    - light
-    - switch
-    - fan
-    - automation
-    - script
+  allow_actions: false
   # empty string disables the home-level AI kill switch (menu + domain guards still apply)
   ai_actions_switch: "input_boolean.ai_triggered_actions"
   temperature: 0.0
@@ -100,8 +94,7 @@ schema:
   llm_model: "str"
   api_key: "password"
   system_prompt: "str"
-  max_tier: "int(1,2)"
-  allowed_domains: ["str"]
+  allow_actions: "bool"
   ai_actions_switch: "str"
   temperature: "float(0,2)"
   top_p: "float(0,1)"

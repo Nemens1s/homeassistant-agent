@@ -32,11 +32,6 @@ async def test_wrong_domain_is_refused():
     assert result.error_code == "invalid_params"
 
 
-async def test_domain_must_be_allowed():
-    result = await check_action(_ctx(allowed_domains=["light"]), "script.ai_action_x", {})
-    assert result.error_code == "domain_not_allowed"
-
-
 async def test_automation_with_params_rejected():
     result = await check_action(_ctx(), "automation.ai_night", {"room": "hall"})
     assert result.error_code == "invalid_params"

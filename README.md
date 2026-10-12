@@ -32,14 +32,13 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 | `llm_url` | — | Ollama URL, or any OpenAI-compatible base URL |
 | `llm_model` | — | Model tag served by the LLM backend |
 | `api_key` | `` | Cloud provider key (stored as password) |
-| `max_tier` | `1` | `1` = read-only; `2` = control tools |
-| `allowed_domains` | `["light","switch","fan","automation","script"]` | Domains the agent may control at `max_tier=2` |
+| `allow_actions` | `false` | `false` = read-only; `true` = allows `trigger_action`/`notify_user`/scheduling |
 | `temperature` | `0.0` | |
 | `recursion_limit` | `15` | Max agent steps per request |
 | `max_rows` | `50` | Max entity rows returned per tool call |
 | `checkpoint_db_path` | `/data/checkpoints.sqlite` | SQLite conversation persistence; empty = in-memory |
 
-Setting `max_tier: 2` unlocks `control_entity` and `trigger_automation`, letting the agent turn lights on/off, toggle switches, and fire automations. `allowed_domains` is the hard boundary — the REST client refuses writes to any domain not in the list. All tier-2 actions are logged to `/data/audit.db` (SQLite, append-only).
+Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
 
 ## Streaming & persistence
 

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from app.constants import WRITE_DOMAINS
 from app.tools.base import Tier, ToolDefinition, ToolResult, bound_rows, entity_domain
 from app.tools.helpers.lookups import area_names, entity_area_ids
 from app.tools.registry import register
@@ -62,7 +63,7 @@ async def handler(params: Params, ctx) -> ToolResult:
         label_map = await _label_map(ctx)
 
     controllable = set()
-    for d in ctx.settings.allowed_domains:
+    for d in WRITE_DOMAINS:
         if d != "automation":
             controllable.add(d)
 

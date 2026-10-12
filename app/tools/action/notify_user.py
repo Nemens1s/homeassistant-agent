@@ -34,9 +34,6 @@ async def handler(params: Params, ctx) -> ToolResult:
             "not_configured",
             f"notify_action {target!r} must be an AI-controllable script ({AI_SCRIPT_PREFIX}*).",
         )
-    if "script" not in ctx.settings.allowed_domains:
-        return ToolResult.error("domain_not_allowed", "The 'script' domain is not in the allowed list.")
-
     scope = current_scope()
     if scope.suppress_notify:
         log_actions.info("notify suppressed thread=%s message=%r", scope.thread_id, params.message)

@@ -23,14 +23,11 @@ configuration:
   system_prompt:
     name: System prompt
     description: Base instructions prepended to every conversation.
-  max_tier:
-    name: Max capability tier
+  allow_actions:
+    name: Allow actions
     description: >-
-      Highest tool tier the agent may use. 1 = read-only. 2 = allows the gated
-      action tools (still fail-closed behind the AI kill switch).
-  allowed_domains:
-    name: Allowed domains
-    description: Home Assistant entity domains the agent is permitted to see and act on.
+      Off = read-only. On = the agent may trigger ai_* automations/scripts and
+      send notifications (still fail-closed behind the AI kill switch).
   ai_actions_switch:
     name: AI actions kill switch
     description: >-

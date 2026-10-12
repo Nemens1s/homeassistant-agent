@@ -17,6 +17,7 @@ from langgraph.errors import GraphRecursionError
 from app.agent.checkpointer import open_checkpointer
 from app.agent.factory import build_agent
 from app.audit import AuditSink
+from app.constants import WRITE_DOMAINS
 from app.needle.factory import build_fast_path_backend
 from app.config import load_settings
 from app.ha.rest import RestClient
@@ -69,9 +70,7 @@ async def main(save_conversations: bool = False) -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s %(message)s")
     settings = load_settings()
 
-    write_domains = (
-        tuple(settings.allowed_domains) if settings.max_tier >= 2 else ()
-    )
+    write_domains = WRITE_DOMAINS if settings.allow_actions else ()
     rest = RestClient(settings.ha_base_url, settings.ha_token,
                       allowed_write_domains=write_domains)
     audit = AuditSink(settings.audit_db_path)

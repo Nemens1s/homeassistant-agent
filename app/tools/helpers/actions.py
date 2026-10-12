@@ -26,12 +26,6 @@ async def check_action(ctx, entity_id: str, params: dict) -> ToolResult | None:
             f"{entity_id!r} is not an AI-controllable {domain}. Only "
             f"{domain}s whose entity_id starts with {ai_prefix!r} may be triggered.",
         )
-    if domain not in ctx.settings.allowed_domains:
-        return ToolResult.error(
-            "domain_not_allowed",
-            f"The {domain!r} domain is not in the allowed list.",
-            data={"allowed": list(ctx.settings.allowed_domains)},
-        )
     if domain == "automation":
         if params:
             return ToolResult.error("invalid_params", "automations do not take parameters.")
