@@ -98,16 +98,19 @@ class Settings(BaseSettings):
     max_history_messages: int = 0
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
 
-    # Needle fast path (optional low-latency automation triggering). Off by
-    # default: when enabled AND max_tier >= 2, the needle service may trigger an
+    # Fast path (optional): an external service that maps a request straight to
+    # one ai_* action, skipping the LLM. Contract: README "Fast path". Off by
+    # default: when enabled AND allow_actions is on, the service may trigger an
     # ai_* automation directly, bypassing the agent. See docs spec 2026-08-25.
-    needle_enabled: bool = False
-    needle_remote_url: str = ""          # URL of the needle inference service
-    # Fire only when confidence >= this. Default 0.0 = "trust the call" (fire on
-    # any emitted tool call): fine-tuned Needle weights report confidence as None
-    # (the head is not tuned), so a nonzero threshold would block EVERYTHING with
-    # a tuned model. Raise it only if running the calibrated BASE model.
-    needle_confidence_threshold: float = 0.0
+    fast_path_enabled: bool = Field(
+        False, validation_alias=AliasChoices("fast_path_enabled", "needle_enabled"))
+    fast_path_url: str = Field(
+        "", validation_alias=AliasChoices("fast_path_url", "needle_remote_url"))
+    # Fire only at or above this confidence. Keep 0 unless your model reports a
+    # calibrated confidence (e.g. a model fine-tuned on Needle's site).
+    fast_path_confidence_threshold: float = Field(
+        0.0, validation_alias=AliasChoices("fast_path_confidence_threshold",
+                                           "needle_confidence_threshold"))
 
     # Language layer. Off by default: when
     # disabled the HTTP edge behaves exactly as before and lang-mt is never

@@ -40,6 +40,64 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 
 Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
 
+## Fast path
+
+An optional low-latency path: an external inference service maps a user
+message straight to one `ai_*` action, skipping the LLM entirely. Off by
+default (`fast_path_enabled: false`); requires `allow_actions: true` as well,
+since it only ever triggers an action.
+
+Only automations/scripts whose HA description opts in are eligible. Add a
+`FAST-PATH:` marker to the description — the text after the marker is what
+the service matches requests against:
+
+```yaml
+alias: "AI: start vacuum"
+id: ai_action_start_vacuum
+description: "FAST-PATH: start the vacuum / clean the house"
+triggers: []
+actions:
+  - action: vacuum.start
+    target:
+      entity_id: vacuum.my_vacuum
+```
+
+Set `fast_path_url` to the service's base URL; the app POSTs to `<url>/classify`:
+
+```json
+{
+  "message": "turn on the vacuum",
+  "tools": [
+    {"name": "start_vacuum", "description": "start the vacuum / clean the house", "parameters": {}}
+  ],
+  "signature": "<menu cache signature>"
+}
+```
+
+and expects a decision back as JSON:
+
+```json
+{
+  "confidence": 0.0,
+  "function_calls": [
+    {"name": "start_vacuum", "arguments": {}}
+  ]
+}
+```
+
+`function_calls` empty or absent means "no match" (falls through to the
+agent). `confidence` is optional; a missing value is treated as `0.0`. Set
+`fast_path_confidence_threshold` to require a minimum confidence before
+firing (default `0.0` fires on any emitted call — correct for models that
+don't report a calibrated confidence); the router falls through to the
+normal agent on any network error, a low-confidence decision, or no match.
+
+| Key | Default | Notes |
+|---|---|---|
+| `fast_path_enabled` | `false` | Requires `allow_actions: true` as well |
+| `fast_path_url` | `` | Base URL of the remote fast-path service |
+| `fast_path_confidence_threshold` | `0.0` | Fire only at/above this confidence |
+
 ## Streaming & persistence
 
 The chat UI streams over Server-Sent Events from `POST /api/chat/stream`. Set `checkpoint_db_path` to persist conversations across App restarts; leave it empty for the in-memory default.

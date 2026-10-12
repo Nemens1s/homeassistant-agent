@@ -17,19 +17,19 @@ _MENU_TTL_S = 60  # menu/grammar cache TTL
 def build_fast_path_backend(cfg, rest, ctx):
     """Return (RemoteNeedleBackend, MenuProvider), or None when the fast path should not run.
 
-    Disabled unless needle_enabled AND max_tier >= 2 (writes allowed). The
+    Disabled unless fast_path_enabled AND max_tier >= 2 (writes allowed). The
     returned backend + menu provider are passed to FastPathMiddleware via
     build_middleware so the existing ai_actions gate + audit apply unchanged."""
-    if not cfg.needle_enabled or cfg.max_tier < 2:
-        log.info("fast path off (needle_enabled=%s max_tier=%s)", cfg.needle_enabled, cfg.max_tier)
+    if not cfg.fast_path_enabled or cfg.max_tier < 2:
+        log.info("fast path off (fast_path_enabled=%s max_tier=%s)", cfg.fast_path_enabled, cfg.max_tier)
         return None
-    if not cfg.needle_remote_url:
-        log.warning("needle enabled but needle_remote_url is empty; fast path off")
+    if not cfg.fast_path_url:
+        log.warning("fast path enabled but fast_path_url is empty; fast path off")
         return None
     if registry.get("trigger_action") is None:
-        log.warning("needle enabled but trigger_action not registered; fast path off")
+        log.warning("fast path enabled but trigger_action not registered; fast path off")
         return None
-    backend = RemoteNeedleBackend(cfg.needle_remote_url)
+    backend = RemoteNeedleBackend(cfg.fast_path_url)
     menu_provider = MenuProvider(rest, ttl_s=_MENU_TTL_S,
                                  prefixes=(AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION),
                                  ws=ctx.ws, exclude=(cfg.notify_action,))

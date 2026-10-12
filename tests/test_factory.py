@@ -154,9 +154,9 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
     registry.load_all(("app.tools.action.trigger_action",))  # required or factory returns None
 
     class Cfg:
-        needle_enabled = True
+        fast_path_enabled = True
         max_tier = 2
-        needle_remote_url = "http://needle.test"
+        fast_path_url = "http://needle.test"
         notify_action = "script.ai_action_notify"
 
     class Ctx:

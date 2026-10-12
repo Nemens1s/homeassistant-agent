@@ -212,7 +212,7 @@ async def test_lifespan_teardown_survives_rest_close_failure():
     assert calls == ["rest", "ws"]
 
 
-def test_lifespan_builds_fast_path_when_needle_enabled(monkeypatch):
+def test_lifespan_builds_fast_path_when_fast_path_enabled(monkeypatch):
     # Regression: build_fast_path_backend guards on registry.get("trigger_action"),
     # so the tool registry must be loaded BEFORE it runs in the lifespan. If it isn't,
     # the backend builds to None and FastPathMiddleware is silently never added.
@@ -233,8 +233,8 @@ def test_lifespan_builds_fast_path_when_needle_enabled(monkeypatch):
     monkeypatch.setattr(main_mod, "build_agent", fake_build_agent)
     settings = _settings()
     settings.allow_actions = True
-    settings.needle_enabled = True
-    settings.needle_remote_url = "http://needle.lan:8765"
+    settings.fast_path_enabled = True
+    settings.fast_path_url = "http://needle.lan:8765"
     app = create_app(settings)
     with TestClient(app):
         pass

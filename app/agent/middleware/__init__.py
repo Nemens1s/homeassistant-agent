@@ -39,7 +39,7 @@ def build_middleware(
         middleware.append(FastPathMiddleware(
             backend,
             menu_provider,
-            settings.needle_confidence_threshold,
+            settings.fast_path_confidence_threshold,
             tracer=telemetry_tracer,
             store_conn=telemetry_store_conn,
         ))

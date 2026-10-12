@@ -48,11 +48,21 @@ def test_ws_url_direct():
     assert s.ws_url == "ws://192.168.1.10:8123/api/websocket"
 
 
-def test_needle_defaults_are_off_and_safe():
+def test_fast_path_defaults_are_off_and_safe():
     s = Settings(_env_file=None)
-    assert s.needle_enabled is False
-    assert s.needle_confidence_threshold == 0.0  # trust-the-call (tuned weights have no confidence)
-    assert s.needle_remote_url == ""
+    assert s.fast_path_enabled is False
+    assert s.fast_path_confidence_threshold == 0.0  # trust-the-call (tuned weights have no confidence)
+    assert s.fast_path_url == ""
+
+
+def test_fast_path_keys_and_legacy_needle_aliases():
+    s = Settings(_env_file=None, fast_path_enabled=True, fast_path_url="http://x")
+    assert s.fast_path_enabled and s.fast_path_url == "http://x"
+    legacy = Settings(_env_file=None, needle_enabled=True, needle_remote_url="http://y",
+                      needle_confidence_threshold=0.4)
+    assert legacy.fast_path_enabled is True
+    assert legacy.fast_path_url == "http://y"
+    assert legacy.fast_path_confidence_threshold == 0.4
 
 
 def test_load_settings_from_options_json(tmp_path, monkeypatch):

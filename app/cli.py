@@ -88,7 +88,7 @@ async def main(save_conversations: bool = False) -> None:
     try:
         fast_path = build_fast_path_backend(settings, rest, ctx)
     except Exception as exc:
-        print(f"warning: needle fast path unavailable ({exc})")
+        print(f"warning: fast path unavailable ({exc})")
 
     # Initialise telemetry (no-op when disabled or DB unwritable).
     from app.telemetry.setup import init_telemetry, shutdown_telemetry, get_tracer
@@ -106,8 +106,8 @@ async def main(save_conversations: bool = False) -> None:
     conv_file: IO[str] | None = (
         _open_conv_file(Path(".conversations")) if save_conversations else None
     )
-    needle_note = "  [needle fast path ON]" if fast_path is not None else ""
-    print(f"\nAgent ready ({settings.llm_model} via {settings.llm_provider}).{needle_note} Ctrl+C to quit.\n")
+    fast_path_note = "  [fast path ON]" if fast_path is not None else ""
+    print(f"\nAgent ready ({settings.llm_model} via {settings.llm_provider}).{fast_path_note} Ctrl+C to quit.\n")
     try:
         while True:
             try:

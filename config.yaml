@@ -58,9 +58,9 @@ options:
   # cap stored history per thread to the last N messages (0 = keep everything)
   max_history_messages: 40
   enable_tool_subsetting: true
-  needle_enabled: false
-  needle_confidence_threshold: 0.0
-  needle_remote_url: ""
+  fast_path_enabled: false
+  fast_path_confidence_threshold: 0.0
+  fast_path_url: ""
   person_name_map: []
   person_name_exclude: []
   # Language layer: off = today's behaviour, lang-mt is never called.
@@ -112,9 +112,9 @@ schema:
   checkpoint_db_path: "str?"
   max_history_messages: "int(0,10000)"
   enable_tool_subsetting: "bool"
-  needle_enabled: "bool"
-  needle_confidence_threshold: "float(0,1)"
-  needle_remote_url: "str"
+  fast_path_enabled: "bool"
+  fast_path_confidence_threshold: "float(0,1)"
+  fast_path_url: "str"
   person_name_map:
     - ha_name: str
       name: str

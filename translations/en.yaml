@@ -105,19 +105,20 @@ configuration:
     description: >-
       Narrow the tool menu per query. Helps small models pick the right tool;
       turn off to always expose the full tool set.
-  needle_enabled:
-    name: Needle fast path
+  fast_path_enabled:
+    name: Fast path
     description: >-
-      Enable the low-latency Needle service to trigger ai_* automations directly
-      (requires max tier >= 2). Off by default.
-  needle_confidence_threshold:
-    name: Needle confidence threshold
+      Enable a low-latency external service to trigger ai_* automations/scripts
+      directly, skipping the LLM (requires allow_actions on). Off by default.
+  fast_path_confidence_threshold:
+    name: Fast path confidence threshold
     description: >-
-      Fire only when Needle confidence is at or above this. 0.0 fires on any
-      emitted call (correct for fine-tuned weights that report no confidence).
-  needle_remote_url:
-    name: Needle service URL
-    description: URL of the remote Needle inference service.
+      Fire only when the fast-path service's confidence is at or above this.
+      0.0 fires on any emitted call (correct for fine-tuned weights that
+      report no confidence).
+  fast_path_url:
+    name: Fast path service URL
+    description: URL of the remote fast-path inference service.
   person_name_map:
     name: Person name map
     description: >-
