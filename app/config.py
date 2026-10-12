@@ -135,6 +135,10 @@ class Settings(BaseSettings):
     # Tool names to never offer the agent, regardless of tier or probe result.
     # Empty = nothing switched off beyond tier gating and availability probes.
     disabled_tools: list[str] = []
+    # Pick which vacuum.* entity get_vacuum_state uses when there is more than
+    # one. Empty = the first vacuum.* sorted by entity_id. Hidden option (not
+    # in config.yaml's options:), set via the add-on's Advanced options.
+    vacuum_entity: str = ""
 
     # Fast path (optional): an external service that maps a request straight to
     # one ai_* action, skipping the LLM. Contract: README "Fast path". Off by

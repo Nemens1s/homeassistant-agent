@@ -2,6 +2,7 @@ from pydantic import BaseModel
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
 from app.tools.helpers.people import resolve_name
+from app.tools.helpers.probes import any_entity
 from app.tools.registry import register
 
 
@@ -36,6 +37,10 @@ async def handler(params: Params, ctx) -> ToolResult:
     return ToolResult.ok({"rows": rows})
 
 
+async def _has_person(ctx) -> bool:
+    return await any_entity(ctx, prefix="person.")
+
+
 register(
     ToolDefinition(
         name="get_person_locations",
@@ -47,5 +52,6 @@ register(
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
+        available=_has_person,
     )
 )

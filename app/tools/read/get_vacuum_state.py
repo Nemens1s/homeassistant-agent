@@ -2,10 +2,8 @@ import httpx
 from pydantic import BaseModel
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
+from app.tools.helpers.probes import find_vacuum, room_sensor_for
 from app.tools.registry import register
-
-_VACUUM_ENTITY = "vacuum.roborock_qrevo_s"
-_ROOM_SENSOR = "sensor.roborock_qrevo_s_current_room"
 
 
 class Params(BaseModel):
@@ -13,20 +11,31 @@ class Params(BaseModel):
 
 
 async def handler(params: Params, ctx) -> ToolResult:
-    vacuum = await ctx.rest.get_state(_VACUUM_ENTITY)
+    vacuum_id = await find_vacuum(ctx)
+    if vacuum_id is None:
+        return ToolResult.error("no_vacuum", "No vacuum entity found in Home Assistant.")
+
+    vacuum = await ctx.rest.get_state(vacuum_id)
     data: dict = {
         "entity_id": vacuum["entity_id"],
         "state": vacuum["state"],
         "friendly_name": vacuum.get("attributes", {}).get("friendly_name", ""),
     }
-    try:
-        room = await ctx.rest.get_state(_ROOM_SENSOR)
-        room_val = room.get("state", "")
-        if room_val and room_val not in ("unknown", "unavailable"):
-            data["current_room"] = room_val
-    except httpx.HTTPStatusError:
-        pass
+
+    room_sensor_id = await room_sensor_for(ctx, vacuum_id)
+    if room_sensor_id is not None:
+        try:
+            room = await ctx.rest.get_state(room_sensor_id)
+            room_val = room.get("state", "")
+            if room_val and room_val not in ("unknown", "unavailable"):
+                data["current_room"] = room_val
+        except httpx.HTTPStatusError:
+            pass
     return ToolResult.ok(data)
+
+
+async def _has_vacuum(ctx) -> bool:
+    return await find_vacuum(ctx) is not None
 
 
 register(
@@ -40,5 +49,6 @@ register(
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
+        available=_has_vacuum,
     )
 )

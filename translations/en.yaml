@@ -192,3 +192,8 @@ configuration:
       Tool names the agent should never be offered, regardless of tier or
       whether a matching entity exists. Empty = nothing switched off beyond
       that.
+  vacuum_entity:
+    name: Vacuum entity
+    description: >-
+      Which vacuum.* entity get_vacuum_state uses when this home has more
+      than one. Empty = the first vacuum.* sorted by entity_id.

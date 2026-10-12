@@ -141,6 +141,56 @@ normal agent on any network error, a low-confidence decision, or no match.
 | `fast_path_url` | `` | Base URL of the remote fast-path service |
 | `fast_path_confidence_threshold` | `0.0` | Fire only at/above this confidence |
 
+## Tools
+
+The agent's tool menu is assembled once at add-on start: every tool allowed
+by `allow_actions` (tier), not named in `disabled_tools`, and — for a few
+helper tools — backed by a matching entity in this home.
+
+Core tools (always offered, subject only to tier and `disabled_tools`):
+
+| Tool | Needs |
+|---|---|
+| `get_entity_state` | REST |
+| `list_entities` | REST + WS registries |
+| `get_history` | REST |
+| `get_activity` | REST (logbook) |
+| `get_error_log` | REST |
+| `get_areas` | WS registries |
+| `get_automations` | REST |
+| `list_actions` | REST |
+| `search_entities` | REST + WS registries |
+| `list_devices` | WS registries |
+| `list_skills` / `load_skill` | local skill files |
+| `schedule_on_state_change` / `schedule_at_time` / `list_scheduled` / `cancel_scheduled` | agent-local memory store |
+| `trigger_action` / `notify_user` | REST; ACTION tier; gated behind `ai_actions_switch` |
+
+Helper tools register only when this home has something for them to use:
+
+| Tool | Registered when |
+|---|---|
+| `get_vacuum_state` | a `vacuum.*` entity exists |
+| `get_battery_status` | an entity with `device_class: battery` exists |
+| `get_weather` | a `weather.*` entity exists |
+| `get_person_locations` | a `person.*` entity exists |
+
+These checks run once at add-on start. After adding a device that should
+unlock one of these tools, restart the add-on. If Home Assistant can't be
+reached at startup, every tool is registered anyway — a tool with nothing
+behind it then returns a clear error instead of silently disappearing.
+
+`disabled_tools: [get_weather, ...]` turns off any tool by name, core or
+helper — the obvious result is the agent can no longer do that thing.
+
+`get_vacuum_state` discovers its own entities: it uses the first `vacuum.*`
+entity (sorted by entity_id) and looks for a room sensor on the same device.
+Set the hidden `vacuum_entity` option to pick a specific vacuum when this
+home has more than one. The room is left out of the answer when no
+`_current_room` sensor exists on that device.
+
+Each tool skipped by a probe is logged once at startup as
+`tool=<name> not registered: nothing in this home to use it on`.
+
 ## Streaming & persistence
 
 The chat UI streams over Server-Sent Events from `POST /api/chat/stream`. Set `checkpoint_db_path` to persist conversations across App restarts; leave it empty for the in-memory default.

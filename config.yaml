@@ -79,5 +79,6 @@ schema:
   memory_note_max_ttl_hours: "int(1,720)?"
   time_note_grace_minutes: "int(1,1440)?"
   disabled_tools: ["str"]
+  vacuum_entity: "str?"
   notify_action: "str"
   extra_instructions: "str?"
