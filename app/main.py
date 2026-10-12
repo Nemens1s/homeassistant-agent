@@ -207,6 +207,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     telemetry=telemetry_arg,
                 )
                 app.state.settings = run_cfg
+                app.state.ctx = ctx
                 app.state.rest = rest
                 app.state.ws = ws
                 app.state.agent = agent
@@ -456,6 +457,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "llm": llm_ok,
             "websocket": ws_ok,
         }
+
+    @app.get("/api/prompt")
+    async def get_prompt() -> dict:
+        from app.agent.factory import build_system_prompt
+        return {"prompt": build_system_prompt(app.state.settings, app.state.ctx.skills_dir)}
 
     @app.get("/api/history")
     async def get_history(thread_id: str) -> dict:

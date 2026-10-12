@@ -20,9 +20,6 @@ configuration:
     description: >-
       API key for cloud providers. Leave blank for local servers (a dummy value
       is sent automatically when the server requires a non-empty key).
-  system_prompt:
-    name: System prompt
-    description: Base instructions prepended to every conversation.
   allow_actions:
     name: Allow actions
     description: >-
@@ -183,3 +180,9 @@ configuration:
     name: Notify action script
     description: >-
       The only script notify_user may call to send a message to the user.
+  extra_instructions:
+    name: Extra instructions
+    description: >-
+      Household-specific instructions appended after the built-in base
+      prompt (e.g. preferred names, phrasing, or house rules). Leave blank to
+      use only the built-in prompt.

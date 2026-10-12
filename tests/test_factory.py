@@ -16,18 +16,37 @@ def test_build_system_prompt_lists_skills(tmp_path):
     (tmp_path / "a_skill.md").write_text(
         "---\nname: a_skill\ndescription: does a thing\n---\nbody"
     )
-    s = Settings(_env_file=None, system_prompt="Base prompt.")
+    s = Settings(_env_file=None)
     prompt = build_system_prompt(s, tmp_path)
-    assert prompt.startswith("Base prompt.")
+    assert prompt.startswith("You are an assistant for this Home Assistant instance.")
     assert "- a_skill: does a thing" in prompt
 
 
 def test_build_system_prompt_no_skills(tmp_path):
-    s = Settings(_env_file=None, system_prompt="Base prompt.")
+    s = Settings(_env_file=None)
     prompt = build_system_prompt(s, tmp_path)
-    assert prompt.startswith("Base prompt.")
+    assert prompt.startswith("You are an assistant for this Home Assistant instance.")
     assert "CHOOSING A TOOL" in prompt  # routing block always appended
     assert "SKILL PLAYBOOKS" not in prompt
+
+
+def test_prompt_starts_with_code_base_and_appends_extra(tmp_path):
+    s = Settings(_env_file=None, extra_instructions="Call me Captain.")
+    prompt = build_system_prompt(s, tmp_path)
+    assert prompt.startswith("You are an assistant for this Home Assistant instance.")
+    assert prompt.rstrip().endswith("Call me Captain.")
+
+
+def test_no_rule_is_stated_twice(tmp_path):
+    s = Settings(_env_file=None, allow_actions=True, watched_entities=["vacuum.x"])
+    prompt = build_system_prompt(s, tmp_path)
+    assert prompt.count("never tell the user to create an automation") <= 1
+    assert prompt.count("first call list_actions") == 1
+
+
+def test_read_only_prompt_does_not_mention_triggering(tmp_path):
+    prompt = build_system_prompt(Settings(_env_file=None), tmp_path)
+    assert "trigger_action" not in prompt
 
 
 def test_timestamped_system_injects_current_time():
@@ -63,8 +82,8 @@ def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
 
 
 def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
-    s1 = Settings(_env_file=None, system_prompt="Base.", max_tier=1)
-    s2 = Settings(_env_file=None, system_prompt="Base.", max_tier=2)
+    s1 = Settings(_env_file=None, max_tier=1)
+    s2 = Settings(_env_file=None, max_tier=2)
     p1 = build_system_prompt(s1, tmp_path)
     p2 = build_system_prompt(s2, tmp_path)
     assert "automation.ai_" not in p1  # no action guidance at tier 1
@@ -170,7 +189,7 @@ def test_fast_path_menu_spans_automation_and_script_prefixes():
 
 
 def test_system_prompt_explains_notes_when_enabled(tmp_path):
-    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
+    s = Settings(_env_file=None, watched_entities=["vacuum.x"])
     prompt = build_system_prompt(s, tmp_path)
     assert "schedule_on_state_change" in prompt
     assert "schedule_at_time" in prompt
@@ -178,12 +197,12 @@ def test_system_prompt_explains_notes_when_enabled(tmp_path):
 
 
 def test_system_prompt_omits_notes_when_disabled(tmp_path):
-    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=[], clock_entity="")
+    s = Settings(_env_file=None, watched_entities=[], clock_entity="")
     assert "schedule_on_state_change" not in build_system_prompt(s, tmp_path)
 
 
 def test_actions_paragraph_defers_later_requests_to_notes(tmp_path):
-    s = Settings(_env_file=None, system_prompt="Base.", max_tier=2, watched_entities=["vacuum.x"])
+    s = Settings(_env_file=None, max_tier=2, watched_entities=["vacuum.x"])
     prompt = build_system_prompt(s, tmp_path)
     actions = prompt[prompt.index("ACTIONS (to do NOW):"):]
     # "do it later" must not end in "go create an automation"
@@ -192,7 +211,7 @@ def test_actions_paragraph_defers_later_requests_to_notes(tmp_path):
 
 
 def test_notes_paragraph_explains_the_callback(tmp_path):
-    s = Settings(_env_file=None, system_prompt="Base.", watched_entities=["vacuum.x"])
+    s = Settings(_env_file=None, watched_entities=["vacuum.x"])
     prompt = build_system_prompt(s, tmp_path)
     assert "you will be called back" in prompt.lower()
     assert "instead of creating an automation" in prompt.lower()

@@ -93,6 +93,26 @@ def test_allow_actions_wins_over_legacy_max_tier():
     assert Settings(_env_file=None, allow_actions=False, max_tier=2).allow_actions is False
 
 
+def test_legacy_system_prompt_becomes_extra_instructions(caplog):
+    s = Settings(_env_file=None, system_prompt="Old custom text.")
+    assert s.extra_instructions == "Old custom text."
+    assert "system_prompt is deprecated" in caplog.text
+
+
+def test_legacy_system_prompt_old_shipped_default_is_not_duplicated(caplog):
+    from app.config import _OLD_SHIPPED_PROMPT
+
+    s = Settings(_env_file=None, system_prompt=_OLD_SHIPPED_PROMPT)
+    assert s.extra_instructions == ""
+    assert "system_prompt is deprecated" not in caplog.text
+
+
+def test_legacy_system_prompt_does_not_override_explicit_extra_instructions():
+    s = Settings(_env_file=None, system_prompt="Old custom text.",
+                 extra_instructions="New text.")
+    assert s.extra_instructions == "New text."
+
+
 def test_allowed_domains_is_gone_and_ignored():
     s = Settings(_env_file=None, allowed_domains=["light"])
     assert not hasattr(s, "allowed_domains")
@@ -181,7 +201,7 @@ def test_visible_addon_options_are_minimal():
     cfg = yaml.safe_load(Path("config.yaml").read_text())
     assert set(cfg["options"]) == {
         "llm_url", "llm_model", "api_key", "allow_actions", "ai_actions_switch",
-        "notify_action", "watched_entities", "clock_entity",
+        "notify_action", "extra_instructions", "watched_entities", "clock_entity",
         "event_confirmations_enabled", "person_name_map",
         "language_layer_enabled", "languages",
     }

@@ -62,8 +62,30 @@
       <table class="metric-table requests" id="requests-table"></table>
       <button id="load-more" type="button" hidden>Load more</button>
     </section>
+
+    <section class="panel wide">
+      <details id="prompt-panel">
+        <summary>System prompt</summary>
+        <pre id="prompt"></pre>
+      </details>
+    </section>
   </main>
 
   <script src="metrics.js"></script>
+  <script>
+    (function () {
+      var pre = document.getElementById("prompt");
+      var details = document.getElementById("prompt-panel");
+      var loaded = false;
+      details.addEventListener("toggle", function () {
+        if (!details.open || loaded) return;
+        loaded = true;
+        fetch("api/prompt")
+          .then(function (resp) { return resp.json(); })
+          .then(function (data) { pre.textContent = data.prompt; })
+          .catch(function () { pre.textContent = "Could not load the system prompt."; loaded = false; });
+      });
+    })();
+  </script>
 </body>
 </html>

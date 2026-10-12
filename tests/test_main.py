@@ -43,6 +43,15 @@ def test_health_degraded_without_backends():
     assert body["websocket"] is False
 
 
+def test_prompt_endpoint_returns_code_owned_prompt():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        resp = client.get("/api/prompt")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["prompt"].startswith("You are an assistant for this Home Assistant instance.")
+
+
 def test_chat_returns_agent_reply():
     app = create_app(_settings())
     with TestClient(app) as client:

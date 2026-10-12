@@ -6,6 +6,7 @@ environment. In dev, everything comes from .env / environment variables.
 """
 
 import json
+import logging
 from pathlib import Path
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -13,7 +14,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 OPTIONS_FILE = Path("/data/options.json")
 
-DEFAULT_SYSTEM_PROMPT = (
+# The full prompt this add-on used to ship as the `system_prompt` default,
+# before the base prompt became code-owned (see app/agent/factory.py
+# _BASE_PROMPT). Kept only so `_legacy_keys` can recognise an options.json
+# that still carries this exact text and skip folding it into
+# extra_instructions (it would otherwise duplicate the code-owned prompt).
+_OLD_SHIPPED_PROMPT = (
     "You are an assistant for this Home Assistant instance. "
     "Answer questions about the home using the available tools, and always "
     "look up real data with tools instead of guessing. "
@@ -47,6 +53,21 @@ class Settings(BaseSettings):
             legacy = data.pop("max_tier")
             if "allow_actions" not in data:
                 data["allow_actions"] = int(legacy) >= 2
+        # Old options.json files carry system_prompt. Fold it into
+        # extra_instructions unless the new key is already set, or the value
+        # is exactly the old shipped default (which would otherwise duplicate
+        # the code-owned base prompt).
+        if isinstance(data, dict) and "system_prompt" in data:
+            data = dict(data)
+            legacy_prompt = data.pop("system_prompt")
+            if "extra_instructions" not in data:
+                normalised = " ".join(str(legacy_prompt).split())
+                old_normalised = " ".join(_OLD_SHIPPED_PROMPT.split())
+                if normalised != old_normalised:
+                    data["extra_instructions"] = legacy_prompt
+                    logging.getLogger("config").warning(
+                        "system_prompt is deprecated; using it as extra_instructions"
+                    )
         return data
 
     # Home Assistant
@@ -93,7 +114,10 @@ class Settings(BaseSettings):
     show_thinking: bool = False  # stream <think> content to stdout in the CLI
 
     # Agent behavior
-    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    # Appended after the code-owned base prompt (app/agent/factory.py
+    # build_system_prompt) under a "HOUSEHOLD INSTRUCTIONS" heading. Empty =
+    # nothing added.
+    extra_instructions: str = ""
     # off = read-only; on = trigger_action/notify_user/scheduling are available.
     allow_actions: bool = False
     ai_actions_switch: str = "input_boolean.ai_triggered_actions"  # master gate; "" disables

@@ -23,6 +23,19 @@ log = logging.getLogger("agent.factory")
 # Reserve room for the model's own output and for tool schemas + prompt.
 _RESPONSE_AND_SCHEMA_MARGIN = 2048
 
+# Code-owned base prompt. Action/scheduling guidance is added conditionally
+# below (ACTIONS, DOING THINGS LATER) rather than stated here, so a read-only
+# install never sees it.
+_BASE_PROMPT = (
+    "You are an assistant for this Home Assistant instance. "
+    "Answer questions about the home using the available tools, and always "
+    "look up real data with tools instead of guessing. "
+    "Once a tool returns an answer, do not overthink it — present the "
+    "information as you found it. "
+    "Be concise and factual, follow instructions precisely, and do not do "
+    "anything extra that wasn't asked."
+)
+
 # The single source of truth for choosing BETWEEN tools. Individual tool
 # descriptions state only what each tool does and is not for (by intent); the
 # cross-tool routing lives here, in one place that sees the whole taxonomy and
@@ -60,7 +73,7 @@ _MEMORY_NOTES = (
 
 
 def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
-    prompt = settings.system_prompt + _TOOL_ROUTING
+    prompt = _BASE_PROMPT + _TOOL_ROUTING
     metas = list_skills(skills_dir)
     if metas:
         skill_lines = []
@@ -86,11 +99,13 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
             "matches, tell the user the action is not possible yet. Every action also "
             "requires the home's AI-actions switch to be on, or it is refused. If the user "
             "wants it to happen LATER (when something happens, or at a time), this section "
-            "does not apply - see DOING THINGS LATER; never tell the user to create an "
-            "automation for that."
+            "does not apply - see DOING THINGS LATER."
         )
     if settings.watched_entities or settings.clock_entity:
         prompt += _MEMORY_NOTES
+    extra = settings.extra_instructions.strip()
+    if extra:
+        prompt += "\n\nHOUSEHOLD INSTRUCTIONS:\n" + extra
     return prompt
 
 
