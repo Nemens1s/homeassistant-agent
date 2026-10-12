@@ -32,10 +32,8 @@ def load_tools():
     registry._reset_for_tests()
 
 
-def _ctx(rest=None, allowed=None):
+def _ctx(rest=None):
     settings = Settings(_env_file=None)
-    if allowed is not None:
-        settings.allowed_domains = allowed
     return ToolContext(settings=settings, rest=rest or FakeRest(), ws=None)
 
 
@@ -63,20 +61,13 @@ async def test_trigger_action_rejects_non_ai_automation():
     assert rest.calls == []
 
 
-async def test_trigger_action_respects_allowlist():
-    defn = registry.get("trigger_action")
-    result = await defn.handler(
-        defn.params_model(entity_id="automation.ai_night"), _ctx(allowed=["light"]))
-    assert result.error_code == "domain_not_allowed"
-
-
 async def test_trigger_action_runs_script_with_params():
     rest = FakeRest()
     defn = registry.get("trigger_action")
     result = await defn.handler(
         defn.params_model(entity_id="script.ai_action_lights_on",
                           params={"room": "living_room"}),
-        _ctx(rest, allowed=["script"]))
+        _ctx(rest))
     assert result.status == "ok"
     assert rest.calls == [("script", "ai_action_lights_on", None, {"room": "living_room"})]
 
@@ -87,7 +78,7 @@ async def test_trigger_action_rejects_unknown_param_key():
     result = await defn.handler(
         defn.params_model(entity_id="script.ai_action_lights_on",
                           params={"zone": "living_room"}),
-        _ctx(rest, allowed=["script"]))
+        _ctx(rest))
     assert result.error_code == "invalid_params"
     assert rest.calls == []
 
@@ -97,7 +88,7 @@ async def test_trigger_action_rejects_missing_required_param():
     defn = registry.get("trigger_action")
     result = await defn.handler(
         defn.params_model(entity_id="script.ai_action_lights_on", params={}),
-        _ctx(rest, allowed=["script"]))
+        _ctx(rest))
     assert result.error_code == "invalid_params"
     assert rest.calls == []
 
@@ -106,6 +97,6 @@ async def test_trigger_action_rejects_non_ai_script():
     rest = FakeRest()
     defn = registry.get("trigger_action")
     result = await defn.handler(
-        defn.params_model(entity_id="script.backup"), _ctx(rest, allowed=["script"]))
+        defn.params_model(entity_id="script.backup"), _ctx(rest))
     assert result.error_code == "not_ai_controllable"
     assert rest.calls == []

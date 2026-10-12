@@ -22,6 +22,7 @@ from app.agent.middleware.context_window_middleware import timestamped_system
 from app.agent.llm import build_llm
 from app.agent.tool_router import select_tools
 from app.config import load_settings
+from app.constants import WRITE_DOMAINS
 from app.ha.rest import RestClient
 from app.ha.websocket import WebSocketClient
 from app.tools import registry
@@ -79,7 +80,7 @@ async def _agent_trace(settings, prompt: str) -> list[dict]:
       {"thinking": ..., "answer": "..."}  — final AI turn with text reply
       {"error": "..."}                    — agent raised an exception
     """
-    write_domains = tuple(settings.allowed_domains) if settings.max_tier >= 2 else ()
+    write_domains = WRITE_DOMAINS if settings.allow_actions else ()
     rest = RestClient(settings.ha_base_url, settings.ha_token, allowed_write_domains=write_domains)
     ws: WebSocketClient | None = None
     try:

@@ -16,7 +16,9 @@ from langgraph.errors import GraphRecursionError
 
 from app.agent.checkpointer import open_checkpointer
 from app.agent.factory import build_agent
+from app.agent.llm_probe import resolve_llm_settings
 from app.audit import AuditSink
+from app.constants import WRITE_DOMAINS
 from app.needle.factory import build_fast_path_backend
 from app.config import load_settings
 from app.ha.rest import RestClient
@@ -69,9 +71,7 @@ async def main(save_conversations: bool = False) -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s %(message)s")
     settings = load_settings()
 
-    write_domains = (
-        tuple(settings.allowed_domains) if settings.max_tier >= 2 else ()
-    )
+    write_domains = WRITE_DOMAINS if settings.allow_actions else ()
     rest = RestClient(settings.ha_base_url, settings.ha_token,
                       allowed_write_domains=write_domains)
     audit = AuditSink(settings.audit_db_path)
@@ -82,6 +82,7 @@ async def main(save_conversations: bool = False) -> None:
         print(f"warning: websocket unavailable ({exc}) — area/automation tools degraded")
         ws = None
 
+    settings = await resolve_llm_settings(settings)
     ctx = ToolContext(settings=settings, rest=rest, ws=ws, audit=audit)
     checkpointer_cm = open_checkpointer(settings)
     checkpointer = await checkpointer_cm.__aenter__()
@@ -89,7 +90,7 @@ async def main(save_conversations: bool = False) -> None:
     try:
         fast_path = build_fast_path_backend(settings, rest, ctx)
     except Exception as exc:
-        print(f"warning: needle fast path unavailable ({exc})")
+        print(f"warning: fast path unavailable ({exc})")
 
     # Initialise telemetry (no-op when disabled or DB unwritable).
     from app.telemetry.setup import init_telemetry, shutdown_telemetry, get_tracer
@@ -107,8 +108,8 @@ async def main(save_conversations: bool = False) -> None:
     conv_file: IO[str] | None = (
         _open_conv_file(Path(".conversations")) if save_conversations else None
     )
-    needle_note = "  [needle fast path ON]" if fast_path is not None else ""
-    print(f"\nAgent ready ({settings.llm_model} via {settings.llm_provider}).{needle_note} Ctrl+C to quit.\n")
+    fast_path_note = "  [fast path ON]" if fast_path is not None else ""
+    print(f"\nAgent ready ({settings.llm_model} via {settings.llm_provider}).{fast_path_note} Ctrl+C to quit.\n")
     try:
         while True:
             try:

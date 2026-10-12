@@ -21,10 +21,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
+from app.agent.llm_probe import resolve_llm_settings
 from app.agent.run_scope import scope_configurable
 from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
+from app.constants import WRITE_DOMAINS
 from app.needle.factory import build_fast_path_backend
 from app.config import Settings, load_settings
 from app.i18n import build_language_adapter, set_language_attributes
@@ -123,9 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from app.agent.factory import build_system_prompt
         from app.skills import list_skills
 
-        write_domains = (
-            tuple(cfg.allowed_domains) if cfg.max_tier >= 2 else ()
-        )
+        write_domains = WRITE_DOMAINS if cfg.allow_actions else ()
         rest = RestClient(cfg.ha_base_url, cfg.ha_token,
                           allowed_write_domains=write_domains)
         audit = AuditSink(cfg.audit_db_path)
@@ -177,7 +177,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.warning("websocket not connected yet (%s) — retrying in the background", exc)
                 ws.start_background()
 
-            ctx = ToolContext(settings=cfg, rest=rest, ws=ws, audit=audit, notes=notes, lang=language)
+            # Resolve "auto" llm_provider (and llama.cpp's real num_ctx) now
+            # that we know the backend is reachable (or not). cfg stays the
+            # unresolved closure variable from create_app; everything below
+            # this point uses run_cfg.
+            run_cfg = await resolve_llm_settings(cfg)
+
+            ctx = ToolContext(settings=run_cfg, rest=rest, ws=ws, audit=audit, notes=notes, lang=language)
             # Load the tool registry before building the fast path: it guards on
             # registry.get("trigger_action"), and build_agent (which also
             # loads the registry) runs later. load_all is idempotent.
@@ -185,9 +191,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             registry.load_all()
             fast_path = None
             try:
-                fast_path = build_fast_path_backend(cfg, rest, ctx)
+                fast_path = build_fast_path_backend(run_cfg, rest, ctx)
             except Exception:
-                log.exception("needle fast path failed to build; running agent-only")
+                log.exception("fast path failed to build; running agent-only")
 
             # Build telemetry tuple for build_agent when enabled.
             telemetry_arg = None
@@ -195,20 +201,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 tracer = get_tracer()
                 telemetry_arg = (tracer, snapshot_conn)
 
-            async with open_checkpointer(cfg) as checkpointer:
+            async with open_checkpointer(run_cfg) as checkpointer:
                 agent = build_agent(
-                    cfg, ctx, checkpointer=checkpointer, fast_path=fast_path,
+                    run_cfg, ctx, checkpointer=checkpointer, fast_path=fast_path,
                     telemetry=telemetry_arg,
                 )
-                app.state.settings = cfg
+                app.state.settings = run_cfg
                 app.state.rest = rest
                 app.state.ws = ws
                 app.state.agent = agent
 
                 # Event-triggered notes: the runner reads app.state.agent at fire
                 # time, the listener subscribes now (or on the first connect).
-                runner = EventRunner(lambda: app.state.agent, cfg, ctx)
-                listener = EventListener(ws, notes, runner, cfg, rest)
+                runner = EventRunner(lambda: app.state.agent, run_cfg, ctx)
+                listener = EventListener(ws, notes, runner, run_cfg, rest)
                 await listener.start()
                 app.state.event_listener = listener
 
@@ -216,10 +222,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if snapshot_conn is not None:
                     try:
                         from app.tools.adapter import build_tools, LoopGuard
-                        base_prompt = build_system_prompt(cfg, ctx.skills_dir)
+                        base_prompt = build_system_prompt(run_cfg, ctx.skills_dir)
                         register_prompt(snapshot_conn, base_prompt)
                         guard = LoopGuard()
-                        tools = build_tools(ctx, cfg.max_tier, guard=guard)
+                        tools = build_tools(ctx, run_cfg.max_tier, guard=guard)
                         register_toolset(snapshot_conn, tools)
                     except Exception:
                         log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)

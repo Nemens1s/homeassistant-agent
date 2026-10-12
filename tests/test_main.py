@@ -17,6 +17,7 @@ def _settings():
         ha_token="t",
         llm_url="http://127.0.0.1:59998",
         ws_connect_timeout=0.5,
+        clock_entity="sensor.europe_tallinn",
     )
 
 
@@ -82,13 +83,13 @@ def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     from app import main as main_mod
     monkeypatch.setattr(main_mod, "build_agent", fake_build_agent)
     settings = _settings()
-    settings.max_tier = 2
+    settings.allow_actions = True
     settings.audit_db_path = str(tmp_path / "a.db")
     app = create_app(settings)
     with TestClient(app):
         pass
     assert captured["audit"] is not None
-    assert captured["rest"]._allowed_write_domains == ("light", "switch", "fan", "automation", "script")
+    assert captured["rest"]._allowed_write_domains == ("automation", "script")
 
 
 def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):
@@ -212,7 +213,7 @@ async def test_lifespan_teardown_survives_rest_close_failure():
     assert calls == ["rest", "ws"]
 
 
-def test_lifespan_builds_fast_path_when_needle_enabled(monkeypatch):
+def test_lifespan_builds_fast_path_when_fast_path_enabled(monkeypatch):
     # Regression: build_fast_path_backend guards on registry.get("trigger_action"),
     # so the tool registry must be loaded BEFORE it runs in the lifespan. If it isn't,
     # the backend builds to None and FastPathMiddleware is silently never added.
@@ -232,9 +233,9 @@ def test_lifespan_builds_fast_path_when_needle_enabled(monkeypatch):
     from app import main as main_mod
     monkeypatch.setattr(main_mod, "build_agent", fake_build_agent)
     settings = _settings()
-    settings.max_tier = 2
-    settings.needle_enabled = True
-    settings.needle_remote_url = "http://needle.lan:8765"
+    settings.allow_actions = True
+    settings.fast_path_enabled = True
+    settings.fast_path_url = "http://needle.lan:8765"
     app = create_app(settings)
     with TestClient(app):
         pass

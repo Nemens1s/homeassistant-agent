@@ -22,3 +22,8 @@ AI_SCRIPT_PREFIX_ACTION = "script.ai_action"
 # one of these markers; the text after the marker is what Needle matches on.
 # Anything without a marker (e.g. the notify script) is agent-only.
 FAST_PATH_MARKERS: tuple[str, ...] = ("NEEDLE:", "FAST-PATH:")
+
+# Domains the REST client may write to when allow_actions is on. Writes are
+# menu-only (automation.ai_* / script.ai_*, enforced elsewhere), so this is a
+# fixed pair, not a user-configurable list.
+WRITE_DOMAINS: tuple[str, ...] = ("automation", "script")

@@ -8,7 +8,7 @@ environment. In dev, everything comes from .env / environment variables.
 import json
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 OPTIONS_FILE = Path("/data/options.json")
@@ -17,6 +17,15 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are an assistant for this Home Assistant instance. "
     "Answer questions about the home using the available tools, and always "
     "look up real data with tools instead of guessing. "
+    "Real-world actions (turning on lights, starting the vacuum, etc.) can "
+    "only be performed by triggering automations — you cannot control devices "
+    "directly. "
+    "When the user asks you to perform an action now, first thing: look up the "
+    "available actions and trigger the one that matches the request. "
+    "If none matches, tell the user the action is not possible yet. Do not "
+    "investigate further. "
+    "If the user wants something to happen later (when something happens, or at "
+    "a time), schedule it instead - never tell them to create an automation. "
     "Once a tool returns an answer, do not overthink it — present the "
     "information as you found it. "
     "Be concise and factual, follow instructions precisely, and do not do "
@@ -27,6 +36,19 @@ DEFAULT_SYSTEM_PROMPT = (
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_keys(cls, data):
+        # Old options.json files carry max_tier (1|2). Map it unless the new
+        # key is already set, so upgrades from a pre-allow_actions add-on
+        # config keep working without a Supervisor re-save.
+        if isinstance(data, dict) and "max_tier" in data:
+            data = dict(data)
+            legacy = data.pop("max_tier")
+            if "allow_actions" not in data:
+                data["allow_actions"] = int(legacy) >= 2
+        return data
+
     # Home Assistant
     ha_base_url: str = "http://supervisor/core"
     ha_token: str = Field(
@@ -35,7 +57,9 @@ class Settings(BaseSettings):
     ws_connect_timeout: float = 10.0
 
     # LLM backend
-    llm_provider: str = "ollama"  # "ollama", "llamacpp" (llama-server HTTP API), or any litellm provider
+    # "auto" (default) probes llm_url to pick ollama/llamacpp/openai; see
+    # app/agent/llm_probe.py. Set explicitly to skip the probe.
+    llm_provider: str = "auto"  # "ollama", "llamacpp" (llama-server HTTP API), or any litellm provider
     llm_url: str = Field(
         "http://localhost:11434",
         validation_alias=AliasChoices("LLM_URL"),
@@ -70,8 +94,8 @@ class Settings(BaseSettings):
 
     # Agent behavior
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
-    max_tier: int = 1
-    allowed_domains: list[str] = ["light", "switch", "fan", "automation", "script"]
+    # off = read-only; on = trigger_action/notify_user/scheduling are available.
+    allow_actions: bool = False
     ai_actions_switch: str = "input_boolean.ai_triggered_actions"  # master gate; "" disables
     recursion_limit: int = 15
     max_rows: int = 50
@@ -82,19 +106,22 @@ class Settings(BaseSettings):
     # Per-thread history cap: after each run, prune stored history to the last N
     # messages (rounded to a human-turn boundary). 0 = keep full history. This
     # bounds unbounded per-thread growth, especially with a durable checkpointer.
-    max_history_messages: int = 0
+    max_history_messages: int = 40
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
 
-    # Needle fast path (optional low-latency automation triggering). Off by
-    # default: when enabled AND max_tier >= 2, the needle service may trigger an
+    # Fast path (optional): an external service that maps a request straight to
+    # one ai_* action, skipping the LLM. Contract: README "Fast path". Off by
+    # default: when enabled AND allow_actions is on, the service may trigger an
     # ai_* automation directly, bypassing the agent. See docs spec 2026-08-25.
-    needle_enabled: bool = False
-    needle_remote_url: str = ""          # URL of the needle inference service
-    # Fire only when confidence >= this. Default 0.0 = "trust the call" (fire on
-    # any emitted tool call): fine-tuned Needle weights report confidence as None
-    # (the head is not tuned), so a nonzero threshold would block EVERYTHING with
-    # a tuned model. Raise it only if running the calibrated BASE model.
-    needle_confidence_threshold: float = 0.0
+    fast_path_enabled: bool = Field(
+        False, validation_alias=AliasChoices("fast_path_enabled", "needle_enabled"))
+    fast_path_url: str = Field(
+        "", validation_alias=AliasChoices("fast_path_url", "needle_remote_url"))
+    # Fire only at or above this confidence. Keep 0 unless your model reports a
+    # calibrated confidence (e.g. a model fine-tuned on Needle's site).
+    fast_path_confidence_threshold: float = Field(
+        0.0, validation_alias=AliasChoices("fast_path_confidence_threshold",
+                                           "needle_confidence_threshold"))
 
     # Language layer. Off by default: when
     # disabled the HTTP edge behaves exactly as before and lang-mt is never
@@ -117,7 +144,7 @@ class Settings(BaseSettings):
     # clock reaches a time. Empty watched_entities = state notes off; empty
     # clock_entity = time notes off.
     watched_entities: list[str] = []
-    clock_entity: str = "sensor.europe_tallinn"  # World Clock, "HH:MM DD-MM-YYYY"
+    clock_entity: str = ""  # World Clock entity, e.g. sensor.europe_tallinn, "HH:MM DD-MM-YYYY"
     # Off = the agent still calls notify_user after acting, but nothing is sent
     # (reminders the user asked for are always sent).
     event_confirmations_enabled: bool = True
@@ -148,6 +175,15 @@ class Settings(BaseSettings):
         for e in self.person_name_map:
             lookup[e["ha_name"]] = e["name"]
         return lookup
+
+    @property
+    def max_tier(self) -> int:
+        # Tier is an internal concept (tools/base.Tier); users only see
+        # allow_actions. Kept so every settings.max_tier call site keeps
+        # working unchanged.
+        if self.allow_actions:
+            return 2
+        return 1
 
     @property
     def ws_url(self) -> str:

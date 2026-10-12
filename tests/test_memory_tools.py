@@ -77,7 +77,7 @@ def store():
 
 
 def _ctx(store, rest=None, lang=None, **overrides):
-    values = {"watched_entities": [VACUUM], "max_tier": 2}
+    values = {"watched_entities": [VACUUM], "max_tier": 2, "clock_entity": "sensor.europe_tallinn"}
     values.update(overrides)
     settings = Settings(_env_file=None, **values)
     return ToolContext(

@@ -23,14 +23,11 @@ configuration:
   system_prompt:
     name: System prompt
     description: Base instructions prepended to every conversation.
-  max_tier:
-    name: Max capability tier
+  allow_actions:
+    name: Allow actions
     description: >-
-      Highest tool tier the agent may use. 1 = read-only. 2 = allows the gated
-      action tools (still fail-closed behind the AI kill switch).
-  allowed_domains:
-    name: Allowed domains
-    description: Home Assistant entity domains the agent is permitted to see and act on.
+      Off = read-only. On = the agent may trigger ai_* automations/scripts and
+      send notifications (still fail-closed behind the AI kill switch).
   ai_actions_switch:
     name: AI actions kill switch
     description: >-
@@ -93,11 +90,6 @@ configuration:
   max_rows:
     name: Max rows
     description: Cap on the number of rows a tool may return, to bound response size.
-  checkpoint_db_path:
-    name: Checkpoint DB path
-    description: >-
-      SQLite file for durable conversation memory across restarts. /data
-      persists across add-on restarts; empty string keeps memory in RAM.
   max_history_messages:
     name: Max history messages
     description: >-
@@ -108,19 +100,20 @@ configuration:
     description: >-
       Narrow the tool menu per query. Helps small models pick the right tool;
       turn off to always expose the full tool set.
-  needle_enabled:
-    name: Needle fast path
+  fast_path_enabled:
+    name: Fast path
     description: >-
-      Enable the low-latency Needle service to trigger ai_* automations directly
-      (requires max tier >= 2). Off by default.
-  needle_confidence_threshold:
-    name: Needle confidence threshold
+      Enable a low-latency external service to trigger ai_* automations/scripts
+      directly, skipping the LLM (requires allow_actions on). Off by default.
+  fast_path_confidence_threshold:
+    name: Fast path confidence threshold
     description: >-
-      Fire only when Needle confidence is at or above this. 0.0 fires on any
-      emitted call (correct for fine-tuned weights that report no confidence).
-  needle_remote_url:
-    name: Needle service URL
-    description: URL of the remote Needle inference service.
+      Fire only when the fast-path service's confidence is at or above this.
+      0.0 fires on any emitted call (correct for fine-tuned weights that
+      report no confidence).
+  fast_path_url:
+    name: Fast path service URL
+    description: URL of the remote fast-path inference service.
   person_name_map:
     name: Person name map
     description: >-
@@ -165,21 +158,28 @@ configuration:
     description: >-
       Seconds to wait for the translation service before giving up on that hop.
       A timeout means the agent still answers — in English.
-  glossary_path:
-    name: Glossary path
-    description: >-
-      YAML file mapping device and room names to their forms in each language,
-      so translation cannot mangle them. Missing file = no name protection. See
-      docs/glossary.example.yaml for the format.
   telemetry_enabled:
     name: Telemetry
     description: >-
       Record what each request did — prompts, tool calls, timings and replies —
       to a local SQLite file for the Metrics tab. Everything stays on this
       machine; nothing is sent anywhere. Turn it off to record nothing.
-  telemetry_db_path:
-    name: Telemetry DB path
+  watched_entities:
+    name: Watched entities
     description: >-
-      SQLite file the traces are written to. /data persists across add-on
-      restarts. An empty string disables telemetry regardless of the switch
-      above; the file is excluded from add-on backups.
+      Entities the agent may watch for state-triggered notes (e.g. "tell me
+      when the laundry is done"). Empty = state-triggered notes are off.
+  clock_entity:
+    name: Clock entity
+    description: >-
+      A World Clock sensor ("HH:MM DD-MM-YYYY") used for time-triggered notes
+      and scheduling. Empty = time-triggered notes are off.
+  event_confirmations_enabled:
+    name: Event confirmations
+    description: >-
+      Off = the agent still acts on fired notes, but sends no confirmation
+      message (reminders the user asked for are always sent).
+  notify_action:
+    name: Notify action script
+    description: >-
+      The only script notify_user may call to send a message to the user.

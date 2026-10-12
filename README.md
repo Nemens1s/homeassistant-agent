@@ -26,20 +26,112 @@ Lets Agent Gosling act as the conversation agent in HA voice pipelines.
 
 ## Key Options
 
+The Configuration tab shows only this minimal set; everything else has a
+sane default and stays hidden until you explicitly set it (see "Advanced
+options" below).
+
 | Key | Default | Notes |
 |---|---|---|
-| `llm_provider` | `ollama` | `ollama` for local; anything else uses ChatOpenAI |
-| `llm_url` | — | Ollama URL, or any OpenAI-compatible base URL |
-| `llm_model` | — | Model tag served by the LLM backend |
+| `llm_url` | `` | Ollama URL, llama.cpp (llama-server) URL, or any OpenAI-compatible base URL |
+| `llm_model` | `` | Model tag served by the LLM backend |
 | `api_key` | `` | Cloud provider key (stored as password) |
-| `max_tier` | `1` | `1` = read-only; `2` = control tools |
-| `allowed_domains` | `["light","switch","fan","automation","script"]` | Domains the agent may control at `max_tier=2` |
-| `temperature` | `0.0` | |
-| `recursion_limit` | `15` | Max agent steps per request |
-| `max_rows` | `50` | Max entity rows returned per tool call |
-| `checkpoint_db_path` | `/data/checkpoints.sqlite` | SQLite conversation persistence; empty = in-memory |
+| `allow_actions` | `false` | `false` = read-only; `true` = allows `trigger_action`/`notify_user`/scheduling |
+| `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
+| `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
+| `watched_entities` | `[]` | Entities the agent may watch for state-triggered notes; empty = off |
+| `clock_entity` | `` | World Clock sensor for time-triggered notes/scheduling; empty = off |
+| `event_confirmations_enabled` | `true` | Send a confirmation message when a fired note acts |
+| `person_name_map` | `[]` | Rename people for the agent (`ha_name` → `name`) |
+| `language_layer_enabled` | `false` | Accept non-English messages via the lang-mt translation service |
+| `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them |
 
-Setting `max_tier: 2` unlocks `control_entity` and `trigger_automation`, letting the agent turn lights on/off, toggle switches, and fire automations. `allowed_domains` is the hard boundary — the REST client refuses writes to any domain not in the list. All tier-2 actions are logged to `/data/audit.db` (SQLite, append-only).
+Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
+
+### Advanced options
+
+Everything else (LLM sampling knobs like `temperature`/`top_p`/`num_ctx`,
+`llm_provider`, `system_prompt`, `recursion_limit`, `max_rows`,
+`max_history_messages`, `enable_tool_subsetting`, the `fast_path_*` keys,
+`person_name_exclude`, the `lang_mt_*`/`default_language`/`min_confidence`
+language-layer tuning, `telemetry_enabled`, and the `memory_note_*`/
+`time_note_grace_minutes` note-scheduling knobs) stays in the add-on schema
+with a code default and is hidden from the Configuration tab until you add
+it yourself. `checkpoint_db_path`, `telemetry_db_path`, and `glossary_path`
+are no longer configurable at all — the add-on fixes them to `/data` and
+`/config/gosling` paths via environment variables in `run.sh`.
+
+If you run a multilingual model without turning on the language layer,
+set `enable_tool_subsetting: false` — the small-model tool-subsetting
+heuristic is tuned on English tool descriptions and can mis-rank tools for
+non-English prompts.
+
+**Provider auto-detection:** with `llm_provider: auto` (the default), the app
+probes `llm_url` once at startup — `/api/tags` for Ollama, `/props` for
+llama.cpp (llama-server) — and falls back to a plain OpenAI-compatible client
+if neither answers or `api_key` is set. For llama.cpp specifically, `num_ctx`
+is also read from `/props` (`default_generation_settings.n_ctx`) and used
+automatically, so you don't need to duplicate the server's context size in
+options. The probe never blocks startup indefinitely (3 s timeout per
+request) and never fails the add-on — an unreachable backend just falls back
+to the OpenAI-compatible client, same as before this behavior existed.
+
+## Fast path
+
+An optional low-latency path: an external inference service maps a user
+message straight to one `ai_*` action, skipping the LLM entirely. Off by
+default (`fast_path_enabled: false`); requires `allow_actions: true` as well,
+since it only ever triggers an action.
+
+Only automations/scripts whose HA description opts in are eligible. Add a
+`FAST-PATH:` marker to the description — the text after the marker is what
+the service matches requests against:
+
+```yaml
+alias: "AI: start vacuum"
+id: ai_action_start_vacuum
+description: "FAST-PATH: start the vacuum / clean the house"
+triggers: []
+actions:
+  - action: vacuum.start
+    target:
+      entity_id: vacuum.my_vacuum
+```
+
+Set `fast_path_url` to the service's base URL; the app POSTs to `<url>/classify`:
+
+```json
+{
+  "message": "turn on the vacuum",
+  "tools": [
+    {"name": "start_vacuum", "description": "start the vacuum / clean the house", "parameters": {}}
+  ],
+  "signature": "<menu cache signature>"
+}
+```
+
+and expects a decision back as JSON:
+
+```json
+{
+  "confidence": 0.0,
+  "function_calls": [
+    {"name": "start_vacuum", "arguments": {}}
+  ]
+}
+```
+
+`function_calls` empty or absent means "no match" (falls through to the
+agent). `confidence` is optional; a missing value is treated as `0.0`. Set
+`fast_path_confidence_threshold` to require a minimum confidence before
+firing (default `0.0` fires on any emitted call — correct for models that
+don't report a calibrated confidence); the router falls through to the
+normal agent on any network error, a low-confidence decision, or no match.
+
+| Key | Default | Notes |
+|---|---|---|
+| `fast_path_enabled` | `false` | Requires `allow_actions: true` as well |
+| `fast_path_url` | `` | Base URL of the remote fast-path service |
+| `fast_path_confidence_threshold` | `0.0` | Fire only at/above this confidence |
 
 ## Streaming & persistence
 
