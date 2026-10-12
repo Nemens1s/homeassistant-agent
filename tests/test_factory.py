@@ -95,8 +95,8 @@ def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
 
 
 def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
-    s1 = Settings(_env_file=None, max_tier=1)
-    s2 = Settings(_env_file=None, max_tier=2)
+    s1 = Settings(_env_file=None, allow_actions=False)
+    s2 = Settings(_env_file=None, allow_actions=True)
     p1 = build_system_prompt(s1, tmp_path)
     p2 = build_system_prompt(s2, tmp_path)
     assert "automation.ai_" not in p1  # no action guidance at tier 1
@@ -106,7 +106,7 @@ def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
 
 def test_build_agent_compiles_with_read_tools():
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, max_tier=1)
+    settings = Settings(_env_file=None, allow_actions=False)
     ctx = ToolContext(settings=settings, rest=None, ws=None)
     agent = build_agent(settings, ctx)
     assert agent is not None
@@ -252,7 +252,7 @@ def test_system_prompt_omits_notes_when_disabled(tmp_path):
 
 
 def test_actions_paragraph_defers_later_requests_to_notes(tmp_path):
-    s = Settings(_env_file=None, max_tier=2, watched_entities=["vacuum.x"])
+    s = Settings(_env_file=None, allow_actions=True, watched_entities=["vacuum.x"])
     prompt = build_system_prompt(s, tmp_path)
     actions = prompt[prompt.index("ACTIONS (to do NOW):"):]
     # "do it later" must not end in "go create an automation"

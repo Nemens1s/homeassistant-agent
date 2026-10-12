@@ -73,7 +73,7 @@ async def test_scope_reaches_handlers_inside_the_graph(monkeypatch):
     registry._reset_for_tests()
     registry.register(_probe(seen))
     monkeypatch.setattr(registry, "load_all", lambda *a, **k: None)
-    settings = Settings(_env_file=None, max_tier=1, enable_tool_subsetting=False)
+    settings = Settings(_env_file=None, allow_actions=False, enable_tool_subsetting=False)
     ctx = ToolContext(settings=settings, rest=None, ws=None)
     model = _ScriptedModel(responses=[
         AIMessage(content="", tool_calls=[{"name": "probe", "args": {}, "id": "c1"}]),
