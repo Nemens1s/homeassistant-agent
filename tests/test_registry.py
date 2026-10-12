@@ -3,8 +3,11 @@ import json
 import pytest
 from pydantic import BaseModel
 
+from app.config import Settings
 from app.tools import registry
+from app.tools.adapter import build_tools
 from app.tools.base import Tier, ToolDefinition, ToolResult
+from app.tools.context import ToolContext
 
 
 class _Params(BaseModel):
@@ -18,6 +21,27 @@ async def _handler(params, ctx):
 def _defn(name, tier=Tier.READ):
     return ToolDefinition(
         name=name, description="d", params_model=_Params, tier=tier, handler=_handler
+    )
+
+
+async def _true(ctx):
+    return True
+
+
+async def _false(ctx):
+    return False
+
+
+async def _raises(ctx):
+    raise RuntimeError("HA down")
+
+
+def _avail_defn(name, available=None):
+    async def h(p, c):
+        return ToolResult.ok(None)
+    return ToolDefinition(
+        name=name, description="d", params_model=BaseModel, tier=Tier.READ,
+        handler=h, available=available,
     )
 
 
@@ -64,3 +88,25 @@ def test_no_home_specific_names_in_tool_text():
             if word in text:
                 offenders.append((t.name, word))
     assert offenders == []
+
+
+async def test_resolve_enabled_applies_probe_and_disabled_list():
+    registry._reset_for_tests()
+    registry.register(_avail_defn("always"))
+    registry.register(_avail_defn("has_device", _true))
+    registry.register(_avail_defn("no_device", _false))
+    registry.register(_avail_defn("probe_fails", _raises))
+    registry.register(_avail_defn("user_off", _true))
+    ctx = ToolContext(settings=Settings(_env_file=None, disabled_tools=["user_off"]), rest=None)
+    assert await registry.resolve_enabled(ctx) == {"always", "has_device", "probe_fails"}
+
+
+def test_build_tools_respects_enabled():
+    registry._reset_for_tests()
+    registry.register(_avail_defn("a"))
+    registry.register(_avail_defn("b"))
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=None)
+    names = []
+    for t in build_tools(ctx, max_tier=1, enabled={"a"}):
+        names.append(t.name)
+    assert names == ["a"]

@@ -11,18 +11,23 @@ from app.config import Settings
 from app.ha.websocket import ws_is_ready
 from app.i18n.adapter import NoopLanguageAdapter
 
-_DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
-
 
 @dataclass
 class ToolContext:
     settings: Settings
     rest: Any  # RestClient; typed loosely so tests can pass fakes
     ws: Any = None  # WebSocketClient | None
-    skills_dir: Path = field(default=_DEFAULT_SKILLS_DIR)
+    # None (the default) means "derive from settings.skills_path"; set in
+    # __post_init__ so it tracks per-instance settings. Tests pass an explicit
+    # path to override.
+    skills_dir: Path | None = None
     audit: Any = None
     notes: Any = None  # NoteStore | None — None when the note store is unavailable
     lang: Any = field(default_factory=NoopLanguageAdapter)  # fail-open translation for harness text
+
+    def __post_init__(self) -> None:
+        if self.skills_dir is None:
+            self.skills_dir = Path(self.settings.skills_path)
 
 
 def ws_ready(ctx: "ToolContext") -> bool:

@@ -71,6 +71,28 @@ Update (Supervisor rebuilds the image). App data (`/data`, which will
 hold `audit.db` and `conversations.db` from iterations 2–3) survives
 updates and is included in HA backups.
 
+### Upgrading from 0.4.24
+
+0.4.25 reworked the Configuration tab. Settings saved by 0.4.24 or earlier
+keep working without a re-save:
+
+- **Legacy keys are honoured.** `max_tier`, `needle_enabled`,
+  `needle_remote_url`, `needle_confidence_threshold` and `system_prompt` stay
+  in the add-on schema as hidden, deprecated options and are mapped onto the
+  new ones: `max_tier: 2` turns `allow_actions` on, `needle_enabled` turns
+  `fast_path_enabled` on, the needle URL/threshold fill `fast_path_url` /
+  `fast_path_confidence_threshold` when those are empty, and a customised
+  `system_prompt` becomes `extra_instructions` when those are empty (the old
+  shipped default prompt is dropped).
+- **Switching actions off after an upgrade from `max_tier: 2`.** A legacy
+  `max_tier: 2` turns actions on even while `allow_actions` is off. Clear
+  `max_tier` (or set it to `1`) in the YAML view of the Configuration tab,
+  then turn `allow_actions` off.
+- **Re-enter the LLM URL and model if they were never saved.** If you ran
+  with the old defaults and never saved the Configuration tab, `llm_url` and
+  `llm_model` are now empty; the log shows "llm_url is not set". Set both
+  and restart.
+
 ## 2. Standalone docker build (CI / smoke-testing the image)
 
 `Dockerfile` starts with `ARG BUILD_FROM` because the HA builder injects the

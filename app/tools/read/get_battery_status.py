@@ -2,6 +2,7 @@ from pydantic import BaseModel
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
 from app.tools.helpers.people import alias_legend
+from app.tools.helpers.probes import any_entity
 from app.tools.registry import register
 from app.tools.context import ws_ready
 
@@ -63,6 +64,10 @@ async def handler(params: Params, ctx) -> ToolResult:
     return ToolResult.ok(data)
 
 
+async def _has_battery(ctx) -> bool:
+    return await any_entity(ctx, device_class="battery")
+
+
 register(
     ToolDefinition(
         name="get_battery_status",
@@ -70,5 +75,6 @@ register(
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
+        available=_has_battery,
     )
 )

@@ -1,14 +1,21 @@
 """Skills: markdown playbooks with progressive disclosure. The system prompt
 lists name+description one-liners; the model calls load_skill(name) to pull
 the full text in only when relevant. Skills are data — iterating on playbooks
-requires no code changes."""
+requires no code changes.
+
+Skills are user-supplied (dropped into settings.skills_path), so a file
+without valid frontmatter is treated as not a skill at all rather than
+silently exposed under its filename — see _parse_frontmatter."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+log = logging.getLogger("agent.skills")
 
 
 @dataclass(slots=True)
@@ -17,15 +24,22 @@ class SkillMeta:
     description: str
 
 
-def _parse_frontmatter(text: str) -> tuple[dict, str]:
+def _parse_frontmatter(text: str) -> tuple[dict, str] | None:
+    """Return (meta, body), or None when `text` has no valid frontmatter
+    block — callers skip such a file rather than fall back to its filename."""
     if not text.startswith("---"):
-        return {}, text.strip()
+        return None
     lines = text.split("\n")
     try:
         close = next(i for i, l in enumerate(lines[1:], 1) if l.strip() == "---")
     except StopIteration:
-        return {}, text.strip()
-    meta = yaml.safe_load("\n".join(lines[1:close])) or {}
+        return None
+    try:
+        meta = yaml.safe_load("\n".join(lines[1:close])) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(meta, dict):
+        return None
     body = "\n".join(lines[close + 1:]).strip()
     return meta, body
 
@@ -33,7 +47,11 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
 def list_skills(skills_dir: Path) -> list[SkillMeta]:
     metas = []
     for path in sorted(skills_dir.glob("*.md")):
-        meta, _ = _parse_frontmatter(path.read_text())
+        parsed = _parse_frontmatter(path.read_text())
+        if parsed is None:
+            log.warning("skipping skill file %s: missing or invalid frontmatter", path.name)
+            continue
+        meta, _ = parsed
         metas.append(
             SkillMeta(
                 name=meta.get("name", path.stem),
@@ -45,7 +63,10 @@ def list_skills(skills_dir: Path) -> list[SkillMeta]:
 
 def read_skill(skills_dir: Path, name: str) -> str | None:
     for path in sorted(skills_dir.glob("*.md")):
-        meta, body = _parse_frontmatter(path.read_text())
+        parsed = _parse_frontmatter(path.read_text())
+        if parsed is None:
+            continue
+        meta, body = parsed
         if meta.get("name", path.stem) == name:
             return body
     return None

@@ -30,6 +30,14 @@ def _params_from_ctx(ctx) -> type[BaseModel]:
     return build_params_model(names)
 
 
+async def available(ctx) -> bool:
+    """Only offer load_skill when skills are enabled and at least one skill
+    file in skills_dir actually parses — otherwise there is nothing to load."""
+    if not ctx.settings.skills_enabled:
+        return False
+    return bool(list_skills(ctx.skills_dir))
+
+
 async def handler(params: Params, ctx) -> ToolResult:
     body = read_skill(ctx.skills_dir, params.name)
     if body is None:
@@ -50,5 +58,6 @@ register(
         tier=Tier.READ,
         handler=handler,
         dynamic_params=_params_from_ctx,
+        available=available,
     )
 )

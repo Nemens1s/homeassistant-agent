@@ -49,8 +49,8 @@ def check(case: dict, tool_calls: list) -> tuple[bool, str]:
     if call["name"] not in expected:
         return False, f"called {call['name']} (args {call['args']})"
 
-    # Skip param check when the model called an alternate "discovery" tool that
-    # naturally takes no args (e.g. list_skills called instead of load_skill).
+    # Skip param check when the model called an alternate "discovery" tool
+    # from expect_any_tool instead of the primary expect_tool.
     if any_of and call["name"] != case.get("expect_tool"):
         return True, ""
 
@@ -211,7 +211,8 @@ async def main() -> int:
     registry._reset_for_tests()
     registry.load_all()
     ctx = ToolContext(settings=settings, rest=None, ws=None)  # handlers never run
-    tools = build_tools(ctx, max_tier=max_tier)
+    enabled = await registry.resolve_enabled(ctx)
+    tools = build_tools(ctx, max_tier=max_tier, enabled=enabled)
     llm = build_llm(settings)
     system = timestamped_system(build_system_prompt(settings, ctx.skills_dir))
     output: dict = {
@@ -235,6 +236,9 @@ async def main() -> int:
         print("-" * 20)
         if case.get("min_tier", 1) > max_tier:
             print(f"  SKIP  {case['id']} (needs tier {case['min_tier']})")
+            continue
+        if case.get("requires_skills") and not settings.skills_enabled:
+            print(f"  SKIP  {case['id']} (needs skills_enabled)")
             continue
         run += 1
         # Mirror production: the agent only sees the per-query tool subset.

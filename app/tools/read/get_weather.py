@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from app.tools.base import Tier, ToolDefinition, ToolResult
+from app.tools.helpers.probes import any_entity
 from app.tools.registry import register
 from app.tools.context import ws_ready
 
@@ -48,6 +49,10 @@ async def handler(params: Params, ctx) -> ToolResult:
     return ToolResult.ok(results[0] if len(results) == 1 else results)
 
 
+async def _has_weather(ctx) -> bool:
+    return await any_entity(ctx, prefix="weather.")
+
+
 register(
     ToolDefinition(
         name="get_weather",
@@ -55,5 +60,6 @@ register(
         params_model=Params,
         tier=Tier.READ,
         handler=handler,
+        available=_has_weather,
     )
 )

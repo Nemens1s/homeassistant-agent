@@ -184,9 +184,16 @@ def to_structured_tool(
     )
 
 
-def build_tools(ctx: ToolContext, max_tier: int, guard: LoopGuard | None = None) -> list[StructuredTool]:
+def build_tools(
+    ctx: ToolContext,
+    max_tier: int,
+    guard: LoopGuard | None = None,
+    enabled: set[str] | None = None,
+) -> list[StructuredTool]:
     guard = guard or LoopGuard()
     tools = []
     for d in registry.tools_for_tier(max_tier):
+        if enabled is not None and d.name not in enabled:
+            continue
         tools.append(to_structured_tool(d, ctx, guard))
     return tools

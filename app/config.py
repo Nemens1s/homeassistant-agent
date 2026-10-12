@@ -39,36 +39,72 @@ _OLD_SHIPPED_PROMPT = (
 )
 
 
+def _map_legacy_keys(data):
+    # Keys from pre-0.4.25 options.json files. The Supervisor only keeps
+    # them because config.yaml lists them as hidden schema entries, and it
+    # always merges in the shipped `allow_actions: false` default — so a
+    # legacy key must count even when the new key is present.
+    if not isinstance(data, dict):
+        return data
+    data = dict(data)
+
+    # max_tier (1|2): tier 2 turns actions on, OR-ed with allow_actions.
+    if "max_tier" in data:
+        legacy_tier = data.pop("max_tier")
+        actions_on = bool(data.get("allow_actions"))
+        if legacy_tier is not None and int(legacy_tier) >= 2:
+            actions_on = True
+        data["allow_actions"] = actions_on
+
+    # needle_enabled: OR-ed into fast_path_enabled.
+    if "needle_enabled" in data:
+        legacy_enabled = data.pop("needle_enabled")
+        if legacy_enabled:
+            data["fast_path_enabled"] = True
+
+    # needle_remote_url / needle_confidence_threshold: used only when the
+    # new key is absent, empty or 0.
+    legacy_pairs = [
+        ("needle_remote_url", "fast_path_url"),
+        ("needle_confidence_threshold", "fast_path_confidence_threshold"),
+    ]
+    for legacy_key, new_key in legacy_pairs:
+        if legacy_key not in data:
+            continue
+        legacy_value = data.pop(legacy_key)
+        if not data.get(new_key) and legacy_value:
+            data[new_key] = legacy_value
+
+    # system_prompt: folded into extra_instructions when that is absent or
+    # empty, unless it is exactly the old shipped default (which would
+    # otherwise duplicate the code-owned base prompt).
+    if "system_prompt" in data:
+        legacy_prompt = data.pop("system_prompt")
+        if legacy_prompt and not data.get("extra_instructions"):
+            normalised = " ".join(str(legacy_prompt).split())
+            old_normalised = " ".join(_OLD_SHIPPED_PROMPT.split())
+            if normalised != old_normalised:
+                data["extra_instructions"] = legacy_prompt
+                logging.getLogger("config").warning(
+                    "system_prompt is deprecated; using it as extra_instructions"
+                )
+    return data
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    def __init__(self, **values):
+        # Map legacy keys on the raw kwargs (options.json) before the init
+        # source runs: it collapses fast_path_* and their needle_* aliases
+        # into one key, which would hide the legacy value from the validator.
+        super().__init__(**_map_legacy_keys(values))
 
     @model_validator(mode="before")
     @classmethod
     def _legacy_keys(cls, data):
-        # Old options.json files carry max_tier (1|2). Map it unless the new
-        # key is already set, so upgrades from a pre-allow_actions add-on
-        # config keep working without a Supervisor re-save.
-        if isinstance(data, dict) and "max_tier" in data:
-            data = dict(data)
-            legacy = data.pop("max_tier")
-            if "allow_actions" not in data:
-                data["allow_actions"] = int(legacy) >= 2
-        # Old options.json files carry system_prompt. Fold it into
-        # extra_instructions unless the new key is already set, or the value
-        # is exactly the old shipped default (which would otherwise duplicate
-        # the code-owned base prompt).
-        if isinstance(data, dict) and "system_prompt" in data:
-            data = dict(data)
-            legacy_prompt = data.pop("system_prompt")
-            if "extra_instructions" not in data:
-                normalised = " ".join(str(legacy_prompt).split())
-                old_normalised = " ".join(_OLD_SHIPPED_PROMPT.split())
-                if normalised != old_normalised:
-                    data["extra_instructions"] = legacy_prompt
-                    logging.getLogger("config").warning(
-                        "system_prompt is deprecated; using it as extra_instructions"
-                    )
-        return data
+        # Second pass for values from env / .env (NEEDLE_* via the aliases).
+        return _map_legacy_keys(data)
 
     # Home Assistant
     ha_base_url: str = "http://supervisor/core"
@@ -132,6 +168,13 @@ class Settings(BaseSettings):
     # bounds unbounded per-thread growth, especially with a durable checkpointer.
     max_history_messages: int = 40
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
+    # Tool names to never offer the agent, regardless of tier or probe result.
+    # Empty = nothing switched off beyond tier gating and availability probes.
+    disabled_tools: list[str] = []
+    # Pick which vacuum.* entity get_vacuum_state uses when there is more than
+    # one. Empty = the first vacuum.* sorted by entity_id. Hidden option (not
+    # in config.yaml's options:), set via the add-on's Advanced options.
+    vacuum_entity: str = ""
 
     # Fast path (optional): an external service that maps a request straight to
     # one ai_* action, skipping the LLM. Contract: README "Fast path". Off by
@@ -179,6 +222,13 @@ class Settings(BaseSettings):
     time_note_grace_minutes: int = Field(120, ge=1)
     notify_action: str = "script.ai_action_notify"  # the only script notify_user calls
 
+    # Skills: user-supplied markdown playbooks dropped into skills_path (see
+    # docs/examples/skills/ for the format). Off by default — no skills ship
+    # in the image. load_skill is only offered when this is on and at least
+    # one skill file parses.
+    skills_enabled: bool = False
+    skills_path: str = "/config/gosling/skills"
+
     @field_validator("notify_action")
     @classmethod
     def _normalise_notify_action(cls, value: str) -> str:
@@ -215,6 +265,15 @@ class Settings(BaseSettings):
         if base.endswith("/core"):
             return f"{base}/websocket"  # supervisor proxy path
         return f"{base}/api/websocket"  # direct HA instance
+
+
+def warn_if_llm_unset(settings: Settings) -> None:
+    """Log one warning when llm_url is empty — e.g. after an upgrade where the
+    Configuration tab was never saved. Startup carries on regardless."""
+    if not settings.llm_url.strip():
+        logging.getLogger("config").warning(
+            "llm_url is not set — set it in the add-on Configuration tab"
+        )
 
 
 def load_settings() -> Settings:

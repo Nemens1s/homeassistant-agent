@@ -89,8 +89,38 @@ def test_legacy_max_tier_key_still_works():
     assert Settings(_env_file=None, max_tier=1).allow_actions is False
 
 
-def test_allow_actions_wins_over_legacy_max_tier():
-    assert Settings(_env_file=None, allow_actions=False, max_tier=2).allow_actions is False
+def test_legacy_max_tier_2_turns_actions_on_even_with_allow_actions_false():
+    # The Supervisor always merges in the shipped `allow_actions: false`, so a
+    # legacy max_tier 2 must win (OR semantics).
+    assert Settings(_env_file=None, allow_actions=False, max_tier=2).allow_actions is True
+    assert Settings(_env_file=None, allow_actions=True, max_tier=1).allow_actions is True
+    assert Settings(_env_file=None, allow_actions=False, max_tier=1).allow_actions is False
+
+
+def test_legacy_needle_keys_fill_only_unset_fast_path_keys():
+    s = Settings(_env_file=None, fast_path_enabled=False, needle_enabled=True,
+                 fast_path_url="", needle_remote_url="http://n",
+                 fast_path_confidence_threshold=0.0, needle_confidence_threshold=0.3)
+    assert s.fast_path_enabled is True
+    assert s.fast_path_url == "http://n"
+    assert s.fast_path_confidence_threshold == 0.3
+    newer = Settings(_env_file=None, fast_path_url="http://new", needle_remote_url="http://old",
+                     fast_path_confidence_threshold=0.7, needle_confidence_threshold=0.3)
+    assert newer.fast_path_url == "http://new"
+    assert newer.fast_path_confidence_threshold == 0.7
+
+
+def test_legacy_needle_env_vars_still_work(monkeypatch):
+    monkeypatch.setenv("NEEDLE_ENABLED", "true")
+    monkeypatch.setenv("NEEDLE_REMOTE_URL", "http://env")
+    s = Settings(_env_file=None)
+    assert s.fast_path_enabled is True
+    assert s.fast_path_url == "http://env"
+
+
+def test_legacy_system_prompt_fills_empty_extra_instructions():
+    s = Settings(_env_file=None, system_prompt="Old custom text.", extra_instructions="")
+    assert s.extra_instructions == "Old custom text."
 
 
 def test_legacy_system_prompt_becomes_extra_instructions(caplog):
@@ -211,11 +241,77 @@ def test_visible_addon_options_are_minimal():
     assert cfg["options"]["languages"] == ["en"]
 
 
+# Deprecated keys kept in config.yaml's schema so the Supervisor does not drop
+# them on upgrade; Settings._legacy_keys maps each onto a current field.
+_LEGACY_SCHEMA_KEYS = {
+    "max_tier", "needle_enabled", "needle_remote_url",
+    "needle_confidence_threshold", "system_prompt",
+}
+
+
 def test_every_schema_key_is_a_settings_field():
     cfg = yaml.safe_load(Path("config.yaml").read_text())
     fields = set(Settings.model_fields)
     for key in cfg["schema"]:
-        assert key in fields, key
+        assert key in fields or key in _LEGACY_SCHEMA_KEYS, key
+    for key in _LEGACY_SCHEMA_KEYS:
+        assert key in cfg["schema"], key
+        assert key not in cfg["options"], key
+
+
+def test_every_schema_key_has_a_translation():
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    translations = yaml.safe_load(Path("translations/en.yaml").read_text())
+    for key in cfg["schema"]:
+        assert key in translations["configuration"], key
+
+
+def test_upgrade_from_0_4_24_options_survives_supervisor_merge(tmp_path, monkeypatch):
+    # Mimic the Supervisor: shipped options: defaults, overlaid with the user's
+    # persisted options, then every key not in schema: dropped.
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    persisted = {
+        "max_tier": 2,
+        "allowed_domains": ["light"],
+        "needle_enabled": True,
+        "needle_remote_url": "http://n",
+        "system_prompt": "Custom.",
+        "otlp_endpoint": "",
+        "clock_entity": "sensor.europe_tallinn",
+    }
+    merged = dict(cfg["options"])
+    merged.update(persisted)
+    kept = {}
+    for key, value in merged.items():
+        if key in cfg["schema"]:
+            kept[key] = value
+    opts = tmp_path / "options.json"
+    opts.write_text(json.dumps(kept))
+    monkeypatch.setattr("app.config.OPTIONS_FILE", opts)
+
+    s = load_settings()
+    assert s.allow_actions is True
+    assert s.fast_path_enabled is True
+    assert s.fast_path_url == "http://n"
+    assert s.extra_instructions == "Custom."
+    assert s.clock_entity == "sensor.europe_tallinn"
+
+
+def test_empty_llm_url_logs_a_startup_warning(caplog):
+    from app.config import warn_if_llm_unset
+
+    warn_if_llm_unset(Settings(_env_file=None, llm_url=""))
+    assert "llm_url is not set" in caplog.text
+    caplog.clear()
+    warn_if_llm_unset(Settings(_env_file=None, llm_url="http://x"))
+    assert "llm_url is not set" not in caplog.text
+
+
+def test_create_app_warns_when_llm_url_is_empty(caplog):
+    from app.main import create_app
+
+    create_app(Settings(_env_file=None, llm_url=""))
+    assert "llm_url is not set" in caplog.text
 
 
 @pytest.mark.parametrize("env_var, field", [

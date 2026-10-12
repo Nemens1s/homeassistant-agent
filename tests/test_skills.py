@@ -49,14 +49,6 @@ def test_frontmatter_survives_horizontal_rule_in_body(tmp_path):
     assert "Below the rule." in body
 
 
-def test_seed_skill_is_valid():
-    real_dir = Path(__file__).resolve().parent.parent / "app" / "skills"
-    metas = list_skills(real_dir)
-    names = [m.name for m in metas]
-    assert "diagnosing_automations" in names
-    assert all(m.description for m in metas)
-
-
 async def test_load_skill_tool(skills_dir):
     registry._reset_for_tests()
     registry.load_all(("app.tools.read.load_skill",))
@@ -74,15 +66,35 @@ async def test_load_skill_tool(skills_dir):
     registry._reset_for_tests()
 
 
-def test_no_frontmatter_falls_back_to_stem(tmp_path):
+def test_no_frontmatter_is_skipped(tmp_path):
+    # Skills are user-supplied, so a stray .md file with no frontmatter block
+    # is not a skill at all — it must not be silently exposed under its
+    # filename (replaces the old fallback-to-stem behavior).
     (tmp_path / "bare.md").write_text("# Just a body\n")
-    metas = list_skills(tmp_path)
-    assert metas[0].name == "bare"
-    assert metas[0].description == ""
-    assert read_skill(tmp_path, "bare").startswith("# Just a body")
+    assert list_skills(tmp_path) == []
+    assert read_skill(tmp_path, "bare") is None
 
 
-def test_seed_dir_resolved_relative_to_repo():
-    # replaces the cwd-dependent Path("app/skills") in test_seed_skill_is_valid
-    real_dir = Path(__file__).resolve().parent.parent / "app" / "skills"
-    assert list_skills(real_dir)
+def test_broken_skill_file_is_skipped(tmp_path):
+    (tmp_path / "bad.md").write_text("no frontmatter at all")
+    (tmp_path / "good.md").write_text("---\nname: good\ndescription: d\n---\nbody")
+    names = []
+    for m in list_skills(tmp_path):
+        names.append(m.name)
+    assert names == ["good"]
+
+
+def test_no_skills_ship_in_image():
+    assert list(Path("app/skills").glob("*.md")) == []
+
+
+def test_skipped_skill_file_logs_a_warning_naming_it(tmp_path, caplog):
+    (tmp_path / "bare.md").write_text("# Just a body\n")
+    (tmp_path / "badyaml.md").write_text("---\nname: [unclosed\n---\nbody")
+    (tmp_path / "good.md").write_text("---\nname: good\ndescription: d\n---\nbody")
+    with caplog.at_level("WARNING", logger="agent.skills"):
+        metas = list_skills(tmp_path)
+    assert len(metas) == 1
+    assert "bare.md" in caplog.text
+    assert "badyaml.md" in caplog.text
+    assert "good.md" not in caplog.text

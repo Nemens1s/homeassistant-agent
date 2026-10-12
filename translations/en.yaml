@@ -186,3 +186,54 @@ configuration:
       Household-specific instructions appended after the built-in base
       prompt (e.g. preferred names, phrasing, or house rules). Leave blank to
       use only the built-in prompt.
+  memory_note_default_ttl_hours:
+    name: Default note lifetime (hours)
+    description: >-
+      How long a memory note stays armed when the agent does not set its own
+      lifetime.
+  memory_note_max_ttl_hours:
+    name: Maximum note lifetime (hours)
+    description: Upper bound on any memory note's lifetime.
+  time_note_grace_minutes:
+    name: Time note grace (minutes)
+    description: >-
+      A time-triggered note this many minutes late expires instead of firing.
+  disabled_tools:
+    name: Disabled tools
+    description: >-
+      Tool names the agent should never be offered, regardless of tier or
+      whether a matching entity exists. Empty = nothing switched off beyond
+      that.
+  vacuum_entity:
+    name: Vacuum entity
+    description: >-
+      Which vacuum.* entity get_vacuum_state uses when this home has more
+      than one. Empty = the first vacuum.* sorted by entity_id.
+  skills_enabled:
+    name: Skills
+    description: >-
+      Enable user-supplied troubleshooting playbooks. Off by default — no
+      skills ship in the image. Drop markdown files into the skills folder
+      (see docs/examples/skills/ for the format) and turn this on to let the
+      agent load them with load_skill.
+  max_tier:
+    name: "Deprecated: use Allow actions"
+    description: >-
+      Legacy setting from 0.4.24 and earlier. 2 turns actions on even when
+      Allow actions is off; clear it (or set 1) to switch actions off.
+  needle_enabled:
+    name: "Deprecated: use Fast path"
+    description: Legacy setting; on turns the fast path on.
+  needle_remote_url:
+    name: "Deprecated: use Fast path service URL"
+    description: Legacy setting; used only when Fast path service URL is empty.
+  needle_confidence_threshold:
+    name: "Deprecated: use Fast path confidence threshold"
+    description: >-
+      Legacy setting; used only when Fast path confidence threshold is 0 or
+      unset.
+  system_prompt:
+    name: "Deprecated: use Extra instructions"
+    description: >-
+      Legacy setting; used as Extra instructions when those are empty (the old
+      shipped default prompt is ignored).

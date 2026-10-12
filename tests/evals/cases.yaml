@@ -80,8 +80,9 @@
   expect_tool: list_actions
 
 - id: skill_loading
+  requires_skills: true
   prompt: "My automation automation.ai_test_night_lights didn't fire last night, figure out why."
-  expect_any_tool: [load_skill, list_skills]
+  expect_tool: load_skill
   expect_params:
     name: diagnosing_automations
 
@@ -134,14 +135,16 @@
   expect_tool: get_activity
 
 - id: troubleshoot_automation_timing
+  requires_skills: true
   prompt: "The automation.ai_test_soundbar_night_mode didn't activate last night at the scheduled time — why might that be?"
-  expect_any_tool: [load_skill, list_skills]
+  expect_tool: load_skill
   expect_params:
     name: diagnosing_automations
 
 - id: troubleshoot_zigbee_buttons
+  requires_skills: true
   prompt: "The Zigbee buttons stopped triggering automations — what's the first thing to investigate?"
-  expect_any_tool: [load_skill, list_skills]
+  expect_tool: load_skill
   expect_params:
     name: diagnosing_automations
 

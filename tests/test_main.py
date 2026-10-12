@@ -81,7 +81,7 @@ def test_frontend_served_at_root():
 def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None):
         captured["audit"] = ctx.audit
         captured["rest"] = ctx.rest
         class A:
@@ -106,7 +106,7 @@ def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None):
         captured["checkpointer"] = checkpointer
         class A:
             async def ainvoke(self, *a, **k):
@@ -231,7 +231,7 @@ def test_lifespan_builds_fast_path_when_fast_path_enabled(monkeypatch):
     registry._reset_for_tests()
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None):
         # Does NOT call registry.load_all(), so only the lifespan can load it.
         captured["fast_path"] = fast_path
         class A:

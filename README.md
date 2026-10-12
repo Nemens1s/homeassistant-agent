@@ -12,6 +12,9 @@ Runs as a HA App with an ingress-based chat UI and optionally as a voice assista
 3. On the **Configuration** tab set at minimum `llm_url` and `llm_model`, then Start.
 4. The sidebar panel opens the chat UI through Ingress.
 
+Upgrading from 0.4.24 or earlier? Old options keep working — see
+[Upgrading from 0.4.24](docs/DEPLOYMENT.md#upgrading-from-0424).
+
 ### Assist companion component
 
 Lets Agent Gosling act as the conversation agent in HA voice pipelines.
@@ -64,7 +67,11 @@ language-layer tuning, `telemetry_enabled`, and the `memory_note_*`/
 with a code default and is hidden from the Configuration tab until you add
 it yourself. `checkpoint_db_path`, `telemetry_db_path`, and `glossary_path`
 are no longer configurable at all — the add-on fixes them to `/data` and
-`/config/gosling` paths via environment variables in `run.sh`.
+`/config/gosling` paths via environment variables in `run.sh`. `disabled_tools`
+(a list of tool names) switches specific tools off regardless of tier or
+whether a matching entity exists in this home. `skills_enabled` (hidden,
+default `false`) turns on user-supplied troubleshooting playbooks — see
+"Skills (optional)" above.
 
 If you run a multilingual model without turning on the language layer,
 set `enable_tool_subsetting: false` — the small-model tool-subsetting
@@ -139,6 +146,67 @@ normal agent on any network error, a low-confidence decision, or no match.
 | `fast_path_url` | `` | Base URL of the remote fast-path service |
 | `fast_path_confidence_threshold` | `0.0` | Fire only at/above this confidence |
 
+## Tools
+
+The agent's tool menu is assembled once at add-on start: every tool allowed
+by `allow_actions` (tier), not named in `disabled_tools`, and — for a few
+helper tools — backed by a matching entity in this home.
+
+Core tools (always offered, subject only to tier and `disabled_tools`):
+
+| Tool | Needs |
+|---|---|
+| `get_entity_state` | REST |
+| `list_entities` | REST + WS registries |
+| `get_history` | REST |
+| `get_activity` | REST (logbook) |
+| `get_error_log` | REST |
+| `get_areas` | WS registries |
+| `get_automations` | REST |
+| `list_actions` | REST |
+| `search_entities` | REST + WS registries |
+| `list_devices` | WS registries |
+| `schedule_on_state_change` / `schedule_at_time` / `list_scheduled` / `cancel_scheduled` | agent-local memory store |
+| `trigger_action` / `notify_user` | REST; ACTION tier; gated behind `ai_actions_switch` |
+
+Helper tools register only when this home has something for them to use:
+
+| Tool | Registered when |
+|---|---|
+| `get_vacuum_state` | a `vacuum.*` entity exists |
+| `get_battery_status` | an entity with `device_class: battery` exists |
+| `get_weather` | a `weather.*` entity exists |
+| `get_person_locations` | a `person.*` entity exists |
+| `load_skill` | `skills_enabled: true` and at least one skill file in the skills folder parses — see "Skills (optional)" below |
+
+These checks run once at add-on start. After adding a device that should
+unlock one of these tools, restart the add-on. If Home Assistant can't be
+reached at startup, every tool is registered anyway — a tool with nothing
+behind it then returns a clear error instead of silently disappearing.
+
+`disabled_tools: [get_weather, ...]` turns off any tool by name, core or
+helper — the obvious result is the agent can no longer do that thing.
+
+### Skills (optional)
+
+Skills are step-by-step troubleshooting playbooks the agent can load by name
+with `load_skill` (e.g. "my automation didn't fire last night — why?").
+Nothing ships in the image: drop your own markdown files, each starting with
+a frontmatter block giving `name` and `description`, into the skills folder
+(default `/config/gosling/skills`) and set the hidden `skills_enabled`
+option to `true`. See `docs/examples/skills/` for the format. Skills are
+prompt text only — they add troubleshooting steps the agent can follow, and
+cannot widen what it can do beyond `automation.ai_*`/`script.ai_*`.
+
+`get_vacuum_state` discovers its own entities: it uses the first `vacuum.*`
+entity (sorted by entity_id) and looks for a room sensor on the same device.
+Set the hidden `vacuum_entity` option to pick a specific vacuum when this
+home has more than one. The room is left out of the answer when no
+`_current_room` sensor exists on that device.
+
+Each tool skipped by a probe is logged once at startup as
+`tool=<name> not registered: nothing in this home to use it on`.
+
 ## Streaming & persistence
 
 The chat UI streams over Server-Sent Events from `POST /api/chat/stream`. Set `checkpoint_db_path` to persist conversations across App restarts; leave it empty for the in-memory default.
@@ -181,7 +249,8 @@ HA Supervisor host (App container)
   ├─ FastAPI app (app/main.py) — chat UI + /api/chat + /api/health
   ├─ LangGraph ReAct agent (app/agent/) — tool registry with tier gating
   ├─ Tool registry / tiers (app/tools/) — read + control tools
-  ├─ Skills loader (app/skills/*.md) — Markdown prompt fragments injected at runtime
+  ├─ Skills loader (app/skills/) — parses user-supplied Markdown playbooks from
+  │  skills_path at runtime; off by default (skills_enabled)
   ├─ WS client (app/ha/websocket.py) — WebSocket connection to HA, cached registries
   ├─ LLM factory (app/agent/llm.py) — ChatOllama or ChatOpenAI, model knobs forwarded
   └─ REST adapter (app/ha/rest.py) — GET-only (+ allowlisted writes at tier 2)

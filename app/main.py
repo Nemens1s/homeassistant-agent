@@ -28,7 +28,7 @@ from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.constants import WRITE_DOMAINS
 from app.needle.factory import build_fast_path_backend
-from app.config import Settings, load_settings
+from app.config import Settings, load_settings, warn_if_llm_unset
 from app.i18n import build_language_adapter, set_language_attributes
 from app.i18n.store import LangOverlay, apply_overlay
 from app.ha.rest import RestClient
@@ -116,6 +116,7 @@ class ToggleRequest(BaseModel):
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
     _configure_app_logging()
+    warn_if_llm_unset(cfg)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -123,7 +124,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from app.telemetry.snapshots import register_prompt, register_toolset
         from app.telemetry.store import open_store
         from app.agent.factory import build_system_prompt
-        from app.skills import list_skills
 
         write_domains = WRITE_DOMAINS if cfg.allow_actions else ()
         rest = RestClient(cfg.ha_base_url, cfg.ha_token,
@@ -189,6 +189,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # loads the registry) runs later. load_all is idempotent.
             from app.tools import registry
             registry.load_all()
+            enabled = await registry.resolve_enabled(ctx)
+            app.state.enabled_tools = enabled
             fast_path = None
             try:
                 fast_path = build_fast_path_backend(run_cfg, rest, ctx)
@@ -204,7 +206,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             async with open_checkpointer(run_cfg) as checkpointer:
                 agent = build_agent(
                     run_cfg, ctx, checkpointer=checkpointer, fast_path=fast_path,
-                    telemetry=telemetry_arg,
+                    telemetry=telemetry_arg, enabled=enabled,
                 )
                 app.state.settings = run_cfg
                 app.state.ctx = ctx
@@ -226,7 +228,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         base_prompt = build_system_prompt(run_cfg, ctx.skills_dir)
                         register_prompt(snapshot_conn, base_prompt)
                         guard = LoopGuard()
-                        tools = build_tools(ctx, run_cfg.max_tier, guard=guard)
+                        tools = build_tools(ctx, run_cfg.max_tier, guard=guard, enabled=enabled)
                         register_toolset(snapshot_conn, tools)
                     except Exception:
                         log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)
