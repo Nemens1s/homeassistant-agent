@@ -355,12 +355,12 @@ def test_unresolved_auto_provider_hot_swaps_agent_on_recovery(monkeypatch):
 
     reresolve_calls = []
 
-    async def now_ollama(cfg, client=None):
+    async def now_llamacpp(cfg, client=None):
         reresolve_calls.append(1)
-        return cfg.model_copy(update={"llm_provider": "ollama"})
+        return cfg.model_copy(update={"llm_provider": "llamacpp"})
 
     monkeypatch.setattr("app.main.resolve_llm_settings", boot_probe_failed)
-    monkeypatch.setattr(llm_health_mod, "resolve_llm_settings", now_ollama)
+    monkeypatch.setattr(llm_health_mod, "resolve_llm_settings", now_llamacpp)
     app = create_app(_settings())
     with TestClient(app) as client:
         state = client.app.state
@@ -369,7 +369,7 @@ def test_unresolved_auto_provider_hot_swaps_agent_on_recovery(monkeypatch):
         old_agent = state.agent
         old_probe = state.llm_health._probe
         client.portal.call(state.llm_health.mark_up)
-        assert state.settings.llm_provider == "ollama"
+        assert state.settings.llm_provider == "llamacpp"
         assert state.agent is not old_agent
         assert reresolve_calls == [1]
         # The probe now targets the resolved provider, not the unresolved set.

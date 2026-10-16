@@ -1,5 +1,4 @@
 import httpx
-import ollama
 import openai
 from langgraph.errors import GraphRecursionError
 
@@ -47,14 +46,6 @@ async def test_llamacpp_loading_model_counts_as_down():
     assert await probe() is False
 
 
-async def test_ollama_probe_uses_api_version():
-    probe = build_llm_probe(
-        _settings(llm_provider="ollama", llm_url="http://llm:11434"),
-        _client({"/api/version": 200}),
-    )
-    assert await probe() is True
-
-
 async def test_openai_compatible_probe_uses_models():
     probe = build_llm_probe(
         _settings(llm_provider="openai", llm_url="https://api.example.com/v1"),
@@ -65,8 +56,8 @@ async def test_openai_compatible_probe_uses_models():
 
 async def test_unresolved_probe_accepts_any_known_endpoint():
     probe = build_llm_probe(
-        _settings(llm_provider="openai", llm_url="http://llm:11434"),
-        _client({"/api/tags": 200}),
+        _settings(llm_provider="openai", llm_url="http://llm:8080"),
+        _client({"/props": 200}),
         unresolved=True,
     )
     assert await probe() is True
@@ -74,8 +65,8 @@ async def test_unresolved_probe_accepts_any_known_endpoint():
 
 async def test_probe_connection_error_is_down():
     probe = build_llm_probe(
-        _settings(llm_provider="ollama", llm_url="http://llm:11434"),
-        _client({"/api/version": httpx.ConnectError("refused")}),
+        _settings(llm_provider="llamacpp", llm_url="http://llm:8080"),
+        _client({"/health": httpx.ConnectError("refused")}),
     )
     assert await probe() is False
 
@@ -92,19 +83,17 @@ def test_is_llm_outage_true_cases():
     cases = [
         httpx.ConnectError("refused"),
         httpx.ReadTimeout("slow"),
-        ConnectionError("Failed to connect to Ollama"),
+        ConnectionError("refused"),
         openai.APIConnectionError(request=request),
         openai.APITimeoutError(request=request),
         openai.InternalServerError("boom", response=httpx.Response(500, request=request), body=None),
-        ollama.ResponseError("overloaded", 503),
     ]
     for exc in cases:
         assert is_llm_outage(exc), exc
 
 
 def test_is_llm_outage_false_cases():
-    for exc in (ValueError("bad output"), ollama.ResponseError("bad request", 400),
-                GraphRecursionError("limit")):
+    for exc in (ValueError("bad output"), GraphRecursionError("limit")):
         assert not is_llm_outage(exc), exc
 
 
@@ -126,7 +115,7 @@ def test_is_fast_path_outage():
 def test_needs_reresolve():
     auto = _settings()
     assert needs_reresolve(auto, auto.model_copy(update={"llm_provider": "openai"})) is True
-    assert needs_reresolve(auto, auto.model_copy(update={"llm_provider": "ollama"})) is False
+    assert needs_reresolve(auto, auto.model_copy(update={"llm_provider": "llamacpp"})) is False
     keyed = _settings(api_key="k")
     assert needs_reresolve(keyed, keyed.model_copy(update={"llm_provider": "openai"})) is False
     explicit = _settings(llm_provider="llamacpp")
@@ -137,13 +126,13 @@ async def test_reresolve_returns_new_settings_only_when_changed(monkeypatch):
     cfg = _settings()
     current = cfg.model_copy(update={"llm_provider": "openai"})
 
-    async def to_ollama(c, client=None):
-        return c.model_copy(update={"llm_provider": "ollama"})
+    async def to_llamacpp(c, client=None):
+        return c.model_copy(update={"llm_provider": "llamacpp"})
 
-    monkeypatch.setattr(llm_health, "resolve_llm_settings", to_ollama)
+    monkeypatch.setattr(llm_health, "resolve_llm_settings", to_llamacpp)
     fresh = await reresolve(cfg, current)
     assert fresh is not None
-    assert fresh.llm_provider == "ollama"
+    assert fresh.llm_provider == "llamacpp"
 
     async def still_openai(c, client=None):
         return c.model_copy(update={"llm_provider": "openai"})
@@ -198,7 +187,7 @@ async def test_probe_500_is_down():
 async def test_unresolved_probe_connection_errors_everywhere_is_down():
     error = httpx.ConnectError("refused")
     probe = build_llm_probe(
-        _settings(llm_provider="openai", llm_url="http://llm:11434"),
+        _settings(llm_provider="openai", llm_url="http://llm:8080"),
         _client({"/props": error, "/api/tags": error, "/models": error}),
         unresolved=True,
     )

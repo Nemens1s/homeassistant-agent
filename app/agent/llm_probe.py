@@ -53,10 +53,6 @@ async def resolve_llm_settings(cfg: Settings, client: httpx.AsyncClient | None =
                 update["num_ctx"] = n_ctx
             log.info("llm probe: llama.cpp detected (n_ctx=%s)", n_ctx)
             return cfg.model_copy(update=update)
-        tags = await _get_json(client, "/api/tags")
-        if isinstance(tags, dict):
-            log.info("llm probe: Ollama detected")
-            return cfg.model_copy(update={"llm_provider": "ollama"})
         log.warning("llm probe: could not identify %s; using OpenAI-compatible client", cfg.llm_url)
         return cfg.model_copy(update={"llm_provider": "openai"})
     finally:

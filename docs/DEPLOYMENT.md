@@ -15,17 +15,17 @@ this path.
 2. Settings → Apps → App Store → ⋮ (top right) → **Check for updates**.
    The App appears under **Local Apps**.
 3. Install, then on the **Configuration** tab set at minimum:
-   - `llm_url`: `http://<laptop-ip>:11434` (Ollama) or your llama.cpp base URL
-   - `llm_model`: a model pulled on that server (e.g. `qwen3.5:4b`)
+   - `llm_url`: your llama.cpp (llama-server) base URL, e.g. `http://<laptop-ip>:8080`
+   - `llm_model`: the model id (llama-server ignores it; cloud endpoints need it)
    The Configuration tab only shows the minimal option set below; the
    Supervisor writes your choices to `/data/options.json`, which the app
    reads at startup.
 
    | Key | Default | Notes |
    |---|---|---|
-   | `llm_url` | `` | Ollama, llama.cpp (llama-server), or any OpenAI-compatible base URL |
-   | `llm_model` | `` | Model tag served by the LLM backend |
-   | `api_key` | `` | Key for an OpenAI-compatible endpoint (unused by Ollama) |
+   | `llm_url` | `` | llama.cpp (llama-server) or any OpenAI-compatible base URL |
+   | `llm_model` | `` | Model id served by the LLM backend |
+   | `api_key` | `` | Key for an OpenAI-compatible endpoint (blank for llama-server) |
    | `allow_actions` | `false` | `true` unlocks `trigger_action`/`notify_user`/scheduling |
    | `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
    | `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
@@ -63,7 +63,7 @@ this path.
    (`agent.tools` lines). The sidebar panel ("HA Agent") opens the chat UI
    through ingress.
 5. Health: the App exposes `/api/health` and `config.yaml` wires it to
-   the Supervisor watchdog — if HA or Ollama become unreachable the App
+   the Supervisor watchdog — if HA or the LLM server become unreachable the App
    reports degraded rather than dying.
 
 **Updating:** copy the new files over, bump nothing by hand — the version in
@@ -96,7 +96,7 @@ To smoke-test the server against a real HA instance instead:
 docker run --rm -p 8099:8099 \
   -e HA_BASE_URL=http://<ha-ip>:8123 \
   -e SUPERVISOR_TOKEN=<long-lived-access-token> \
-  -e LLM_URL=http://<laptop-ip>:11434 \
+  -e LLM_URL=http://<laptop-ip>:8080 \
   -e LLM_MODEL=qwen3.5:4b \
   --entrypoint sh ha-agent \
   -c "cd /app && uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8099"
@@ -119,5 +119,4 @@ venv/bin/python -m tests.evals.run              # tool-selection scoring
 ```
 
 `HA_TOKEN` is a long-lived access token (HA profile → Security). `.env` is
-gitignored; the legacy `OLLAMA_MODEL` key is ignored by the app — use
-`LLM_MODEL`.
+gitignored.

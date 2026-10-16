@@ -1,6 +1,6 @@
 # Agent Gosling
 
-Chat agent for Home Assistant backed by a local Ollama server (or any OpenAI-compatible cloud model).
+Chat agent for Home Assistant backed by a local llama.cpp server (or any OpenAI-compatible cloud model).
 Runs as a HA App with an ingress-based chat UI and optionally as a voice assistant via Assist.
 
 ## Install
@@ -32,8 +32,8 @@ options" below).
 
 | Key | Default | Notes |
 |---|---|---|
-| `llm_url` | `` | Ollama URL, llama.cpp (llama-server) URL, or any OpenAI-compatible base URL |
-| `llm_model` | `` | Model tag served by the LLM backend |
+| `llm_url` | `` | llama.cpp (llama-server) URL, or any OpenAI-compatible base URL |
+| `llm_model` | `` | Model id (llama-server ignores it; cloud endpoints require it) |
 | `api_key` | `` | Cloud provider key (stored as password) |
 | `allow_actions` | `false` | `false` = read-only; `true` = allows `trigger_action`/`notify_user`/scheduling |
 | `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
@@ -77,9 +77,9 @@ heuristic is tuned on English tool descriptions and can mis-rank tools for
 non-English prompts.
 
 **Provider auto-detection:** with `llm_provider: auto` (the default), the app
-probes `llm_url` once at startup — `/api/tags` for Ollama, `/props` for
-llama.cpp (llama-server) — and falls back to a plain OpenAI-compatible client
-if neither answers or `api_key` is set. For llama.cpp specifically, `num_ctx`
+probes `llm_url` once at startup — `/props` for llama.cpp (llama-server) —
+and falls back to a plain OpenAI-compatible client if it does not answer or
+`api_key` is set. For llama.cpp specifically, `num_ctx`
 is also read from `/props` (`default_generation_settings.n_ctx`) and used
 automatically, so you don't need to duplicate the server's context size in
 options. The probe never blocks startup indefinitely (3 s timeout per
@@ -146,7 +146,7 @@ normal agent on any network error, a low-confidence decision, or no match.
 
 ## Degraded mode (LLM offline)
 
-Gosling probes its LLM server (llama.cpp `/health`, Ollama `/api/version`,
+Gosling probes its LLM server (llama.cpp `/health`,
 others `/models`) every 15 s while it is down and every 60 s while it is up,
 and marks it down immediately when a request fails to connect. While the LLM
 is down:
@@ -275,6 +275,6 @@ HA Supervisor host (App container)
   ├─ Skills loader (app/skills/) — parses user-supplied Markdown playbooks from
   │  skills_path at runtime; off by default (skills_enabled)
   ├─ WS client (app/ha/websocket.py) — WebSocket connection to HA, cached registries
-  ├─ LLM factory (app/agent/llm.py) — ChatOllama or ChatOpenAI, model knobs forwarded
+  ├─ LLM factory (app/agent/llm.py) — ChatOpenAI (llama.cpp or cloud), model knobs forwarded
   └─ REST adapter (app/ha/rest.py) — GET-only (+ allowlisted writes at tier 2)
 ```

@@ -15,10 +15,9 @@ def test_defaults():
     s = Settings(_env_file=None)
     assert s.ha_base_url == "http://supervisor/core"
     assert s.llm_provider == "auto"
-    assert s.llm_model == "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
+    assert s.llm_model == ""
     assert s.max_tier == 1
     assert s.temperature == 0.0
-    assert s.reasoning is False
     assert s.num_ctx == 8192
     assert s.ai_actions_switch == "input_boolean.ai_triggered_actions"
 

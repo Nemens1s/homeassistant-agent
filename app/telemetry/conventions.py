@@ -57,7 +57,7 @@ GOSLING_ENDPOINT = "gosling.endpoint"
 # Optional device_id forwarded by the Assist component
 GOSLING_DEVICE_ID = "gosling.device_id"
 
-# Configured LLM provider (e.g. "ollama", "openai"); paired with gen_ai.request.model
+# Configured LLM provider (e.g. "llamacpp", "openai"); paired with gen_ai.request.model
 GOSLING_LLM_PROVIDER = "gosling.llm.provider"
 
 # User message as received (post-Whisper for voice)

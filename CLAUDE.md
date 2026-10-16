@@ -1,7 +1,7 @@
 # Agent Gosling — project guide
 
 Home Assistant add-on: a LangChain agent over HA state, powered by a local
-Ollama or llama.cpp server (any OpenAI-compatible cloud endpoint optional).
+llama.cpp server (any OpenAI-compatible cloud endpoint optional).
 Read tools, menu-only actions + audit, streaming chat, event notes, the
 language layer and degraded (command) mode are all implemented; their specs
 and plans live in `docs/superpowers/`.
@@ -11,20 +11,18 @@ and plans live in `docs/superpowers/`.
 - **Python: ALWAYS `uv run python` / `uv pip`** (`uv sync` creates `.venv` at
   repo root with Python 3.14, pinned in `.python-version` — the add-on image
   ships the same version; never system python).
-- Tests: `uv run pytest -q` — fast, no HA/Ollama needed; CI runs it on
+- Tests: `uv run pytest -q` — fast, no HA/LLM needed; CI runs it on
   every PR (`.github/workflows/tests.yml`).
-  Exactly 1 known third-party warning (starlette TestClient deprecation) is
-  expected; new warnings are findings.
-- Capability REPL: `uv run python -m app.cli` (needs `.env` + live HA + Ollama).
-- Tool-selection evals: `uv run python -m tests.evals.run` (needs live
-  Ollama; deliberately NOT collected by pytest).
+  The run is warning-free; any new warning is a finding.
+- Capability REPL: `uv run python -m app.cli` (needs `.env` + live HA + LLM server).
+- Tool-selection evals: `uv run python -m tests.evals.run` (needs a live
+  LLM server; deliberately NOT collected by pytest).
 - Server (dev): `uv run uvicorn app.main:create_app --factory --port 8099`.
 
 ## Dev environment
 
 `.env` keys: `HA_BASE_URL`, `HA_TOKEN` (or `SUPERVISOR_TOKEN` — alias),
-`LLM_URL` (alias `OLLAMA_URL` still works), `LLM_MODEL`. Beware: the legacy
-key `OLLAMA_MODEL` is ignored by `Settings` — only `LLM_MODEL` counts. Config is one pydantic-settings
+`LLM_URL`, `LLM_MODEL`. Config is one pydantic-settings
 class in `app/config.py`; in the addon container it reads
 `/data/options.json` instead (keys must match Settings field names exactly).
 
@@ -57,10 +55,10 @@ class in `app/config.py`; in the addon container it reads
 - `ha/websocket.py` — persistent WS client (auth, id-correlated `request()`,
   reconnect/backoff, `request_cached` for registries). Tools must tolerate
   `ctx.ws is None` (degraded mode → `ws_unavailable` envelope).
-- `agent/llm.py` — `build_llm`: ChatOllama (with num_ctx/num_predict/seed/
-  reasoning/keep_alive knobs — small-model tuning is a first-class concern)
-  or ChatOpenAI for any OpenAI-compatible cloud endpoint (Baseten, llamacpp,
-  etc.) — set LLM_PROVIDER to anything other than "ollama".
+- `agent/llm.py` — `build_llm`: ChatOpenAI (`ReasoningChatOpenAI`) for every
+  backend. `llamacpp` adds min_p/top_k/repeat_penalty via `extra_body`
+  (small-model tuning is a first-class concern); any other provider gets only
+  OpenAI-spec params, safe for strict cloud endpoints.
 - `health.py` — `ServiceHealth`: generic up/down tracker for one HTTP
   dependency (probe loop 15 s down / 60 s up + passive `mark_down`). Two
   instances on `app.state`: `llm_health`, `fp_health` (fast path, optional).

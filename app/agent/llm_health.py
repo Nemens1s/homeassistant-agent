@@ -8,7 +8,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 import httpx
-import ollama
 import openai
 
 from app.agent.llm_probe import resolve_llm_settings
@@ -21,15 +20,12 @@ Probe = Callable[[], Awaitable[bool]]
 
 def _is_outage(exc: BaseException) -> bool:
     # httpx.TransportError covers connect/read timeouts, refused connections
-    # and dropped streams. Ollama's client re-raises httpx.ConnectError as a
-    # builtin ConnectionError "from None", so the chain is lost — match it too.
+    # and dropped streams.
     if isinstance(exc, (httpx.TransportError, ConnectionError)):
         return True
     # APITimeoutError is a subclass of APIConnectionError.
     if isinstance(exc, (openai.APIConnectionError, openai.InternalServerError)):
         return True
-    if isinstance(exc, ollama.ResponseError):
-        return getattr(exc, "status_code", -1) >= 500
     return False
 
 
@@ -63,11 +59,9 @@ def _probe_urls(settings: Settings, unresolved: bool) -> list[str]:
     root = _strip_v1(base)
     if unresolved:
         # Same endpoints the boot-time probe tried, plus the generic one.
-        return [root + "/props", root + "/api/tags", base + "/models"]
+        return [root + "/props", base + "/models"]
     if settings.llm_provider == "llamacpp":
         return [root + "/health"]  # 503 while the model is loading
-    if settings.llm_provider == "ollama":
-        return [base + "/api/version"]
     return [base + "/models"]
 
 

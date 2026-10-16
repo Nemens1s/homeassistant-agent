@@ -2,19 +2,19 @@ configuration:
   llm_provider:
     name: LLM provider
     description: >-
-      Which backend serves the model. "ollama" talks to an Ollama server;
-      "llamacpp" (or any other value) uses the OpenAI-compatible HTTP API, e.g.
-      llama.cpp's llama-server or any OpenAI-compatible cloud endpoint.
+      Which backend serves the model. Empty or "auto" detects it from the URL.
+      "llamacpp" targets llama.cpp's llama-server (adds min_p/top_k/repeat_penalty);
+      any other value uses a plain OpenAI-compatible cloud endpoint.
   llm_url:
     name: LLM URL
     description: >-
-      Base URL of the inference server (e.g. http://ollama.home:11435 for
-      Ollama, or http://host:8080 for llama-server).
+      Base URL of the inference server (e.g. http://host:8080 for llama-server,
+      or an OpenAI-compatible cloud base URL ending in /v1).
   llm_model:
     name: Model
     description: >-
-      Model name/tag to load. For Ollama this is the pull tag; for
-      OpenAI-compatible servers it is the model id (some local servers ignore it).
+      Model id sent to the server (llama-server ignores it; cloud endpoints
+      require it).
   api_key:
     name: API key
     description: >-
@@ -58,29 +58,14 @@ configuration:
   seed:
     name: Seed
     description: Fixed RNG seed for reproducible sampling. Change it to vary outputs.
-  reasoning:
-    name: Reasoning
-    description: >-
-      Enable the model's thinking/reasoning mode (Ollama only). Off keeps
-      responses direct and faster.
   num_predict:
     name: Max output tokens
     description: Upper bound on tokens generated per response.
   num_ctx:
     name: Context window
     description: >-
-      Context length (tokens) the model is loaded with. Larger fits more history
-      but uses more memory (Ollama only).
-  num_gpu:
-    name: GPU layers
-    description: >-
-      Number of model layers offloaded to the GPU. -1 = as many as fit; 0 = CPU
-      only (Ollama only).
-  keep_alive:
-    name: Keep-alive
-    description: >-
-      How long (seconds) to keep the model loaded in memory after a request.
-      -1 = keep loaded indefinitely (Ollama only).
+      Context length (tokens) the history trimmer budgets for. Auto-detected
+      from llama-server; set it to match a cloud model's window.
   recursion_limit:
     name: Recursion limit
     description: Max reasoning/tool-call steps the agent may take before stopping a run.
