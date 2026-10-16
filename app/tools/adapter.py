@@ -26,9 +26,9 @@ log_actions = logging.getLogger("agent.actions")
 
 
 class LoopGuard:
-    """Per-thread dedupe of identical consecutive calls. reset() clears all
-    threads — called by the per-run reset middleware; cross-thread resets are
-    accepted (false negatives are harmless, dedupe is best-effort)."""
+    """Per-thread dedupe of identical consecutive calls. The per-run reset
+    middleware clears only the thread that is starting a run, so a chat turn
+    never wipes the state of an [EVENT] run in progress (and vice versa)."""
 
     def __init__(self) -> None:
         self._last: dict[str, tuple[str, str]] = {}
@@ -40,8 +40,12 @@ class LoopGuard:
         self._last[thread_id] = key
         return False
 
-    def reset(self) -> None:
-        self._last.clear()
+    def reset(self, thread_id: str | None = None) -> None:
+        """Forget the last call of one thread, or of every thread when None."""
+        if thread_id is None:
+            self._last.clear()
+        else:
+            self._last.pop(thread_id, None)
 
 
 def _validation_message(exc: ValidationError) -> str:

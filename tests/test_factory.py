@@ -86,12 +86,35 @@ def test_trim_history_never_returns_empty():
     assert trimmed == huge[-1:]
 
 
-def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
+def test_loop_guard_reset_middleware_outside_a_run_resets_default_thread():
     guard = LoopGuard()
-    guard._last = {"a": ("some_tool", "{}")}
+    guard._last = {"default": ("some_tool", "{}"), "a": ("other", "{}")}
     middleware = LoopGuardResetMiddleware(guard)
     middleware.before_agent(None, None)
-    assert guard._last == {}
+    assert guard._last == {"a": ("other", "{}")}
+
+
+def test_loop_guard_reset_middleware_resets_only_the_running_thread():
+    from langgraph.graph import StateGraph, START, END
+    from typing_extensions import TypedDict
+
+    class _State(TypedDict, total=False):
+        x: int
+
+    guard = LoopGuard()
+    guard._last = {"chat": ("t", "{}"), "events": ("t", "{}")}
+    middleware = LoopGuardResetMiddleware(guard)
+
+    def node(state):
+        middleware.before_agent(state, None)
+        return {}
+
+    graph = StateGraph(_State)
+    graph.add_node("n", node)
+    graph.add_edge(START, "n")
+    graph.add_edge("n", END)
+    graph.compile().invoke({"x": 1}, config={"configurable": {"thread_id": "chat"}})
+    assert guard._last == {"events": ("t", "{}")}
 
 
 def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
