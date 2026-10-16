@@ -21,6 +21,7 @@ def build_middleware(
     telemetry_tracer=None,
     telemetry_store_conn=None,
     rest=None,
+    fast_path_health=None,
 ) -> list[AgentMiddleware]:
     middleware: list[AgentMiddleware] = [
         ContextWindowMiddleware(base_prompt, budget),
@@ -49,5 +50,6 @@ def build_middleware(
             settings.fast_path_confidence_threshold,
             tracer=telemetry_tracer,
             store_conn=telemetry_store_conn,
+            health=fast_path_health,
         ))
     return middleware

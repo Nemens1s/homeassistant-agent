@@ -13,6 +13,7 @@ import uuid
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.agent.llm_health import is_fast_path_outage
 from app.agent.middleware.tool_subset_middleware import latest_human_text
 from app.telemetry import conventions
 from app.telemetry.snapshots import menu_hash, register_menu
@@ -68,13 +69,15 @@ def _opted_out(request) -> bool:
 
 
 class FastPathMiddleware(AgentMiddleware):
-    def __init__(self, backend, menu_provider, threshold: float, tracer=None, store_conn=None):
+    def __init__(self, backend, menu_provider, threshold: float, tracer=None, store_conn=None,
+                 health=None):
         super().__init__()
         self._backend = backend
         self._menu_provider = menu_provider
         self._threshold = threshold
         self._tracer = tracer
         self._store_conn = store_conn
+        self._health = health  # ServiceHealth for the fast-path service, or None
 
     def _safe_set(self, span, key, value):
         """Set a span attribute without raising — keeps telemetry fail-open."""
@@ -82,6 +85,12 @@ class FastPathMiddleware(AgentMiddleware):
             span.set_attribute(key, value)
         except Exception:
             pass
+
+    def _note_failure(self, exc: Exception) -> None:
+        """Passive health signal: a refused/timed-out classify marks the
+        service down so the next requests skip it without waiting."""
+        if self._health is not None and is_fast_path_outage(exc):
+            self._health.mark_down(exc)
 
     def _record_skip(self, reason: str) -> None:
         """A classify span that only carries why the fast path was skipped."""
@@ -116,6 +125,9 @@ class FastPathMiddleware(AgentMiddleware):
         if isinstance(last, HumanMessage):
             if _opted_out(request):
                 self._record_skip("disabled")
+                return await handler(request)
+            if self._health is not None and self._health.is_down:
+                self._record_skip("fast_path_down")
                 return await handler(request)
             if has_deferral_cue(latest_human_text(messages)):
                 self._record_skip("deferred")
@@ -154,7 +166,8 @@ class FastPathMiddleware(AgentMiddleware):
                     return "fallthrough"
                 decision = await self._backend.classify(message, menu)
                 return (decision, menu)
-            except Exception:
+            except Exception as exc:
+                self._note_failure(exc)
                 log.exception("fast path error; falling through to agent")
                 return "fallthrough"
 
@@ -171,7 +184,8 @@ class FastPathMiddleware(AgentMiddleware):
                     return "fallthrough"
                 decision = await self._backend.classify(message, menu)
                 return (decision, menu)
-            except Exception:
+            except Exception as exc:
+                self._note_failure(exc)
                 log.exception("fast path error; falling through to agent")
                 return "fallthrough"
 
@@ -205,7 +219,8 @@ class FastPathMiddleware(AgentMiddleware):
 
                 try:
                     decision = await self._backend.classify(message, menu)
-                except Exception:
+                except Exception as exc:
+                    self._note_failure(exc)
                     log.exception("fast path error; falling through to agent")
                     self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "error")
                     return "fallthrough"
