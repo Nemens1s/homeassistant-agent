@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -15,6 +18,21 @@ class ToggleRequest(BaseModel):
     enabled: bool
 
 
+@contextmanager
+def _ha_errors_as_http():
+    """Turn a failed HA call into a 503 with a readable detail (the settings
+    UI shows it) instead of an unhandled 500."""
+    try:
+        yield
+    except TimeoutError:
+        raise HTTPException(status_code=503, detail="Home Assistant did not answer in time")
+    except (ConnectionError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=503, detail=f"Could not reach Home Assistant: {exc}")
+    except RuntimeError as exc:
+        # The websocket raises RuntimeError when HA answers success=False.
+        raise HTTPException(status_code=503, detail=f"Home Assistant refused the command: {exc}")
+
+
 @router.get("/api/actions")
 async def get_actions(request: Request) -> dict:
     state = request.app.state
@@ -22,8 +40,9 @@ async def get_actions(request: Request) -> dict:
     if not ws_is_ready(ws):
         raise HTTPException(status_code=503, detail="websocket unavailable")
 
-    registry_entries = await ws.request("config/entity_registry/list")
-    states = await state.rest.list_states()
+    with _ha_errors_as_http():
+        registry_entries = await ws.request("config/entity_registry/list")
+        states = await state.rest.list_states()
     state_map = {s["entity_id"]: s for s in states}
 
     actions = []
@@ -66,21 +85,22 @@ async def toggle_action(entity_id: str, req: ToggleRequest, request: Request) ->
     if not ws_is_ready(ws):
         raise HTTPException(status_code=503, detail="websocket unavailable")
 
-    if entity_id.startswith("automation."):
-        service = "turn_on" if req.enabled else "turn_off"
-        await ws.management_request(
-            "call_service",
-            domain="automation",
-            service=service,
-            service_data={"entity_id": entity_id},
-        )
-    else:
-        await ws.management_request(
-            "config/entity_registry/update",
-            entity_id=entity_id,
-            disabled_by=None if req.enabled else "user",
-        )
-        if req.enabled:
-            await ws.management_request("call_service", domain="script", service="reload")
+    with _ha_errors_as_http():
+        if entity_id.startswith("automation."):
+            service = "turn_on" if req.enabled else "turn_off"
+            await ws.management_request(
+                "call_service",
+                domain="automation",
+                service=service,
+                service_data={"entity_id": entity_id},
+            )
+        else:
+            await ws.management_request(
+                "config/entity_registry/update",
+                entity_id=entity_id,
+                disabled_by=None if req.enabled else "user",
+            )
+            if req.enabled:
+                await ws.management_request("call_service", domain="script", service="reload")
 
     return {"ok": True}

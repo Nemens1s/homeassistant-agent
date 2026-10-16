@@ -258,3 +258,40 @@ def test_get_actions_503_while_websocket_reconnecting():
         client.app.state.ws = SimpleNamespace(connected=False)
         resp = client.get("/api/actions")
     assert resp.status_code == 503
+
+
+class _FailingWS(FakeWS):
+    def __init__(self, exc):
+        super().__init__()
+        self._exc = exc
+
+    async def request(self, msg_type, **payload):
+        raise self._exc
+
+    async def management_request(self, msg_type, **payload):
+        raise self._exc
+
+
+@pytest.mark.parametrize("exc, detail", [
+    (TimeoutError(), "did not answer in time"),
+    (ConnectionError("websocket disconnected"), "Could not reach Home Assistant"),
+    (RuntimeError("Entity not found"), "refused the command: Entity not found"),
+])
+def test_get_actions_maps_ha_failures_to_503(exc, detail):
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        client.app.state.rest = FakeRest()
+        client.app.state.ws = _FailingWS(exc)
+        resp = client.get("/api/actions")
+    assert resp.status_code == 503
+    assert detail in resp.json()["detail"]
+
+
+def test_toggle_maps_ha_failure_to_503():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        client.app.state.rest = FakeRest()
+        client.app.state.ws = _FailingWS(RuntimeError("Unknown entity"))
+        resp = client.post("/api/actions/script.ai_action_music/toggle", json={"enabled": True})
+    assert resp.status_code == 503
+    assert "Unknown entity" in resp.json()["detail"]
