@@ -153,8 +153,10 @@ is down:
 - Requests fail in about 3 s instead of hanging, and the web UI shows an
   "LLM offline — command mode" banner.
 - Typed text is matched against your `ai_*` action names. One clear match
-  runs (still subject to the AI-actions switch); a near tie returns a
-  numbered "did you mean" list. Anything else gets an "LLM offline" reply.
+  runs (still subject to the AI-actions switch) when every word you typed is
+  part of the action's name and the text is not a question ("is the garage
+  door open?" never opens it); otherwise you get a numbered "did you mean"
+  list. Anything else gets an "LLM offline" reply.
 - Requests about later ("when…", "at 18:00…") are refused, never run now.
 
 Slash commands work at any time, LLM or not, and always answer in English:
