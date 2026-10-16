@@ -43,6 +43,10 @@ class ServiceHealth:
         self.last_error: str | None = None
         self._callbacks: list[RecoveryCallback] = []
         self._task: asyncio.Task | None = None
+        # Set by a passive mark_down so the loop re-probes now instead of
+        # sleeping out a long up-interval. Created in start(): constructing a
+        # tracker must not need a running event loop.
+        self._wake: asyncio.Event | None = None
 
     @property
     def is_down(self) -> bool:
@@ -51,14 +55,25 @@ class ServiceHealth:
     def on_recovery(self, callback: RecoveryCallback) -> None:
         self._callbacks.append(callback)
 
+    def set_probe(self, probe: Probe) -> None:
+        self._probe = probe
+
     def mark_down(self, error: object = None) -> None:
+        """Passive signal from a caller that hit the failure itself. A fresh
+        transition wakes the loop so the next probe runs right away."""
+        if self._set_down(error) and self._wake is not None:
+            self._wake.set()
+
+    def _set_down(self, error: object) -> bool:
+        """Returns True when the state changed to down."""
         if error is not None:
             self.last_error = str(error) or type(error).__name__
         if self.state == DOWN:
-            return
+            return False
         self.state = DOWN
         self.since = time.time()
         log.warning("%s: down (%s)", self.name, self.last_error)
+        return True
 
     async def mark_up(self) -> None:
         previous = self.state
@@ -89,7 +104,9 @@ class ServiceHealth:
         if ok:
             await self.mark_up()
         else:
-            self.mark_down(error)
+            # Not mark_down: the probe's own failure must not wake the loop
+            # (that would re-probe in a tight loop).
+            self._set_down(error)
 
     def interval(self) -> float:
         if self.state == UP:
@@ -99,9 +116,15 @@ class ServiceHealth:
     async def _loop(self) -> None:
         while True:
             await self.check()
-            await asyncio.sleep(self.interval())
+            try:
+                await asyncio.wait_for(self._wake.wait(), timeout=self.interval())
+            except TimeoutError:
+                pass  # a normal tick
+            self._wake.clear()
 
     def start(self) -> None:
+        if self._wake is None:
+            self._wake = asyncio.Event()
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._loop())
 

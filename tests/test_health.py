@@ -117,3 +117,38 @@ def test_snapshot_shape():
     assert snap["error"] == "boom"
     assert "T" in snap["since"]
     assert len(health.since_hhmm()) == 5
+
+
+async def test_passive_mark_down_wakes_the_loop_for_an_immediate_probe():
+    probe, calls = _probe([True, True])
+    health = ServiceHealth("llm", probe, up_interval_s=3600)
+    health.start()
+    await asyncio.sleep(0.01)
+    assert health.state == UP
+    assert len(calls) == 1
+    health.mark_down("request failed")
+    await asyncio.sleep(0.1)
+    assert len(calls) == 2
+    assert health.state == UP
+    await health.stop()
+
+
+async def test_failed_probe_does_not_wake_the_loop():
+    probe, calls = _probe([False, False, False])
+    health = ServiceHealth("llm", probe, down_interval_s=3600)
+    health.start()
+    await asyncio.sleep(0.05)
+    assert health.state == DOWN
+    assert len(calls) == 1
+    await health.stop()
+
+
+async def test_set_probe_replaces_the_probe():
+    first, first_calls = _probe([False])
+    second, second_calls = _probe([True])
+    health = ServiceHealth("llm", first)
+    health.set_probe(second)
+    await health.check()
+    assert first_calls == []
+    assert second_calls == [1]
+    assert health.state == UP
