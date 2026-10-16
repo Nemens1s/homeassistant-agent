@@ -111,6 +111,12 @@ async def test_prune_threads_zero_days_is_a_no_op(tmp_path):
 
 async def test_retention_job_survives_a_broken_telemetry_conn(tmp_path):
     conn = sqlite3.connect(str(tmp_path / "empty.sqlite"))  # no telemetry schema
-    job = RetentionJob(Settings(_env_file=None), telemetry_conn=conn)
+    job = RetentionJob(Settings(_env_file=None, telemetry_retention_days=30), telemetry_conn=conn)
     await job.run_once(NOW)  # logs a warning, never raises
     conn.close()
+
+
+def test_retention_is_off_by_default():
+    settings = Settings(_env_file=None)
+    assert settings.telemetry_retention_days == 0
+    assert settings.thread_retention_days == 0

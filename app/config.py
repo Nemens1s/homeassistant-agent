@@ -113,10 +113,10 @@ class Settings(BaseSettings):
     # telemetry_db_path: local SQLite file; empty = telemetry disabled.
     telemetry_enabled: bool = True
     telemetry_db_path: str = "/data/telemetry.sqlite"
-    # Daily pruning (app/retention.py); 0 keeps everything. Labelled
-    # telemetry requests are always kept.
-    telemetry_retention_days: int = Field(30, ge=0)
-    thread_retention_days: int = Field(30, ge=0)
+    # Daily pruning (app/retention.py); 0 (the default) keeps everything.
+    # Labelled telemetry requests are always kept.
+    telemetry_retention_days: int = Field(0, ge=0)
+    thread_retention_days: int = Field(0, ge=0)
 
     # Event-triggered memory notes (spec 2026-10-04). The agent saves one-shot
     # notes; the harness fires them when a watched entity changes state or the
