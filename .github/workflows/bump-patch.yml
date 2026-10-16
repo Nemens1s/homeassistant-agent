@@ -26,18 +26,22 @@ jobs:
           NEW=$(python3 - <<'EOF'
           import re
 
-          def bump(path, pattern, tpl):
-              text = open(path).read()
-              m = re.search(pattern, text)
-              major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
-              old = f"{major}.{minor}.{patch}"
-              new = f"{major}.{minor}.{patch + 1}"
-              open(path, 'w').write(text.replace(tpl.format(old), tpl.format(new), 1))
-              return new
+          # pyproject.toml is the single source; config.yaml is overwritten
+          # with the same value, so the two files can never drift apart.
+          PYPROJECT = r'^version = "(\d+)\.(\d+)\.(\d+)"'
+          ADDON = r'^version: "[^"]*"'
 
-          v = bump("pyproject.toml", r'version = "(\d+)\.(\d+)\.(\d+)"', 'version = "{}"')
-          bump("config.yaml",   r'version: "(\d+)\.(\d+)\.(\d+)"',  'version: "{}"')
-          print(v)
+          text = open("pyproject.toml").read()
+          m = re.search(PYPROJECT, text, re.M)
+          new = f"{m.group(1)}.{m.group(2)}.{int(m.group(3)) + 1}"
+          text = re.sub(PYPROJECT, f'version = "{new}"', text, count=1, flags=re.M)
+          open("pyproject.toml", "w").write(text)
+
+          text = open("config.yaml").read()
+          text, count = re.subn(ADDON, f'version: "{new}"', text, count=1, flags=re.M)
+          assert count == 1, "config.yaml has no version line"
+          open("config.yaml", "w").write(text)
+          print(new)
           EOF
           )
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
