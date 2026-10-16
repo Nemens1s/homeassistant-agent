@@ -32,16 +32,11 @@ def build_middleware(
     if settings.enable_tool_subsetting:
         # First so it trims the menu before the model call is assembled.
         middleware.insert(0, ToolSubsetMiddleware())
-    if settings.watched_entities and rest is not None:
-        # After ContextWindowMiddleware so trimming runs first, and after
-        # ToolSubsetMiddleware (index 0) so routing sees the raw user text
-        # before this middleware appends the home_context block.
-        middleware.append(WatchedEntitiesMiddleware(rest, settings.watched_entities))
-    # TelemetryMiddleware is inserted immediately before FastPath (outer to it, inner to all else).
+    # TelemetryMiddleware is inserted immediately before FastPath (outer to it).
     if telemetry_tracer is not None:
         from app.agent.middleware.telemetry_middleware import TelemetryMiddleware
         middleware.append(TelemetryMiddleware(telemetry_tracer))
-    # FastPath is always appended last (innermost) so it short-circuits first.
+    # FastPath sits inside every middleware except WatchedEntities.
     if fast_path is not None and settings.max_tier >= 2:
         backend, menu_provider = fast_path
         middleware.append(FastPathMiddleware(
@@ -52,4 +47,10 @@ def build_middleware(
             store_conn=telemetry_store_conn,
             health=fast_path_health,
         ))
+    if settings.watched_entities and rest is not None:
+        # Innermost: it appends the home_context block to the user's text for
+        # the LLM only. ToolSubset routing and the fast-path classifier, both
+        # outer to it, must see the raw message; a fast-path hit with the
+        # block attached matches nothing, so every request fell through.
+        middleware.append(WatchedEntitiesMiddleware(rest, settings.watched_entities))
     return middleware
