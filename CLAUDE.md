@@ -1,23 +1,24 @@
 # Agent Gosling — project guide
 
 Home Assistant add-on: a LangChain agent over HA state, powered by a local
-Ollama server (cloud models optional via LiteLLM). Iteration 1 (read-only)
-is merged; specs and plans for iterations 2 (control + audit) and 3
-(Assist + streaming) live in `docs/superpowers/`.
+Ollama or llama.cpp server (any OpenAI-compatible cloud endpoint optional).
+Read tools, menu-only actions + audit, streaming chat, event notes, the
+language layer and degraded (command) mode are all implemented; their specs
+and plans live in `docs/superpowers/`.
 
 ## Commands
 
 - **Python: ALWAYS `uv run python` / `uv pip`** (`uv sync` creates `.venv` at
-  repo root with Python 3.14; never system python).
-- Tests: `uv run pytest -q` — fast, no HA/Ollama needed.
+  repo root with Python 3.14, pinned in `.python-version` — the add-on image
+  ships the same version; never system python).
+- Tests: `uv run pytest -q` — fast, no HA/Ollama needed; CI runs it on
+  every PR (`.github/workflows/tests.yml`).
   Exactly 1 known third-party warning (starlette TestClient deprecation) is
   expected; new warnings are findings.
 - Capability REPL: `uv run python -m app.cli` (needs `.env` + live HA + Ollama).
 - Tool-selection evals: `uv run python -m tests.evals.run` (needs live
   Ollama; deliberately NOT collected by pytest).
 - Server (dev): `uv run uvicorn app.main:create_app --factory --port 8099`.
-- HA custom-component tests: `uv sync --group ha && uv run pytest` (needs
-  Python >=3.14.2; installs the full HA stack).
 
 ## Dev environment
 
@@ -50,8 +51,9 @@ class in `app/config.py`; in the addon container it reads
   `lookups.py` (area/device/entity resolution over HA registries — e.g.
   `resolve_area`, `entity_area_ids`, `device_name`). Not `tools/registry.py`,
   which is the tool catalogue.
-- `ha/rest.py` — GET-only httpx client (read-only by construction; iteration
-  2 adds exactly one allowlist-guarded write method).
+- `ha/rest.py` — httpx client: GETs plus exactly one write method,
+  `call_service`, which refuses any domain outside the allowlist it was
+  built with (`WRITE_DOMAINS` only when `allow_actions` is on, else empty).
 - `ha/websocket.py` — persistent WS client (auth, id-correlated `request()`,
   reconnect/backoff, `request_cached` for registries). Tools must tolerate
   `ctx.ws is None` (degraded mode → `ws_unavailable` envelope).
@@ -103,13 +105,24 @@ class in `app/config.py`; in the addon container it reads
   notify suppression, thread id). Callers put them in `configurable`; the
   adapter exposes them to handlers via `current_scope()`.
 - `main.py` — FastAPI app FACTORY (`create_app`; run with `--factory`).
-  No import-time singletons anywhere — everything is built by factories
-  with injected settings.
+  Holds only the lifespan (builds everything onto `app.state`) and router
+  wiring. No import-time singletons anywhere — everything is built by
+  factories with injected settings.
+- `api/` — the HTTP routers, reading dependencies from `request.app.state`:
+  `chat.py` (`/api/chat` + `/api/chat/stream`; `ChatTurn` holds the shared
+  routing/translation/outage sequence), `system.py` (`/api/health` — always
+  HTTP 200, see the comment there — `/api/prompt`, `/api/history`),
+  `actions.py`, `notes.py`, `telemetry.py`.
+- `retention.py` — daily pruning: unlabelled telemetry requests older than
+  `telemetry_retention_days`, and threads whose newest checkpoint is older
+  than `thread_retention_days` (0 = keep). Thread activity is read from the
+  checkpoints table, so no writer has to report in.
 
 ## Hard rules
 
-- Read-only guarantee is structural, not a runtime flag: tier gating +
-  GET-only REST client (+ WS command allowlist from iteration 2 on).
+- Read-only guarantee is structural, not a runtime flag: tier gating + the
+  REST client's write-domain allowlist (empty unless `allow_actions`) + the
+  WS command allowlists.
 - Tool output is always `ToolResult...to_json()` compact JSON — never
   `str(dict)`, never raw exceptions.
 - langchain v1 API only (`create_agent`, `langchain.agents.middleware`);
@@ -133,9 +146,10 @@ class in `app/config.py`; in the addon container it reads
 
 ## Where things live
 
-- Specs: `docs/superpowers/specs/` · Plans: `docs/superpowers/plans/`
-  (iterations 2 & 3 are planned but NOT implemented).
-- Deployment: `docs/DEPLOYMENT.md` (addon install, standalone docker build
-  needs `--build-arg BUILD_FROM=...` — see build.yaml).
+- Specs: `docs/superpowers/specs/` · Plans: `docs/superpowers/plans/`.
+- Deployment: `docs/DEPLOYMENT.md` (addon install, standalone docker build;
+  `--build-arg BUILD_ARCH=aarch64` for ARM).
 - Addon packaging: `config.yaml` (options schema mirrors Settings),
-  `run.sh` (bashio, uvicorn --factory), `build.yaml` (base images).
+  `run.sh` (bashio, uvicorn --factory), `Dockerfile` (Debian base, Python
+  installed by uv from `.python-version`). Version: `pyproject.toml` is the
+  source; the post-merge bump workflow writes it to `config.yaml` too.

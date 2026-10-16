@@ -9,9 +9,9 @@ this path.
 
 1. Copy the repo to your HA host at `/addons/local/agent_gosling/`
    (Samba App, SSH, or the Studio Code Server App). Only the App
-   files matter: `app/`, `frontend/`, `config.yaml`, `build.yaml`,
-   `Dockerfile`, `run.sh`, `requirements.txt` — `venv/`, `tests/`, `docs/`
-   are ignored by the build but harmless to copy.
+   files matter: `app/`, `frontend/`, `config.yaml`, `Dockerfile`, `run.sh`,
+   `pyproject.toml`, `uv.lock`, `.python-version` — `.venv/`, `tests/`,
+   `docs/` are ignored by the build but harmless to copy.
 2. Settings → Apps → App Store → ⋮ (top right) → **Check for updates**.
    The App appears under **Local Apps**.
 3. Install, then on the **Configuration** tab set at minimum:
@@ -25,7 +25,7 @@ this path.
    |---|---|---|
    | `llm_url` | `` | Ollama, llama.cpp (llama-server), or any OpenAI-compatible base URL |
    | `llm_model` | `` | Model tag served by the LLM backend |
-   | `api_key` | `` | Cloud provider key (only litellm providers) |
+   | `api_key` | `` | Key for an OpenAI-compatible endpoint (unused by Ollama) |
    | `allow_actions` | `false` | `true` unlocks `trigger_action`/`notify_user`/scheduling |
    | `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
    | `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
@@ -46,7 +46,8 @@ this path.
    `max_history_messages`, `enable_tool_subsetting`, `fast_path_*`,
    `person_name_exclude`, the language-layer tuning knobs
    (`lang_mt_url`/`default_language`/`min_confidence`/`lang_mt_timeout_s`),
-   `telemetry_enabled`, and the note-scheduling knobs
+   `telemetry_enabled`, `telemetry_retention_days`, `thread_retention_days`
+   (daily pruning, off by default; set a number of days to enable), and the note-scheduling knobs
    (`memory_note_default_ttl_hours`, `memory_note_max_ttl_hours`,
    `time_note_grace_minutes`) — has a code default and stays hidden from the
    Configuration tab until you add it explicitly. `checkpoint_db_path`,
@@ -68,23 +69,23 @@ this path.
 **Updating:** copy the new files over, bump nothing by hand — the version in
 `config.yaml` changes with the repo. In the UI: ⋮ → Check for updates →
 Update (Supervisor rebuilds the image). App data (`/data`, which will
-hold `audit.db` and `conversations.db` from iterations 2–3) survives
-updates and is included in HA backups.
+holds `audit.db`, `checkpoints.sqlite` and `telemetry.sqlite`) survives
+updates and is included in HA backups (except telemetry, see
+`backup_exclude`). Nothing is pruned by default; set
+`telemetry_retention_days` / `thread_retention_days` to delete old telemetry
+and idle conversations daily.
 
 ## 2. Standalone docker build (CI / smoke-testing the image)
 
-`Dockerfile` starts with `ARG BUILD_FROM` because the HA builder injects the
-per-architecture base image from `build.yaml`. Building outside HA you must
-supply it yourself — this is why a bare `docker build -t ha-agent .`
-fails with "base name ($BUILD_FROM) should not be blank":
+`Dockerfile` takes `ARG BUILD_ARCH` (default `amd64`), which the HA builder
+sets per architecture; it picks the Debian base image
+`ghcr.io/home-assistant/<arch>-base-debian:bookworm`. uv installs the Python
+pinned in `.python-version` and syncs `uv.lock`:
 
 ```bash
-docker build -t ha-agent \
-  --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.19 .
+docker build -t ha-agent .                                  # amd64
+docker build -t ha-agent --build-arg BUILD_ARCH=aarch64 .   # ARM
 ```
-
-(aarch64: `ghcr.io/home-assistant/aarch64-base:3.19` — same tags as
-`build.yaml`.)
 
 Running the standalone image is only useful for smoke tests: `run.sh` uses
 `with-contenv bashio` (present in the HA base image) and expects

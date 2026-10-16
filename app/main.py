@@ -4,50 +4,50 @@ config-injected and testable (no import-time singletons)."""
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-_FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
-
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-from langgraph.errors import GraphRecursionError
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
-from app.agent.history import close_dangling_turn, ran_action_this_turn
+from app.agent.factory import build_agent
 from app.agent.llm_health import (
     build_fast_path_probe,
     build_llm_probe,
-    is_llm_outage,
     needs_reresolve,
     reresolve,
 )
 from app.agent.llm_probe import resolve_llm_settings
-from app.agent.run_scope import scope_configurable
-from app.agent.streaming import stream_events
-from app.agent.factory import build_agent
+from app.api import actions as actions_api
+from app.api import chat as chat_api
+from app.api import notes as notes_api
+from app.api import system as system_api
+from app.api import telemetry as telemetry_api
 from app.audit import AuditSink
-from app.degraded import Reply
-from app.degraded.router import CommandRouter, offline_message
-from app.constants import WRITE_DOMAINS
-from app.health import DOWN, UNKNOWN, ServiceHealth
-from app.needle.factory import build_fast_path_backend
 from app.config import Settings, load_settings, warn_if_llm_unset
-from app.i18n import build_language_adapter, set_language_attributes
-from app.i18n.store import LangOverlay, apply_overlay
-from app.ha.rest import RestClient
+from app.constants import WRITE_DOMAINS
+from app.degraded.router import CommandRouter
 from app.events.listener import EventListener
 from app.events.runner import EventRunner
+from app.ha.rest import RestClient
+from app.ha.websocket import WebSocketClient
+from app.health import DOWN, UNKNOWN, ServiceHealth
+from app.i18n import build_language_adapter
+from app.i18n.store import LangOverlay
 from app.memory.store import NoteStore
-from app.ha.websocket import WebSocketClient, ws_is_ready
+from app.needle.factory import build_fast_path_backend
+from app.retention import RetentionJob, ThreadActivity
+from app.telemetry.setup import get_tracer, init_telemetry, shutdown_telemetry
+from app.telemetry.store import open_store
+from app.tools import registry
 from app.tools.context import ToolContext
+
+_FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 log = logging.getLogger("agent")
 
@@ -55,6 +55,9 @@ log = logging.getLogger("agent")
 # loggers, so without this every agent.* INFO line (tool audit, event
 # matches, firings) is silently dropped and only warnings get through.
 _APP_LOGGERS = ("agent", "fast_path")
+
+# How often tool availability probes re-run (see registry.refresh_enabled).
+_TOOLS_REFRESH_SECONDS = 300
 
 
 def _configure_app_logging() -> None:
@@ -88,42 +91,8 @@ async def _teardown(rest, ws, audit=None, telemetry_provider=None, language=None
                     audit.close()
             finally:
                 if telemetry_provider is not None:
-                    from app.telemetry.setup import shutdown_telemetry
                     shutdown_telemetry(telemetry_provider)
 
-
-# ---------- models ----------
-class ChatRequest(BaseModel):
-    model_config = {"extra": "ignore"}
-
-    message: str
-    thread_id: str = "default"
-    channel: str | None = None
-
-
-class ChatResponse(BaseModel):
-    reply: str
-    request_id: str | None = None
-    # Language layer: the language the reply is in, and the English
-    # text the agent actually produced. reply_en is None when nothing was
-    # translated. Gosling ignores unknown fields, so this is additive.
-    language: str | None = None
-    reply_en: str | None = None
-    # True when answered without the LLM (command or degraded mode); the reply is English.
-    degraded: bool = False
-
-
-class LabelRequest(BaseModel):
-    request_id: str
-    source: str
-    rating: int | None = None
-    correct_tool: str | None = None
-    correct_entity_id: str | None = None
-    note: str | None = None
-
-
-class ToggleRequest(BaseModel):
-    enabled: bool
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -133,11 +102,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from app.telemetry.setup import init_telemetry, get_tracer
-        from app.telemetry.snapshots import register_prompt, register_toolset
-        from app.telemetry.store import open_store
-        from app.agent.factory import build_system_prompt
-
         write_domains = WRITE_DOMAINS if cfg.allow_actions else ()
         rest = RestClient(cfg.ha_base_url, cfg.ha_token,
                           allowed_write_domains=write_domains)
@@ -181,6 +145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.telemetry_store = snapshot_conn
 
         health_client = None
+        tools_refresh = None
         llm_health = None
         fp_health = None
         try:
@@ -212,7 +177,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Load the tool registry before building the fast path: it guards on
             # registry.get("trigger_action"), and build_agent (which also
             # loads the registry) runs later. load_all is idempotent.
-            from app.tools import registry
             registry.load_all()
             enabled = await registry.resolve_enabled(ctx)
             app.state.enabled_tools = enabled
@@ -253,6 +217,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # resolved, the flag goes False for good.
                 still_unresolved = [unresolved]
 
+                def _rebuild_agent(settings: Settings) -> None:
+                    # Runs already in flight finish on the old agent; the
+                    # event runner reads app.state.agent at fire time.
+                    app.state.agent = build_agent(
+                        settings, ctx, checkpointer=checkpointer, fast_path=fast_path,
+                        telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
+                    )
+                    app.state.settings = settings
+
                 async def _on_llm_recovered() -> None:
                     if not still_unresolved[0]:
                         return
@@ -261,14 +234,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         return
                     log.info("llm: provider resolved to %s on recovery; rebuilding agent",
                              fresh.llm_provider)
-                    app.state.agent = build_agent(
-                        fresh, ctx, checkpointer=checkpointer, fast_path=fast_path,
-                        telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
-                    )
-                    app.state.settings = fresh
+                    _rebuild_agent(fresh)
                     llm_health.set_probe(build_llm_probe(fresh, health_client))
                     still_unresolved[0] = False
 
+                async def _refresh_tools_forever() -> None:
+                    # Availability probes ran once above; a half-booted HA (no
+                    # vacuum.* yet, say) would hide those tools until restart.
+                    while True:
+                        await asyncio.sleep(_TOOLS_REFRESH_SECONDS)
+                        try:
+                            if await registry.refresh_enabled(ctx, enabled):
+                                _rebuild_agent(app.state.settings)
+                        except Exception:
+                            log.warning("tools: refresh failed; keeping the current set",
+                                        exc_info=True)
+
+                tools_refresh = asyncio.create_task(_refresh_tools_forever())
                 llm_health.on_recovery(_on_llm_recovered)
                 llm_health.start()
                 if fp_health is not None:
@@ -281,20 +263,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await listener.start()
                 app.state.event_listener = listener
 
-                # Register prompt + toolset snapshots now that the agent is built.
-                if snapshot_conn is not None:
+                # Daily pruning of old telemetry and idle threads. Threads are
+                # only pruned when they are durable (checkpoint_db_path set).
+                activity = None
+                if run_cfg.checkpoint_db_path:
                     try:
-                        from app.tools.adapter import build_tools, LoopGuard
-                        base_prompt = build_system_prompt(run_cfg, ctx.skills_dir)
-                        register_prompt(snapshot_conn, base_prompt)
-                        guard = LoopGuard()
-                        tools = build_tools(ctx, run_cfg.max_tier, guard=guard, enabled=enabled)
-                        register_toolset(snapshot_conn, tools)
+                        activity = ThreadActivity(run_cfg.checkpoint_db_path)
                     except Exception:
-                        log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)
+                        log.warning("retention: thread activity unavailable", exc_info=True)
+                retention = RetentionJob(
+                    run_cfg, telemetry_conn=snapshot_conn, checkpointer=checkpointer,
+                    activity=activity, overlay=overlay,
+                )
+                retention.start()
 
-                yield
+                try:
+                    yield
+                finally:
+                    # Stop before the checkpointer closes: a prune uses it.
+                    retention.stop()
+                    if activity is not None:
+                        activity.close()
         finally:
+            if tools_refresh is not None:
+                tools_refresh.cancel()
             if llm_health is not None:
                 await llm_health.stop()
             if fp_health is not None:
@@ -314,470 +306,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(lifespan=lifespan)
 
-    def _record_native_turn(thread_id, inbound, reply_en, reply) -> None:
-        """Keep the native texts for /api/history; English stays in the graph."""
-        overlay = getattr(app.state, "lang_overlay", None)
-        if overlay is None or inbound.language == "en":
-            return
-        overlay.record(
-            thread_id,
-            language=inbound.language,
-            original_text=inbound.original_text,
-            english_text=inbound.english_text,
-            reply_en=reply_en,
-            reply_native=reply if reply != reply_en else None,
-        )
-
-    def _wants_router(message: str) -> bool:
-        if CommandRouter.is_command(message):
-            return True
-        llm_health = getattr(app.state, "llm_health", None)
-        return llm_health is not None and llm_health.is_down
-
-    async def _router_reply(message: str, thread_id: str) -> Reply:
-        """The router's answer, or the generic offline reply if it fails —
-        a router bug must never turn into a 500."""
-        llm_health = getattr(app.state, "llm_health", None)
-        try:
-            reply = await app.state.router.handle(message, thread_id)
-        except Exception:
-            log.exception("degraded: router failed")
-            reply = None
-        if reply is None:
-            reply = Reply(offline_message(llm_health), "degraded")
-        return reply
-
-    async def _degraded_after_outage(exc: Exception, message: str, thread_id: str) -> Reply:
-        llm_health = getattr(app.state, "llm_health", None)
-        if llm_health is not None:
-            llm_health.mark_down(exc)
-        # An action may already have run before the model call that failed;
-        # re-running the same text through the router could fire it twice.
-        if await ran_action_this_turn(app.state.agent, thread_id):
-            text = ("I started on that, but my language model went offline before I "
-                    "could finish. Check the result before trying again. "
-                    + offline_message(llm_health))
-            return Reply(text, "degraded")
-        await close_dangling_turn(app.state.agent, thread_id)
-        return await _router_reply(message, thread_id)
-
-    @app.post("/api/chat", response_model=ChatResponse)
-    async def chat(req: ChatRequest) -> ChatResponse:
-        log.info("chat thread=%s len=%d", req.thread_id, len(req.message))
-        from app.telemetry.setup import get_tracer
-        from app.telemetry import conventions as C
-        from app.agent.middleware.telemetry_middleware import fast_path_seen as _fp_seen
-
-        channel = req.channel or "assist"
-        tracer = get_tracer()
-        request_id: str | None = None
-
-        with tracer.start_as_current_span(C.SPAN_INVOKE_AGENT) as span:
-            # Commands, and every message while the LLM is down, are answered
-            # deterministically — before lang-mt, which may share the LLM's host.
-            if _wants_router(req.message):
-                reply = await _router_reply(req.message, req.thread_id)
-                try:
-                    span.set_attribute(C.GOSLING_PATH, reply.kind)
-                    span.set_attribute(C.GOSLING_OUTCOME, "ok")
-                except Exception:
-                    pass
-                return ChatResponse(reply=reply.text, degraded=True, language="en")
-
-            # Translate on the way in; everything past this point is English.
-            language = app.state.language
-            inbound = await language.inbound(req.message, req.thread_id)
-            set_language_attributes(span, language, inbound)
-
-            # Set input attributes on the root span. gosling.input.text is the
-            # English text the agent saw; the original lives under
-            # gosling.lang.original_text.
-            try:
-                span.set_attribute(C.GOSLING_INPUT_TEXT, inbound.english_text)
-                span.set_attribute(C.GOSLING_ENDPOINT, "/api/chat")
-                span.set_attribute(C.GOSLING_CHANNEL, channel)
-            except Exception:
-                pass
-
-            trace_id = span.get_span_context().trace_id
-            request_id = format(trace_id, "032x") if trace_id else None
-
-            try:
-                configurable = {"thread_id": req.thread_id}
-                configurable.update(scope_configurable(inbound.language))
-                result = await app.state.agent.ainvoke(
-                    {"messages": [{"role": "user", "content": inbound.english_text}]},
-                    config={
-                        "configurable": configurable,
-                        "recursion_limit": app.state.settings.recursion_limit,
-                    },
-                )
-                reply_en = result["messages"][-1].content
-                reply = await language.outbound(reply_en, inbound)
-                set_language_attributes(span, language, inbound, reply_native=reply)
-                _record_native_turn(req.thread_id, inbound, reply_en, reply)
-
-                try:
-                    span.set_attribute(C.GOSLING_OUTPUT_TEXT, reply_en)
-                    path = "fast_path" if _fp_seen.get() else "agent"
-                    span.set_attribute(C.GOSLING_PATH, path)
-                    span.set_attribute(C.GOSLING_OUTCOME, "ok")
-                except Exception:
-                    pass
-
-                return ChatResponse(
-                    reply=reply,
-                    request_id=request_id,
-                    language=inbound.language,
-                    reply_en=reply_en if reply != reply_en else None,
-                )
-
-            except GraphRecursionError:
-                try:
-                    span.set_attribute(C.GOSLING_OUTCOME, "recursion_limit")
-                    span.set_attribute(C.GOSLING_PATH, "agent")
-                except Exception:
-                    pass
-                return ChatResponse(
-                    reply=f"I stopped after {app.state.settings.recursion_limit} tool steps without reaching an answer. Try a more specific question.",
-                    request_id=request_id,
-                )
-
-            except Exception as exc:
-                if is_llm_outage(exc):
-                    # Original text on purpose: action names may be
-                    # non-English, and lang-mt may share the LLM's machine.
-                    reply = await _degraded_after_outage(exc, req.message, req.thread_id)
-                    try:
-                        span.set_attribute(C.GOSLING_OUTCOME, "llm_unavailable")
-                        span.set_attribute(C.GOSLING_PATH, reply.kind)
-                    except Exception:
-                        pass
-                    return ChatResponse(reply=reply.text, request_id=request_id,
-                                        degraded=True, language="en")
-                try:
-                    span.set_attribute(C.GOSLING_OUTCOME, "error")
-                    span.set_attribute(C.GOSLING_PATH, "agent")
-                except Exception:
-                    pass
-                raise
-
-    @app.post("/api/chat/stream")
-    async def chat_stream(req: ChatRequest) -> StreamingResponse:
-        log.info("chat/stream thread=%s len=%d", req.thread_id, len(req.message))
-        from opentelemetry import trace
-        from app.telemetry.setup import get_tracer
-        from app.telemetry import conventions as C
-        from app.agent.middleware.telemetry_middleware import fast_path_seen as _fp_seen
-
-        channel = req.channel or "ui"
-        tracer = get_tracer()
-
-        def _sse(event: dict) -> str:
-            return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
-
-        def _reply_events(reply: Reply, request_id) -> list[str]:
-            frames = []
-            for call in reply.tool_calls:
-                frames.append(_sse({"type": "tool_call", "name": call["name"], "args": {}}))
-                frames.append(_sse({"type": "tool_result", "name": call["name"],
-                                    "status": call["status"]}))
-            frames.append(_sse({"type": "done", "reply": reply.text, "reply_en": None,
-                                "language": "en", "degraded": True, "request_id": request_id}))
-            return frames
-
-        async def sse() -> AsyncIterator[str]:
-            outcome = "ok"
-            span = tracer.start_span(C.SPAN_INVOKE_AGENT)
-            request_id: str | None = None
-            # Make the root span CURRENT across the whole stream: child spans
-            # created inside the agent graph (chat, execute_tool,
-            # fast_path.classify) must parent onto it and share its trace_id.
-            # Without this they become orphan traces → phantom empty `requests`
-            # rows. Keep the manual .end() in `finally` (end_on_exit=False).
-            try:
-                with trace.use_span(span, end_on_exit=False):
-                    trace_id = span.get_span_context().trace_id
-                    request_id = format(trace_id, "032x") if trace_id else None
-
-                    # Commands, and every message while the LLM is down, are
-                    # answered deterministically — before lang-mt.
-                    if _wants_router(req.message):
-                        reply = await _router_reply(req.message, req.thread_id)
-                        try:
-                            span.set_attribute(C.GOSLING_PATH, reply.kind)
-                        except Exception:
-                            pass
-                        for frame in _reply_events(reply, request_id):
-                            yield frame
-                        return
-
-                    language = app.state.language
-                    inbound = await language.inbound(req.message, req.thread_id)
-                    set_language_attributes(span, language, inbound)
-                    try:
-                        span.set_attribute(C.GOSLING_INPUT_TEXT, inbound.english_text)
-                        span.set_attribute(C.GOSLING_ENDPOINT, "/api/chat/stream")
-                        span.set_attribute(C.GOSLING_CHANNEL, channel)
-                    except Exception:
-                        pass
-
-                    # Fast path is handled transparently by FastPathMiddleware inside the agent.
-                    async for event in stream_events(
-                        app.state.agent,
-                        inbound.english_text,
-                        req.thread_id,
-                        app.state.settings.recursion_limit,
-                        extra_configurable=scope_configurable(inbound.language),
-                    ):
-                        if event.get("type") == "done":
-                            # Tokens streamed in English (they cannot be
-                            # translated incrementally); `done` carries the
-                            # native reply the frontend swaps in.
-                            reply_en = event.get("reply", "")
-                            reply = await language.outbound(reply_en, inbound)
-                            set_language_attributes(span, language, inbound,
-                                                    reply_native=reply)
-                            _record_native_turn(req.thread_id, inbound, reply_en, reply)
-                            try:
-                                span.set_attribute(C.GOSLING_OUTPUT_TEXT, reply_en)
-                                path = "fast_path" if _fp_seen.get() else "agent"
-                                span.set_attribute(C.GOSLING_PATH, path)
-                            except Exception:
-                                pass
-                            yield _sse({
-                                **event,
-                                "reply": reply,
-                                "reply_en": reply_en if reply != reply_en else None,
-                                "language": inbound.language,
-                                "request_id": request_id,
-                            })
-                        elif event.get("type") == "error":
-                            outcome = "error"
-                            yield _sse({**event, "request_id": request_id})
-                        elif event.get("type") == "llm_unavailable":
-                            # Partial tokens already sent are overwritten by
-                            # the frontend with the `done` text.
-                            outcome = "llm_unavailable"
-                            reply = await _degraded_after_outage(
-                                ConnectionError(event.get("error", "")), req.message, req.thread_id,
-                            )
-                            for frame in _reply_events(reply, request_id):
-                                yield frame
-                        else:
-                            yield _sse(event)
-
-            except GeneratorExit:
-                outcome = "cancelled"
-            except Exception:
-                outcome = "error"
-                raise
-            finally:
-                try:
-                    span.set_attribute(C.GOSLING_OUTCOME, outcome)
-                except Exception:
-                    pass
-                span.end()
-
-        return StreamingResponse(
-            sse(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache"},
-        )
-
-    @app.get("/api/health")
-    async def health() -> dict:
-        # Always HTTP 200: the Supervisor watchdog polls this endpoint, and a
-        # non-200 during an LLM outage would restart-loop the add-on. The body
-        # carries the real state; the trackers are read, never probed here.
-        ha_ok = False
-        try:
-            ha_ok = await app.state.rest.ping()
-        except Exception:
-            pass
-        llm_health = getattr(app.state, "llm_health", None)
-        if llm_health is not None:
-            llm_snap = llm_health.snapshot()
-        else:
-            llm_snap = {"state": UNKNOWN, "since": None, "error": None}
-        llm_ok = llm_snap["state"] == "up"
-        fp_health = getattr(app.state, "fp_health", None)
-        fast_path_state = fp_health.state if fp_health is not None else None
-        ws_ok = app.state.ws is not None and app.state.ws.connected
-        return {
-            "status": "ok" if (ha_ok and llm_ok) else "degraded",
-            "ha": ha_ok,
-            "llm": llm_ok,
-            "llm_state": llm_snap["state"],
-            "llm_since": llm_snap["since"],
-            "llm_error": llm_snap["error"],
-            "provider": app.state.settings.llm_provider,
-            "fast_path_state": fast_path_state,
-            "websocket": ws_ok,
-        }
-
-    @app.get("/api/prompt")
-    async def get_prompt() -> dict:
-        from app.agent.factory import build_system_prompt
-        return {"prompt": build_system_prompt(app.state.settings, app.state.ctx.skills_dir)}
-
-    @app.get("/api/history")
-    async def get_history(thread_id: str) -> dict:
-        from app.agent.history import display_transcript
-
-        snap = await app.state.agent.aget_state(
-            {"configurable": {"thread_id": thread_id}}
-        )
-        messages = (snap.values or {}).get("messages", [])
-        turns = display_transcript(messages)
-        overlay = getattr(app.state, "lang_overlay", None)
-        if overlay is not None:
-            turns = apply_overlay(turns, overlay.rows_for(thread_id))
-        return {"messages": turns}
-
-    @app.get("/api/telemetry/summary")
-    async def get_telemetry_summary(days: int = 7) -> dict:
-        from fastapi import HTTPException
-        from app.telemetry.store import summary as store_summary
-
-        conn = getattr(app.state, "telemetry_store", None)
-        if conn is None:
-            raise HTTPException(status_code=503, detail="telemetry disabled")
-        return store_summary(conn, days=days)
-
-    @app.get("/api/telemetry/requests")
-    async def get_telemetry_requests(limit: int = 20, cursor: str | None = None) -> dict:
-        from fastapi import HTTPException
-        from app.telemetry.store import recent_requests as store_recent_requests
-
-        conn = getattr(app.state, "telemetry_store", None)
-        if conn is None:
-            raise HTTPException(status_code=503, detail="telemetry disabled")
-        return store_recent_requests(conn, limit=limit, cursor=cursor)
-
-    @app.post("/api/labels")
-    async def post_label(req: LabelRequest) -> dict:
-        from fastapi import HTTPException
-        from app.telemetry.store import insert_label
-
-        conn = getattr(app.state, "telemetry_store", None)
-        if conn is None:
-            raise HTTPException(status_code=503, detail="telemetry disabled")
-        label_id = insert_label(
-            conn,
-            request_id=req.request_id,
-            source=req.source,
-            rating=req.rating,
-            correct_tool=req.correct_tool,
-            correct_entity_id=req.correct_entity_id,
-            note=req.note,
-        )
-        return {"id": label_id}
-
-    @app.get("/api/actions")
-    async def get_actions() -> dict:
-        from fastapi import HTTPException
-        from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
-
-        ws = app.state.ws
-        if not ws_is_ready(ws):
-            raise HTTPException(status_code=503, detail="websocket unavailable")
-
-        registry_entries = await ws.request("config/entity_registry/list")
-        states = await app.state.rest.list_states()
-        state_map = {s["entity_id"]: s for s in states}
-
-        actions = []
-        for entry in registry_entries:
-            entity_id = entry["entity_id"]
-            if not entity_id.startswith((AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX)):
-                continue
-
-            disabled_by = entry.get("disabled_by")
-            is_automation = entity_id.startswith("automation.")
-
-            if is_automation:
-                s = state_map.get(entity_id)
-                enabled = (not disabled_by) and s is not None and s["state"] == "on"
-            else:
-                enabled = disabled_by is None
-
-            s = state_map.get(entity_id)
-            if s:
-                name = s.get("attributes", {}).get("friendly_name") or ""
-            else:
-                name = entry.get("name") or entry.get("original_name") or entity_id
-
-            actions.append({
-                "entity_id": entity_id,
-                "name": name,
-                "type": "automation" if is_automation else "script",
-                "enabled": enabled,
-            })
-
-        return {"actions": actions}
-
-    @app.post("/api/actions/{entity_id:path}/toggle")
-    async def toggle_action(entity_id: str, req: ToggleRequest) -> dict:
-        from fastapi import HTTPException
-        from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
-
-        if not entity_id.startswith((AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX)):
-            raise HTTPException(status_code=403, detail="not an AI-controlled entity")
-
-        ws = app.state.ws
-        if not ws_is_ready(ws):
-            raise HTTPException(status_code=503, detail="websocket unavailable")
-
-        if entity_id.startswith("automation."):
-            service = "turn_on" if req.enabled else "turn_off"
-            await ws.management_request(
-                "call_service",
-                domain="automation",
-                service=service,
-                service_data={"entity_id": entity_id},
-            )
-        else:
-            await ws.management_request(
-                "config/entity_registry/update",
-                entity_id=entity_id,
-                disabled_by=None if req.enabled else "user",
-            )
-            if req.enabled:
-                await ws.management_request("call_service", domain="script", service="reload")
-
-        return {"ok": True}
-
-    def _note_store():
-        from fastapi import HTTPException
-
-        notes = getattr(app.state, "notes", None)
-        if notes is None:
-            raise HTTPException(status_code=503, detail="note store unavailable")
-        return notes
-
-    @app.get("/api/notes")
-    async def list_notes(status: str = "pending") -> dict:
-        from datetime import datetime, timezone
-
-        notes = _note_store()
-        if status == "all":
-            rows = notes.list_recent(limit=100)
-        else:
-            rows = notes.list_pending(datetime.now(timezone.utc))
-        result = []
-        for note in rows:
-            result.append(note.to_dict())
-        return {"notes": result}
-
-    @app.delete("/api/notes/{note_id}")
-    async def delete_note(note_id: int) -> dict:
-        from fastapi import HTTPException
-
-        notes = _note_store()
-        if not notes.cancel(note_id):
-            raise HTTPException(status_code=404, detail="no pending note with that id")
-        return {"ok": True}
+    app.include_router(chat_api.router)
+    app.include_router(system_api.router)
+    app.include_router(actions_api.router)
+    app.include_router(notes_api.router)
+    app.include_router(telemetry_api.router)
 
     # Mounted last so /api/* wins. Frontend must use relative fetch paths
     # ("api/chat", not "/api/chat") — HA ingress serves us under a prefix.

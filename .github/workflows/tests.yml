@@ -1,0 +1,23 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs the Python from .python-version, the same one the image ships.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      # Needs no Home Assistant and no LLM. Exactly one third-party warning
+      # (starlette TestClient deprecation) is expected.
+      - run: uv run pytest -q

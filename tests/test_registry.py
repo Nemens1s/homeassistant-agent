@@ -101,6 +101,25 @@ async def test_resolve_enabled_applies_probe_and_disabled_list():
     assert await registry.resolve_enabled(ctx) == {"always", "has_device", "probe_fails"}
 
 
+async def test_refresh_enabled_updates_the_set_in_place():
+    registry._reset_for_tests()
+    home = {"vacuum": False}
+
+    async def _has_vacuum(ctx):
+        return home["vacuum"]
+
+    registry.register(_avail_defn("always"))
+    registry.register(_avail_defn("vacuum_tool", _has_vacuum))
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=None)
+    enabled = await registry.resolve_enabled(ctx)
+    shared = enabled  # the router and event runner hold this same object
+
+    assert await registry.refresh_enabled(ctx, enabled) is False
+    home["vacuum"] = True  # HA finished booting
+    assert await registry.refresh_enabled(ctx, enabled) is True
+    assert shared == {"always", "vacuum_tool"}
+
+
 def test_build_tools_respects_enabled():
     registry._reset_for_tests()
     registry.register(_avail_defn("a"))

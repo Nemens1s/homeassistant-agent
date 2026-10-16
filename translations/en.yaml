@@ -4,7 +4,7 @@ configuration:
     description: >-
       Which backend serves the model. "ollama" talks to an Ollama server;
       "llamacpp" (or any other value) uses the OpenAI-compatible HTTP API, e.g.
-      llama.cpp's llama-server or a cloud provider via LiteLLM.
+      llama.cpp's llama-server or any OpenAI-compatible cloud endpoint.
   llm_url:
     name: LLM URL
     description: >-
@@ -161,6 +161,16 @@ configuration:
       Record what each request did — prompts, tool calls, timings and replies —
       to a local SQLite file for the Metrics tab. Everything stays on this
       machine; nothing is sent anywhere. Turn it off to record nothing.
+  telemetry_retention_days:
+    name: Telemetry retention (days)
+    description: >-
+      Recorded requests older than this are deleted once a day. Requests you
+      rated or corrected are kept. 0 keeps everything.
+  thread_retention_days:
+    name: Conversation retention (days)
+    description: >-
+      Conversations nobody has written to for this long are deleted once a
+      day. 0 keeps everything.
   watched_entities:
     name: Watched entities
     description: >-

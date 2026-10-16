@@ -220,15 +220,43 @@ def test_stream_outage_after_action_does_not_rerun_through_router():
         assert router.calls == []
 
 
-def test_non_outage_agent_error_is_http_500():
+def test_non_outage_agent_error_is_a_spoken_error_not_a_500():
     class Broken:
         async def ainvoke(self, payload, config=None):
             raise ValueError("model produced garbage")
+
+        async def aget_state(self, config):
+            raise AssertionError("no checkpointer in this fake")
 
     app = create_app(_settings())
     with TestClient(app, raise_server_exceptions=False) as client:
         _stop_probes(client)
         client.app.state.agent = Broken()
         resp = client.post("/api/chat", json={"message": "hello"})
-        assert resp.status_code == 500
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "something went wrong" in body["reply"]
+        assert body["degraded"] is False
+        # A bug is not an outage: the LLM must not be marked down.
+        assert client.app.state.llm_health.state != "down"
+
+
+def test_non_outage_stream_error_ends_with_error_event():
+    class Broken:
+        async def astream(self, payload, config=None, stream_mode=None):
+            yield (AIMessageChunk(content="Part"), {})
+            raise ValueError("model produced garbage")
+
+        async def aget_state(self, config):
+            raise AssertionError("no checkpointer in this fake")
+
+    app = create_app(_settings())
+    with TestClient(app, raise_server_exceptions=False) as client:
+        _stop_probes(client)
+        client.app.state.agent = Broken()
+        resp = client.post("/api/chat/stream", json={"message": "hello"})
+        assert resp.status_code == 200
+        events = _sse_events(resp.text)
+        assert events[-1]["type"] == "error"
+        assert "something went wrong" in events[-1]["message"]
         assert client.app.state.llm_health.state != "down"

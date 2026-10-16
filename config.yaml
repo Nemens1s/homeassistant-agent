@@ -1,7 +1,7 @@
 name: "Agent Gosling"
 version: "0.4.32"
 slug: agent_gosling
-description: "Chat agent over Home Assistant state, powered by a local models (cloud models optional via LiteLLM)"
+description: "Chat agent over Home Assistant state, powered by a local model (any OpenAI-compatible cloud endpoint optional)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
 arch:
   - amd64
@@ -73,6 +73,8 @@ schema:
   min_confidence: "float(0,1)?"
   lang_mt_timeout_s: "float(0.1,60)?"
   telemetry_enabled: "bool?"
+  telemetry_retention_days: "int(0,3650)?"
+  thread_retention_days: "int(0,3650)?"
   watched_entities: ["str"]
   clock_entity: "str"
   event_confirmations_enabled: "bool"

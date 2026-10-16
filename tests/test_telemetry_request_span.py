@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage
 
-from app.main import ChatResponse
+from app.api.chat import ChatResponse
 
 
 def test_chatresponse_has_optional_request_id():

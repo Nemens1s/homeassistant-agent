@@ -106,6 +106,17 @@ class LangOverlay:
             rows.append(row)
         return rows
 
+    def forget(self, thread_id: str) -> None:
+        """Drop every row of a deleted thread. Never raises."""
+        if self._conn is None:
+            return
+        try:
+            with self._lock:
+                self._conn.execute("DELETE FROM lang_overlay WHERE thread_id = ?", (thread_id,))
+                self._conn.commit()
+        except Exception:
+            log.warning("lang: could not delete overlay rows", exc_info=True)
+
     def close(self) -> None:
         if self._conn is not None:
             try:

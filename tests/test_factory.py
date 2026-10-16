@@ -86,12 +86,35 @@ def test_trim_history_never_returns_empty():
     assert trimmed == huge[-1:]
 
 
-def test_loop_guard_reset_middleware_clears_guard_on_before_agent():
+def test_loop_guard_reset_middleware_outside_a_run_resets_default_thread():
     guard = LoopGuard()
-    guard._last = {"a": ("some_tool", "{}")}
+    guard._last = {"default": ("some_tool", "{}"), "a": ("other", "{}")}
     middleware = LoopGuardResetMiddleware(guard)
     middleware.before_agent(None, None)
-    assert guard._last == {}
+    assert guard._last == {"a": ("other", "{}")}
+
+
+def test_loop_guard_reset_middleware_resets_only_the_running_thread():
+    from langgraph.graph import StateGraph, START, END
+    from typing_extensions import TypedDict
+
+    class _State(TypedDict, total=False):
+        x: int
+
+    guard = LoopGuard()
+    guard._last = {"chat": ("t", "{}"), "events": ("t", "{}")}
+    middleware = LoopGuardResetMiddleware(guard)
+
+    def node(state):
+        middleware.before_agent(state, None)
+        return {}
+
+    graph = StateGraph(_State)
+    graph.add_node("n", node)
+    graph.add_edge(START, "n")
+    graph.add_edge("n", END)
+    graph.compile().invoke({"x": 1}, config={"configurable": {"thread_id": "chat"}})
+    assert guard._last == {"events": ("t", "{}")}
 
 
 def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
@@ -102,6 +125,20 @@ def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
     assert "automation.ai_" not in p1  # no action guidance at tier 1
     assert "automation.ai_" in p2
     assert "trigger" in p2.lower()
+
+
+def test_build_agent_registers_prompt_and_toolset_snapshots(tmp_path):
+    from app.telemetry.store import open_store
+
+    registry._reset_for_tests()
+    settings = Settings(_env_file=None, allow_actions=False)
+    ctx = ToolContext(settings=settings, rest=None, ws=None)
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    build_agent(settings, ctx, telemetry=(None, conn))
+    build_agent(settings, ctx, telemetry=(None, conn))  # rebuild: same hashes, no new rows
+    assert conn.execute("SELECT COUNT(*) FROM prompt_snapshots").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM toolset_snapshots").fetchone()[0] == 1
+    conn.close()
 
 
 def test_build_agent_compiles_with_read_tools():

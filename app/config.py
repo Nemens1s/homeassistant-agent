@@ -28,13 +28,13 @@ class Settings(BaseSettings):
     # LLM backend
     # "auto" (default) probes llm_url to pick ollama/llamacpp/openai; see
     # app/agent/llm_probe.py. Set explicitly to skip the probe.
-    llm_provider: str = "auto"  # "ollama", "llamacpp" (llama-server HTTP API), or any litellm provider
+    llm_provider: str = "auto"  # "ollama", "llamacpp" (llama-server), or anything else = OpenAI-compatible
     llm_url: str = Field(
         "http://localhost:11434",
         validation_alias=AliasChoices("LLM_URL"),
     )
     llm_model: str = "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
-    api_key: str = ""  # cloud provider key, used only by litellm providers
+    api_key: str = ""  # key for an OpenAI-compatible endpoint; unused by Ollama
 
     # Model options — small-model tuning (spec: LLM factory & model settings)
     temperature: float = Field(
@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     # telemetry_db_path: local SQLite file; empty = telemetry disabled.
     telemetry_enabled: bool = True
     telemetry_db_path: str = "/data/telemetry.sqlite"
+    # Daily pruning (app/retention.py); 0 (the default) keeps everything.
+    # Labelled telemetry requests are always kept.
+    telemetry_retention_days: int = Field(0, ge=0)
+    thread_retention_days: int = Field(0, ge=0)
 
     # Event-triggered memory notes (spec 2026-10-04). The agent saves one-shot
     # notes; the harness fires them when a watched entity changes state or the

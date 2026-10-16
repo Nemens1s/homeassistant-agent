@@ -14,6 +14,7 @@ from app.agent.llm import build_llm
 from app.agent.middleware import build_middleware
 from app.config import Settings
 from app.skills import list_skills
+from app.telemetry.snapshots import register_prompt, register_toolset
 from app.tools import registry
 from app.tools.adapter import LoopGuard, build_tools
 from app.tools.context import ToolContext
@@ -120,6 +121,16 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
     return prompt
 
 
+def _register_snapshots(conn, base_prompt: str, tools) -> None:
+    """Record what this build offers the model. Idempotent per content hash,
+    so a rebuild with unchanged tools writes nothing."""
+    try:
+        register_prompt(conn, base_prompt)
+        register_toolset(conn, tools)
+    except Exception:
+        log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)
+
+
 def build_agent(
     settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None,
     telemetry=None, enabled=None, fast_path_health=None,
@@ -128,8 +139,9 @@ def build_agent(
 
     Args:
         telemetry: Optional tuple ``(tracer, store_conn)``.  The tracer is
-            forwarded to ``TelemetryMiddleware``.  ``store_conn`` is reserved
-            for fast-path persistence.
+            forwarded to ``TelemetryMiddleware``.  ``store_conn`` (may be
+            None) receives the prompt and toolset snapshots of this build and
+            the fast path's menu snapshots.
         enabled: Optional set of tool names to offer (see
             ``registry.resolve_enabled``). ``None`` builds every tool allowed
             by tier, which is the current behaviour.
@@ -147,6 +159,8 @@ def build_agent(
     telemetry_store_conn = None
     if telemetry is not None:
         telemetry_tracer, telemetry_store_conn = telemetry
+    if telemetry_store_conn is not None:
+        _register_snapshots(telemetry_store_conn, base_prompt, tools)
 
     return create_agent(
         model=llm,
