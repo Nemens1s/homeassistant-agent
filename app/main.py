@@ -61,7 +61,10 @@ _TOOLS_REFRESH_SECONDS = 300
 
 
 def _configure_app_logging() -> None:
-    formatter = logging.Formatter("%(levelname)s:     %(name)s %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     for name in _APP_LOGGERS:
         logger = logging.getLogger(name)
         if logger.handlers:

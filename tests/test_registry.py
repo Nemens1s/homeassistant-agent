@@ -1,4 +1,5 @@
 import json
+import logging
 
 import pytest
 from pydantic import BaseModel
@@ -129,3 +130,15 @@ def test_build_tools_respects_enabled():
     for t in build_tools(ctx, max_tier=1, enabled={"a"}):
         names.append(t.name)
     assert names == ["a"]
+
+
+async def test_refresh_does_not_repeat_the_unavailable_log(caplog):
+    registry._reset_for_tests()
+    registry.register(_avail_defn("no_device", _false))
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=None)
+    with caplog.at_level(logging.INFO, logger="agent.tools"):
+        enabled = await registry.resolve_enabled(ctx)
+        assert "tool=no_device not registered" in caplog.text
+        caplog.clear()
+        await registry.refresh_enabled(ctx, enabled)
+    assert "not registered" not in caplog.text
