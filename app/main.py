@@ -248,10 +248,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ctx, enabled, llm_health, fast_path=fast_path, fp_health=fp_health,
                 )
 
+                # Only an `auto` provider that could not be identified at boot
+                # needs re-resolving; an explicit provider never changes. Once
+                # resolved, the flag goes False for good.
+                still_unresolved = [unresolved]
+
                 async def _on_llm_recovered() -> None:
-                    # Only an `auto` provider that could not be identified at
-                    # boot needs this; an explicit provider never changes.
-                    if not unresolved:
+                    if not still_unresolved[0]:
                         return
                     fresh = await reresolve(cfg, app.state.settings)
                     if fresh is None:
@@ -263,6 +266,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
                     )
                     app.state.settings = fresh
+                    llm_health.set_probe(build_llm_probe(fresh, health_client))
+                    still_unresolved[0] = False
 
                 llm_health.on_recovery(_on_llm_recovered)
                 llm_health.start()
