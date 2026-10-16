@@ -158,3 +158,77 @@ def test_stream_slash_command():
         assert events[-1]["type"] == "done"
         assert events[-1]["degraded"] is True
         assert "/actions" in events[-1]["reply"]
+
+
+class ActedThenDiedAgent(OutageAgent):
+    """The model called trigger_action (it ran), then the LLM went away."""
+
+    async def aget_state(self, config):
+        from types import SimpleNamespace
+
+        from langchain_core.messages import HumanMessage, ToolMessage
+
+        call = {"name": "trigger_action", "args": {"entity_id": "script.ai_open_garage_door"},
+                "id": "c1"}
+        return SimpleNamespace(values={"messages": [
+            HumanMessage("open the garage door"),
+            AIMessage(content="", tool_calls=[call]),
+            ToolMessage(content='{"status":"ok"}', tool_call_id="c1", name="trigger_action"),
+        ]})
+
+    async def aupdate_state(self, config, values, as_node=None):
+        return None
+
+
+class RecordingRouter:
+    def __init__(self):
+        self.calls = []
+
+    async def handle(self, text, thread_id):
+        self.calls.append(text)
+        raise AssertionError("router must not run after an action already ran")
+
+
+def test_chat_outage_after_action_does_not_rerun_through_router():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        _stop_probes(client)
+        router = RecordingRouter()
+        client.app.state.agent = ActedThenDiedAgent()
+        client.app.state.router = router
+        resp = client.post("/api/chat", json={"message": "open the garage door"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["degraded"] is True
+        assert "went offline before I could finish" in body["reply"]
+        assert "language model is offline" in body["reply"]
+        assert router.calls == []
+        assert client.app.state.llm_health.state == "down"
+
+
+def test_stream_outage_after_action_does_not_rerun_through_router():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        _stop_probes(client)
+        router = RecordingRouter()
+        client.app.state.agent = ActedThenDiedAgent()
+        client.app.state.router = router
+        resp = client.post("/api/chat/stream", json={"message": "open the garage door"})
+        events = _sse_events(resp.text)
+        assert events[-1]["type"] == "done"
+        assert "went offline before I could finish" in events[-1]["reply"]
+        assert router.calls == []
+
+
+def test_non_outage_agent_error_is_http_500():
+    class Broken:
+        async def ainvoke(self, payload, config=None):
+            raise ValueError("model produced garbage")
+
+    app = create_app(_settings())
+    with TestClient(app, raise_server_exceptions=False) as client:
+        _stop_probes(client)
+        client.app.state.agent = Broken()
+        resp = client.post("/api/chat", json={"message": "hello"})
+        assert resp.status_code == 500
+        assert client.app.state.llm_health.state != "down"

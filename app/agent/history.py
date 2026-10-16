@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.telemetry.thinking import split_thinking
 
@@ -36,6 +36,33 @@ async def close_dangling_turn(agent, thread_id: str) -> None:
             )
     except Exception:
         log.warning("could not close dangling turn for thread %s", thread_id, exc_info=True)
+
+
+def _is_action_tool(name: str | None) -> bool:
+    from app.tools import registry
+    from app.tools.base import Tier
+
+    definition = registry.get(name or "")
+    return definition is not None and definition.tier >= Tier.ACTION
+
+
+async def ran_action_this_turn(agent, thread_id: str) -> bool:
+    """True when an ACTION-tier tool (trigger_action, notify_user) already
+    ran since the thread's last user message — so the router must not run
+    the same text again after the LLM died mid-turn. Best-effort; never
+    raises, False on any error."""
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        snapshot = await agent.aget_state(config)
+        messages = (snapshot.values or {}).get("messages", [])
+        for message in reversed(messages):
+            if isinstance(message, HumanMessage):
+                return False
+            if isinstance(message, ToolMessage) and _is_action_tool(message.name):
+                return True
+    except Exception:
+        log.warning("could not inspect the current turn of thread %s", thread_id, exc_info=True)
+    return False
 
 
 def display_transcript(messages) -> list[dict]:

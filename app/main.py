@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
-from app.agent.history import close_dangling_turn
+from app.agent.history import close_dangling_turn, ran_action_this_turn
 from app.agent.llm_health import (
     build_fast_path_probe,
     build_llm_probe,
@@ -346,6 +346,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         llm_health = getattr(app.state, "llm_health", None)
         if llm_health is not None:
             llm_health.mark_down(exc)
+        # An action may already have run before the model call that failed;
+        # re-running the same text through the router could fire it twice.
+        if await ran_action_this_turn(app.state.agent, thread_id):
+            text = ("I started on that, but my language model went offline before I "
+                    "could finish. Check the result before trying again. "
+                    + offline_message(llm_health))
+            return Reply(text, "degraded")
         await close_dangling_turn(app.state.agent, thread_id)
         return await _router_reply(message, thread_id)
 

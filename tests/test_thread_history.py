@@ -127,3 +127,143 @@ async def test_close_dangling_turn_appends_marker(monkeypatch):
     assert messages[-1].content == UNANSWERED_MARKER
     assert display_transcript(messages) == [{"role": "user", "text": "hi"}]
     registry._reset_for_tests()
+
+
+class _ActionRest:
+    def __init__(self):
+        self.calls = []
+
+    async def get_state(self, entity_id):
+        if entity_id == "input_boolean.ai_triggered_actions":
+            return {"entity_id": entity_id, "state": "on", "attributes": {}}
+        return {"entity_id": entity_id, "state": "off",
+                "attributes": {"friendly_name": "Open Garage Door"}}
+
+    async def get_script_config(self, object_id):
+        return {}
+
+    async def list_states(self):
+        return []
+
+    async def call_service(self, domain, service, entity_id=None, data=None):
+        self.calls.append((domain, service))
+        return []
+
+
+def _dying_agent(monkeypatch, first_response):
+    """A real graph whose model answers *first_response* once, then the LLM
+    server goes away."""
+    import httpx
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    from app.agent import factory as factory_mod
+    from app.tools import registry
+    from app.tools.context import ToolContext
+
+    class DiesAfterFirst(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def _agenerate(self, *args, **kwargs):
+            calls.append(1)
+            if len(calls) > 1:
+                raise httpx.ConnectError("refused")
+            return await super()._agenerate(*args, **kwargs)
+
+    calls = []
+    registry._reset_for_tests()
+    settings = Settings(_env_file=None, allow_actions=True)
+    rest = _ActionRest()
+    model = DiesAfterFirst(responses=[first_response])
+    monkeypatch.setattr(factory_mod, "build_llm", lambda s: model)
+    agent = factory_mod.build_agent(settings, ToolContext(settings=settings, rest=rest, ws=None))
+    return agent, rest
+
+
+async def _run_until_outage(agent, thread_id, text):
+    import httpx
+
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 15}
+    try:
+        await agent.ainvoke({"messages": [{"role": "user", "content": text}]}, config=config)
+    except httpx.ConnectError:
+        return
+    raise AssertionError("expected the scripted model to fail")
+
+
+async def test_ran_action_this_turn_true_after_trigger_then_outage(monkeypatch):
+    from app.agent.history import ran_action_this_turn
+    from app.tools import registry
+
+    call = {"name": "trigger_action", "args": {"entity_id": "script.ai_open_garage_door"}, "id": "c1"}
+    agent, rest = _dying_agent(monkeypatch, AIMessage(content="", tool_calls=[call]))
+    await _run_until_outage(agent, "t-act", "open the garage door")
+    assert rest.calls == [("script", "ai_open_garage_door")]
+    assert await ran_action_this_turn(agent, "t-act") is True
+    registry._reset_for_tests()
+
+
+async def test_ran_action_this_turn_false_without_tool(monkeypatch):
+    import httpx
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    from app.agent import factory as factory_mod
+    from app.agent.history import ran_action_this_turn
+    from app.tools import registry
+    from app.tools.context import ToolContext
+
+    class Down(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def _agenerate(self, *args, **kwargs):
+            raise httpx.ConnectError("refused")
+
+    registry._reset_for_tests()
+    settings = Settings(_env_file=None, allow_actions=True)
+    monkeypatch.setattr(factory_mod, "build_llm", lambda s: Down(responses=[AIMessage("x")]))
+    agent = factory_mod.build_agent(settings, ToolContext(settings=settings, rest=_ActionRest(), ws=None))
+    await _run_until_outage(agent, "t-none", "hello")
+    assert await ran_action_this_turn(agent, "t-none") is False
+    registry._reset_for_tests()
+
+
+async def test_ran_action_this_turn_ignores_earlier_turns():
+    from app.agent.history import ran_action_this_turn
+    from app.tools import registry
+
+    registry._reset_for_tests()
+    registry.load_all(("app.tools.action.trigger_action", "app.tools.read.get_entity_state"))
+
+    class StateAgent:
+        def __init__(self, messages):
+            self.messages = messages
+
+        async def aget_state(self, config):
+            return SimpleNamespace(values={"messages": self.messages})
+
+    earlier = [
+        HumanMessage("open the garage"),
+        AIMessage(content="", tool_calls=[{"name": "trigger_action", "args": {}, "id": "a"}]),
+        ToolMessage(content="{}", tool_call_id="a", name="trigger_action"),
+        AIMessage("done"),
+    ]
+    read_turn = earlier + [
+        HumanMessage("kitchen light?"),
+        AIMessage(content="", tool_calls=[{"name": "get_entity_state", "args": {}, "id": "b"}]),
+        ToolMessage(content="{}", tool_call_id="b", name="get_entity_state"),
+    ]
+    assert await ran_action_this_turn(StateAgent(read_turn), "t") is False
+    assert await ran_action_this_turn(StateAgent(earlier[:3]), "t") is True
+    registry._reset_for_tests()
+
+
+async def test_ran_action_this_turn_never_raises():
+    from app.agent.history import ran_action_this_turn
+
+    class Broken:
+        async def aget_state(self, config):
+            raise RuntimeError("db gone")
+
+    assert await ran_action_this_turn(Broken(), "t") is False
+    assert await ran_action_this_turn(object(), "t") is False
