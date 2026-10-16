@@ -127,6 +127,20 @@ def test_system_prompt_mentions_control_only_at_tier2(tmp_path):
     assert "trigger" in p2.lower()
 
 
+def test_build_agent_registers_prompt_and_toolset_snapshots(tmp_path):
+    from app.telemetry.store import open_store
+
+    registry._reset_for_tests()
+    settings = Settings(_env_file=None, allow_actions=False)
+    ctx = ToolContext(settings=settings, rest=None, ws=None)
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    build_agent(settings, ctx, telemetry=(None, conn))
+    build_agent(settings, ctx, telemetry=(None, conn))  # rebuild: same hashes, no new rows
+    assert conn.execute("SELECT COUNT(*) FROM prompt_snapshots").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM toolset_snapshots").fetchone()[0] == 1
+    conn.close()
+
+
 def test_build_agent_compiles_with_read_tools():
     registry._reset_for_tests()
     settings = Settings(_env_file=None, allow_actions=False)

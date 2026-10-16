@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.agent.checkpointer import open_checkpointer
-from app.agent.factory import build_agent, build_system_prompt
+from app.agent.factory import build_agent
 from app.agent.llm_health import (
     build_fast_path_probe,
     build_llm_probe,
@@ -41,10 +41,8 @@ from app.i18n.store import LangOverlay
 from app.memory.store import NoteStore
 from app.needle.factory import build_fast_path_backend
 from app.telemetry.setup import get_tracer, init_telemetry, shutdown_telemetry
-from app.telemetry.snapshots import register_prompt, register_toolset
 from app.telemetry.store import open_store
 from app.tools import registry
-from app.tools.adapter import LoopGuard, build_tools
 from app.tools.context import ToolContext
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -240,17 +238,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 listener = EventListener(ws, notes, runner, run_cfg, rest)
                 await listener.start()
                 app.state.event_listener = listener
-
-                # Register prompt + toolset snapshots now that the agent is built.
-                if snapshot_conn is not None:
-                    try:
-                        base_prompt = build_system_prompt(run_cfg, ctx.skills_dir)
-                        register_prompt(snapshot_conn, base_prompt)
-                        guard = LoopGuard()
-                        tools = build_tools(ctx, run_cfg.max_tier, guard=guard, enabled=enabled)
-                        register_toolset(snapshot_conn, tools)
-                    except Exception:
-                        log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)
 
                 yield
         finally:
