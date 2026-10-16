@@ -62,6 +62,11 @@ def _set_span(span, **attributes) -> None:
         pass
 
 
+# Shown when the agent fails for a reason other than an LLM outage (a bug).
+# Assist speaks it instead of playing a generic error tone.
+_INTERNAL_ERROR = "Sorry, something went wrong on my side. Please try again."
+
+
 def _recursion_message(limit: int) -> str:
     return (f"I stopped after {limit} tool steps without reaching an answer. "
             "Try a more specific question.")
@@ -213,8 +218,10 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
                 _set_span(span, **{C.GOSLING_OUTCOME: "llm_unavailable"})
                 return ChatResponse(reply=reply.text, request_id=turn.request_id,
                                     degraded=True, language="en")
+            log.exception("chat: agent run failed")
+            await close_dangling_turn(state.agent, req.thread_id)
             _set_span(span, **{C.GOSLING_OUTCOME: "error", C.GOSLING_PATH: "agent"})
-            raise
+            return ChatResponse(reply=_INTERNAL_ERROR, request_id=turn.request_id)
 
 
 def _sse(event: dict) -> str:
@@ -293,8 +300,12 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         except GeneratorExit:
             outcome = "cancelled"
         except Exception:
+            # End the stream with an explanation instead of cutting it: the
+            # browser would only show a network error.
+            log.exception("chat/stream: agent run failed")
+            await close_dangling_turn(state.agent, req.thread_id)
             outcome = "error"
-            raise
+            yield _sse({"type": "error", "message": _INTERNAL_ERROR})
         finally:
             _set_span(span, **{C.GOSLING_OUTCOME: outcome})
             span.end()
