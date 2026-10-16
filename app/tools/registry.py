@@ -74,10 +74,12 @@ def tools_for_tier(max_tier: int) -> list[ToolDefinition]:
     return eligible
 
 
-async def resolve_enabled(ctx) -> set[str]:
+async def resolve_enabled(ctx, quiet: bool = False) -> set[str]:
     """Tool names to offer in this home: allowed by tier, not switched off by
     the user, and (for helper tools) backed by a matching entity. A probe that
-    fails keeps its tool — better a useless tool than a missing one."""
+    fails keeps its tool — better a useless tool than a missing one.
+    `quiet` skips the per-tool "not registered" line, for the periodic
+    refresh, which logs only what changed."""
     disabled = set(ctx.settings.disabled_tools)
     enabled: set[str] = set()
     for t in tools_for_tier(ctx.settings.max_tier):
@@ -93,7 +95,7 @@ async def resolve_enabled(ctx) -> set[str]:
             ok = True
         if ok:
             enabled.add(t.name)
-        else:
+        elif not quiet:
             log.info("tool=%s not registered: nothing in this home to use it on", t.name)
     return enabled
 
@@ -103,7 +105,7 @@ async def refresh_enabled(ctx, enabled: set[str]) -> bool:
     router and event runner hold the same set). Returns True when it changed,
     i.e. when the agent must be rebuilt to offer the new tool list. A home
     that was half-booted at startup gets its missing tools back this way."""
-    fresh = await resolve_enabled(ctx)
+    fresh = await resolve_enabled(ctx, quiet=True)
     if fresh == enabled:
         return False
     added = sorted(fresh - enabled)
