@@ -1,16 +1,17 @@
 ARG BUILD_ARCH=amd64
 FROM ghcr.io/home-assistant/${BUILD_ARCH}-base-debian:bookworm
 
-COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
 
-RUN apt-get update && apt-get install -y --no-install-recommends python3 \
-    && rm -rf /var/lib/apt/lists/*
-
+# The app ships on the same Python the tests run on (.python-version);
+# bookworm's own python3 is 3.11. uv installs a standalone build outside
+# /root so the venv's interpreter symlink stays valid in the image.
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+    UV_LINK_MODE=copy
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
-# sqlite-vec ships no musllinux wheel; skip it — langgraph-checkpoint-sqlite handles the absence.
-RUN uv sync --frozen --no-dev \
-        --no-install-package sqlite-vec
+COPY .python-version pyproject.toml uv.lock ./
+RUN uv python install \
+    && uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY app ./app
