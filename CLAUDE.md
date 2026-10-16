@@ -59,6 +59,12 @@ class in `app/config.py`; in the addon container it reads
   reasoning/keep_alive knobs — small-model tuning is a first-class concern)
   or ChatOpenAI for any OpenAI-compatible cloud endpoint (Baseten, llamacpp,
   etc.) — set LLM_PROVIDER to anything other than "ollama".
+- `health.py` — `ServiceHealth`: generic up/down tracker for one HTTP
+  dependency (probe loop 15 s down / 60 s up + passive `mark_down`). Two
+  instances on `app.state`: `llm_health`, `fp_health` (fast path, optional).
+- `agent/llm_health.py` — provider-specific probes, `is_llm_outage(exc)`
+  (connection/timeout/5xx = outage; bad output is not), and re-resolving an
+  `auto` provider that could not be identified at boot (agent hot-swap).
 - `agent/factory.py` — `build_agent`: langchain v1 `create_agent` + custom
   middleware (per-call history trimming + current-time injection into the
   system prompt; never mutate checkpointed state) + per-run loop-guard reset.
@@ -86,6 +92,10 @@ class in `app/config.py`; in the addon container it reads
   (no LLM); only a task with neither falls back to an agent run (thread
   `events`, fast path off). Every fired task records an outcome. `clock.py` parses the World Clock sensor (`HH:MM DD-MM-YYYY`);
   all time-note maths stays in that wall time. Most events cost no LLM call.
+- `degraded/` — `CommandRouter` at the HTTP edge: slash commands always,
+  free text only while the LLM is down (deferral guard → fast path → fuzzy
+  action matcher → "offline" reply). Runs tools via `to_structured_tool`
+  (gate + audit apply). Replies are English and never checkpointed.
 - `memory/store.py` — `NoteStore`, the `memory_notes` table in the checkpoint
   DB. One-shot notes (state or time trigger), English instruction + original
   text, never raises.
