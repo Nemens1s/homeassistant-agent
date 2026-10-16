@@ -6,6 +6,7 @@ to the plain OpenAI-compatible builder (safe for cloud APIs)."""
 
 from __future__ import annotations
 
+import httpx
 import logging
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -16,8 +17,13 @@ from app.config import Settings
 
 log = logging.getLogger("agent.llm")
 
-# Generations on modest hardware can exceed a minute; never use httpx defaults.
-OLLAMA_HTTP_TIMEOUT = 300
+# Generations on modest hardware can exceed a minute, so reads get 300 s. A
+# dead or powered-off host must fail in seconds, so connecting gets 3 s —
+# never use httpx defaults, which would wait out the OS connect timeout.
+LLM_HTTP_TIMEOUT = httpx.Timeout(300.0, connect=3.0)
+# One retry rides out a blip; the SDK default (2, with backoff) multiplies an
+# outage into minutes.
+LLM_MAX_RETRIES = 1
 
 
 def _build_ollama(settings: Settings) -> BaseChatModel:
@@ -36,7 +42,7 @@ def _build_ollama(settings: Settings) -> BaseChatModel:
         num_gpu=settings.num_gpu,
         num_ctx=settings.num_ctx,
         keep_alive=settings.keep_alive,
-        client_kwargs={"timeout": OLLAMA_HTTP_TIMEOUT},
+        client_kwargs={"timeout": LLM_HTTP_TIMEOUT},
     )
 
 
@@ -71,6 +77,8 @@ def _openai_compat_kwargs(settings: Settings) -> dict:
         "max_tokens": settings.num_predict or None,
         "seed": settings.seed,
         "streaming": True,
+        "timeout": LLM_HTTP_TIMEOUT,
+        "max_retries": LLM_MAX_RETRIES,
     }
 
 
