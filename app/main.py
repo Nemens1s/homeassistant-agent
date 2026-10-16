@@ -21,12 +21,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
+from app.agent.llm_health import (
+    build_fast_path_probe,
+    build_llm_probe,
+    needs_reresolve,
+    reresolve,
+)
 from app.agent.llm_probe import resolve_llm_settings
 from app.agent.run_scope import scope_configurable
 from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
 from app.constants import WRITE_DOMAINS
+from app.health import DOWN, UNKNOWN, ServiceHealth
 from app.needle.factory import build_fast_path_backend
 from app.config import Settings, load_settings, warn_if_llm_unset
 from app.i18n import build_language_adapter, set_language_attributes
@@ -167,6 +174,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # write to the same DB.  None when telemetry is disabled or DB failed to open.
         app.state.telemetry_store = snapshot_conn
 
+        health_client = None
+        llm_health = None
+        fp_health = None
         try:
             try:
                 await ws.start(connect_timeout=cfg.ws_connect_timeout)
@@ -183,6 +193,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # this point uses run_cfg.
             run_cfg = await resolve_llm_settings(cfg)
 
+            # One client for every health probe; closed in `finally`.
+            health_client = httpx.AsyncClient()
+            unresolved = needs_reresolve(cfg, run_cfg)
+            initial = DOWN if unresolved else UNKNOWN
+            llm_health = ServiceHealth(
+                "llm", build_llm_probe(run_cfg, health_client, unresolved), initial=initial,
+            )
+            app.state.llm_health = llm_health
+
             ctx = ToolContext(settings=run_cfg, rest=rest, ws=ws, audit=audit, notes=notes, lang=language)
             # Load the tool registry before building the fast path: it guards on
             # registry.get("trigger_action"), and build_agent (which also
@@ -197,6 +216,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:
                 log.exception("fast path failed to build; running agent-only")
 
+            if fast_path is not None:
+                fp_health = ServiceHealth(
+                    "fast_path", build_fast_path_probe(run_cfg.fast_path_url, health_client),
+                )
+            app.state.fp_health = fp_health
+
             # Build telemetry tuple for build_agent when enabled.
             telemetry_arg = None
             if telemetry_provider is not None:
@@ -206,13 +231,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             async with open_checkpointer(run_cfg) as checkpointer:
                 agent = build_agent(
                     run_cfg, ctx, checkpointer=checkpointer, fast_path=fast_path,
-                    telemetry=telemetry_arg, enabled=enabled,
+                    telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
                 )
                 app.state.settings = run_cfg
                 app.state.ctx = ctx
                 app.state.rest = rest
                 app.state.ws = ws
                 app.state.agent = agent
+
+                async def _on_llm_recovered() -> None:
+                    # Only an `auto` provider that could not be identified at
+                    # boot needs this; an explicit provider never changes.
+                    if not unresolved:
+                        return
+                    fresh = await reresolve(cfg, app.state.settings)
+                    if fresh is None:
+                        return
+                    log.info("llm: provider resolved to %s on recovery; rebuilding agent",
+                             fresh.llm_provider)
+                    app.state.agent = build_agent(
+                        fresh, ctx, checkpointer=checkpointer, fast_path=fast_path,
+                        telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
+                    )
+                    app.state.settings = fresh
+
+                llm_health.on_recovery(_on_llm_recovered)
+                llm_health.start()
+                if fp_health is not None:
+                    fp_health.start()
 
                 # Event-triggered notes: the runner reads app.state.agent at fire
                 # time, the listener subscribes now (or on the first connect).
@@ -235,6 +281,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
                 yield
         finally:
+            if llm_health is not None:
+                await llm_health.stop()
+            if fp_health is not None:
+                await fp_health.stop()
+            if health_client is not None:
+                await health_client.aclose()
             if snapshot_conn is not None:
                 try:
                     snapshot_conn.close()
@@ -435,28 +487,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict:
+        # Always HTTP 200: the Supervisor watchdog polls this endpoint, and a
+        # non-200 during an LLM outage would restart-loop the add-on. The body
+        # carries the real state; the trackers are read, never probed here.
         ha_ok = False
-        llm_ok = False
         try:
             ha_ok = await app.state.rest.ping()
         except Exception:
             pass
-        try:
-            s = app.state.settings
-            if s.llm_provider == "ollama":
-                health_url = f"{s.llm_url}/api/version"
-            else:
-                health_url = f"{s.llm_url}/health"
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(health_url)
-                llm_ok = resp.status_code == 200
-        except Exception:
-            pass
+        llm_health = getattr(app.state, "llm_health", None)
+        if llm_health is not None:
+            llm_snap = llm_health.snapshot()
+        else:
+            llm_snap = {"state": UNKNOWN, "since": None, "error": None}
+        llm_ok = llm_snap["state"] == "up"
+        fp_health = getattr(app.state, "fp_health", None)
+        fast_path_state = fp_health.state if fp_health is not None else None
         ws_ok = app.state.ws is not None and app.state.ws.connected
         return {
             "status": "ok" if (ha_ok and llm_ok) else "degraded",
             "ha": ha_ok,
             "llm": llm_ok,
+            "llm_state": llm_snap["state"],
+            "llm_since": llm_snap["since"],
+            "llm_error": llm_snap["error"],
+            "provider": app.state.settings.llm_provider,
+            "fast_path_state": fast_path_state,
             "websocket": ws_ok,
         }
 
