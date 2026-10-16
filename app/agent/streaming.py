@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.errors import GraphRecursionError
 
+from app.agent.llm_health import is_llm_outage
 
 
 class _ThinkBuffer:
@@ -126,6 +127,13 @@ async def stream_events(
                 "Try a more specific question."
             ),
         }
+        return
+    except Exception as exc:
+        # An unreachable LLM is not a crash: tell the endpoint, which answers
+        # in degraded mode. Anything else is a real bug and propagates.
+        if not is_llm_outage(exc):
+            raise
+        yield {"type": "llm_unavailable", "error": str(exc) or type(exc).__name__}
         return
 
     for event in think_buf.flush():

@@ -10,9 +10,32 @@ dropped).
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.telemetry.thinking import split_thinking
+
+log = logging.getLogger("agent.history")
+
+# Closes a turn whose model call failed because the LLM was unreachable, so
+# the thread never holds two user messages in a row. Hidden from the UI.
+UNANSWERED_MARKER = "(not answered: language model unavailable)"
+
+
+async def close_dangling_turn(agent, thread_id: str) -> None:
+    """If the thread ends with a user message (its model call failed),
+    append the marker as the model's reply. Best-effort; never raises."""
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        snapshot = await agent.aget_state(config)
+        messages = (snapshot.values or {}).get("messages", [])
+        if messages and isinstance(messages[-1], HumanMessage):
+            await agent.aupdate_state(
+                config, {"messages": [AIMessage(content=UNANSWERED_MARKER)]}, as_node="model",
+            )
+    except Exception:
+        log.warning("could not close dangling turn for thread %s", thread_id, exc_info=True)
 
 
 def display_transcript(messages) -> list[dict]:
@@ -30,6 +53,8 @@ def display_transcript(messages) -> list[dict]:
             if text.strip():
                 turns.append({"role": "user", "text": text})
         elif isinstance(message, AIMessage):
+            if message.content == UNANSWERED_MARKER:
+                continue
             _, text = split_thinking(message)
             if text.strip():
                 turns.append({"role": "bot", "text": text})

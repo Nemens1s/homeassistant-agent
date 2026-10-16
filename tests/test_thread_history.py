@@ -84,3 +84,46 @@ def test_history_endpoint_unknown_thread_is_empty():
         resp = client.get("/api/history", params={"thread_id": "nope"})
     assert resp.status_code == 200
     assert resp.json() == {"messages": []}
+
+
+async def test_close_dangling_turn_appends_marker(monkeypatch):
+    import httpx
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+
+    from app.agent import factory as factory_mod
+    from app.agent.history import UNANSWERED_MARKER, close_dangling_turn, display_transcript
+    from app.config import Settings
+    from app.tools import registry
+    from app.tools.context import ToolContext
+
+    class Down(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def _agenerate(self, *args, **kwargs):
+            raise httpx.ConnectError("refused")
+
+    class Rest:
+        async def get_state(self, entity_id):
+            return {}
+
+        async def list_states(self):
+            return []
+
+    registry._reset_for_tests()
+    settings = Settings(_env_file=None)
+    monkeypatch.setattr(factory_mod, "build_llm", lambda s: Down(responses=[AIMessage("x")]))
+    agent = factory_mod.build_agent(settings, ToolContext(settings=settings, rest=Rest(), ws=None))
+    config = {"configurable": {"thread_id": "t1"}}
+    try:
+        await agent.ainvoke({"messages": [{"role": "user", "content": "hi"}]}, config=config)
+    except httpx.ConnectError:
+        pass
+    await close_dangling_turn(agent, "t1")
+    await close_dangling_turn(agent, "t1")  # idempotent: last message is no longer human
+    messages = (await agent.aget_state(config)).values["messages"]
+    assert [m.type for m in messages] == ["human", "ai"]
+    assert messages[-1].content == UNANSWERED_MARKER
+    assert display_transcript(messages) == [{"role": "user", "text": "hi"}]
+    registry._reset_for_tests()

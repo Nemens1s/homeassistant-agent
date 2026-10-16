@@ -81,3 +81,20 @@ async def test_stream_events_merges_extra_configurable():
     ):
         pass
     assert seen["config"]["configurable"] == {"thread_id": "t1", "gosling_language": "ru"}
+
+
+async def test_outage_yields_llm_unavailable_instead_of_raising():
+    import httpx
+
+    agent = FakeAgent([(AIMessageChunk(content="Par"), {}), httpx.ConnectError("refused")])
+    events = await _collect(agent)
+    assert events[-1]["type"] == "llm_unavailable"
+    assert "refused" in events[-1]["error"]
+
+
+async def test_non_outage_errors_still_raise():
+    import pytest
+
+    agent = FakeAgent([ValueError("bug")])
+    with pytest.raises(ValueError):
+        await _collect(agent)
