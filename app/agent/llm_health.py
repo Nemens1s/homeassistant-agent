@@ -71,22 +71,38 @@ def _probe_urls(settings: Settings, unresolved: bool) -> list[str]:
     return [base + "/models"]
 
 
-async def _any_ok(client: httpx.AsyncClient, urls: list[str]) -> bool:
+async def _any_ok(
+    client: httpx.AsyncClient,
+    urls: list[str],
+    headers: dict | None = None,
+    any_answer: bool = False,
+) -> bool:
+    """True when one of *urls* answers. With *any_answer*, any status below
+    500 counts (401/403/404 still prove the server is reachable); otherwise
+    only 200 does. Connection errors, timeouts and 5xx are always down."""
     for url in urls:
         try:
-            response = await client.get(url, timeout=_PROBE_TIMEOUT)
+            response = await client.get(url, timeout=_PROBE_TIMEOUT, headers=headers)
         except httpx.HTTPError:
             continue
         if response.status_code == 200:
+            return True
+        if any_answer and response.status_code < 500:
             return True
     return False
 
 
 def build_llm_probe(settings: Settings, client: httpx.AsyncClient, unresolved: bool = False) -> Probe:
     urls = _probe_urls(settings, unresolved)
+    headers = None
+    if settings.api_key:
+        headers = {"Authorization": f"Bearer {settings.api_key}"}
 
     async def probe() -> bool:
-        return await _any_ok(client, urls)
+        # Key-protected servers answer 401 without (or with a wrong) key;
+        # that is a live server, not an outage. llama.cpp's 503 "Loading
+        # model" stays down.
+        return await _any_ok(client, urls, headers=headers, any_answer=True)
 
     return probe
 

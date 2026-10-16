@@ -150,3 +150,56 @@ async def test_reresolve_returns_new_settings_only_when_changed(monkeypatch):
 
     monkeypatch.setattr(llm_health, "resolve_llm_settings", still_openai)
     assert await reresolve(cfg, current) is None
+
+
+def _recording_client(status, seen):
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(status, json={})
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def test_probe_401_with_api_key_is_up_and_sends_bearer():
+    seen = []
+    probe = build_llm_probe(
+        _settings(llm_provider="openai", llm_url="https://api.example.com/v1", api_key="sk-test"),
+        _recording_client(401, seen),
+    )
+    assert await probe() is True
+    assert seen[0].headers.get("authorization") == "Bearer sk-test"
+
+
+async def test_probe_without_api_key_sends_no_authorization():
+    seen = []
+    probe = build_llm_probe(
+        _settings(llm_provider="openai", llm_url="https://api.example.com/v1"),
+        _recording_client(200, seen),
+    )
+    assert await probe() is True
+    assert "authorization" not in seen[0].headers
+
+
+async def test_probe_404_counts_as_up():
+    probe = build_llm_probe(
+        _settings(llm_provider="openai", llm_url="https://api.example.com/v1"),
+        _client({}),
+    )
+    assert await probe() is True
+
+
+async def test_probe_500_is_down():
+    probe = build_llm_probe(
+        _settings(llm_provider="openai", llm_url="https://api.example.com/v1"),
+        _client({"/v1/models": 500}),
+    )
+    assert await probe() is False
+
+
+async def test_unresolved_probe_connection_errors_everywhere_is_down():
+    error = httpx.ConnectError("refused")
+    probe = build_llm_probe(
+        _settings(llm_provider="openai", llm_url="http://llm:11434"),
+        _client({"/props": error, "/api/tags": error, "/models": error}),
+        unresolved=True,
+    )
+    assert await probe() is False
