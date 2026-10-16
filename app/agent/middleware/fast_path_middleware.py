@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import uuid
+from contextlib import nullcontext
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -80,7 +81,10 @@ class FastPathMiddleware(AgentMiddleware):
         self._health = health  # ServiceHealth for the fast-path service, or None
 
     def _safe_set(self, span, key, value):
-        """Set a span attribute without raising — keeps telemetry fail-open."""
+        """Set a span attribute without raising — keeps telemetry fail-open.
+        A None span (telemetry off) is a no-op."""
+        if span is None:
+            return
         try:
             span.set_attribute(key, value)
         except Exception:
@@ -133,11 +137,8 @@ class FastPathMiddleware(AgentMiddleware):
                 self._record_skip("deferred")
                 return await handler(request)
 
-            result = await self._classify_with_telemetry(last.content)
+            result = await self._classify(last.content)
             if result is not None:
-                # result is either a (Decision, Menu) tuple or a sentinel meaning fall-through
-                if result == "fallthrough":
-                    return await handler(request)
                 decision, menu = result
                 if decision.entity_id is not None and decision.confidence >= self._threshold:
                     # Fall through when required params are missing — the LLM must resolve them.
@@ -151,93 +152,63 @@ class FastPathMiddleware(AgentMiddleware):
 
         return await handler(request)
 
-    async def _classify_with_telemetry(self, message: str):
-        """Run menu fetch + classify, wrapped in a telemetry span if tracer is set.
-
-        Returns:
-            A (Decision, Menu) tuple on success, or the string "fallthrough" when
-            the request should fall through to the LLM (empty menu or backend error).
-        """
+    def _classify_span(self):
+        """The classify span, or a no-op context yielding None when telemetry
+        is off or the tracer fails — the classification must never be lost."""
         if self._tracer is None:
-            # No telemetry — plain path identical to original behavior.
-            try:
-                menu = await self._menu_provider.get()
-                if not menu.items:
-                    return "fallthrough"
-                decision = await self._backend.classify(message, menu)
-                return (decision, menu)
-            except Exception as exc:
-                self._note_failure(exc)
-                log.exception("fast path error; falling through to agent")
-                return "fallthrough"
-
-        # Telemetry-instrumented path.
-        # Fail-open: if the span context manager itself raises, fall back to the
-        # plain classification so the hit is never lost.
+            return nullcontext(None)
         try:
-            span_ctx = self._tracer.start_as_current_span(conventions.SPAN_CLASSIFY)
+            return self._tracer.start_as_current_span(conventions.SPAN_CLASSIFY)
         except Exception:
             log.debug("fast path telemetry span creation failed; continuing without telemetry")
+            return nullcontext(None)
+
+    def _record_menu(self, span, menu) -> None:
+        if span is None:
+            return
+        try:
+            self._safe_set(span, conventions.GOSLING_FP_MENU_HASH, menu_hash(menu))
+            if self._store_conn is not None:
+                register_menu(self._store_conn, menu)
+        except Exception:
+            pass
+
+    async def _classify(self, message: str):
+        """Fetch the menu and classify the message.
+
+        Returns:
+            A (Decision, Menu) tuple, or None when the request should fall
+            through to the LLM (empty menu or an error).
+        """
+        with self._classify_span() as span:
+            self._safe_set(span, conventions.GOSLING_FP_BACKEND, self._backend.name)
+            self._safe_set(span, conventions.GOSLING_FP_THRESHOLD, self._threshold)
+
             try:
                 menu = await self._menu_provider.get()
-                if not menu.items:
-                    return "fallthrough"
+            except Exception:
+                log.exception("fast path error fetching menu; falling through to agent")
+                self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "error")
+                return None
+
+            if not menu.items:
+                self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "empty_menu")
+                return None
+            self._record_menu(span, menu)
+
+            try:
                 decision = await self._backend.classify(message, menu)
-                return (decision, menu)
             except Exception as exc:
                 self._note_failure(exc)
                 log.exception("fast path error; falling through to agent")
-                return "fallthrough"
+                self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "error")
+                return None
 
-        with span_ctx as span:
-            try:
-                self._safe_set(span, conventions.GOSLING_FP_BACKEND, self._backend.name)
-                self._safe_set(span, conventions.GOSLING_FP_THRESHOLD, self._threshold)
-
-                try:
-                    menu = await self._menu_provider.get()
-                except Exception:
-                    log.exception("fast path error fetching menu; falling through to agent")
-                    self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "error")
-                    return "fallthrough"
-
-                if not menu.items:
-                    self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "empty_menu")
-                    return "fallthrough"
-
-                try:
-                    mhash = menu_hash(menu)
-                    self._safe_set(span, conventions.GOSLING_FP_MENU_HASH, mhash)
-                except Exception:
-                    pass
-
-                if self._store_conn is not None:
-                    try:
-                        register_menu(self._store_conn, menu)
-                    except Exception:
-                        pass
-
-                try:
-                    decision = await self._backend.classify(message, menu)
-                except Exception as exc:
-                    self._note_failure(exc)
-                    log.exception("fast path error; falling through to agent")
-                    self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "error")
-                    return "fallthrough"
-
-                entity_id = decision.entity_id or ""
-                accepted = decision.entity_id is not None and decision.confidence >= self._threshold
-                self._safe_set(span, conventions.GOSLING_FP_ENTITY_ID, entity_id)
-                self._safe_set(span, conventions.GOSLING_FP_CONFIDENCE, decision.confidence)
-                self._safe_set(span, conventions.GOSLING_FP_ACCEPTED, accepted)
-
-                return (decision, menu)
-
-            except Exception:
-                # Last-resort catch: telemetry raised unexpectedly. Fall through so
-                # the agent still handles the request.
-                log.debug("fast path telemetry error; falling through to agent")
-                return "fallthrough"
+            accepted = decision.entity_id is not None and decision.confidence >= self._threshold
+            self._safe_set(span, conventions.GOSLING_FP_ENTITY_ID, decision.entity_id or "")
+            self._safe_set(span, conventions.GOSLING_FP_CONFIDENCE, decision.confidence)
+            self._safe_set(span, conventions.GOSLING_FP_ACCEPTED, accepted)
+            return decision, menu
 
     def _synthetic_call(self, entity_id: str, arguments: dict | None = None,
                         name: str = "") -> AIMessage:

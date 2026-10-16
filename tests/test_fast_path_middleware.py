@@ -349,3 +349,28 @@ async def test_connection_error_marks_fast_path_down():
     resp = await mw.awrap_model_call(_request([HumanMessage("goodnight")]), handler)
     assert resp.content == "llm reply"
     assert health.state == DOWN
+
+
+@pytest.mark.asyncio
+async def test_menu_fetch_error_does_not_mark_fast_path_down():
+    # The menu comes from Home Assistant, not the fast-path service: an HA
+    # hiccup must not take the fast path offline.
+    import httpx
+    from app.health import DOWN, ServiceHealth
+
+    class _BrokenMenu:
+        async def get(self):
+            raise httpx.ConnectError("HA refused")
+
+    async def _probe():
+        return True
+
+    health = ServiceHealth("fast_path", _probe)
+    mw = FastPathMiddleware(FakeBackend(), _BrokenMenu(), threshold=0.0, health=health)
+
+    async def handler(request):
+        return AIMessage("llm reply")
+
+    resp = await mw.awrap_model_call(_request([HumanMessage("goodnight")]), handler)
+    assert resp.content == "llm reply"
+    assert health.state != DOWN
