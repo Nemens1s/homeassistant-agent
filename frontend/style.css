@@ -19,6 +19,7 @@
   --error-soft:           rgba(210, 15, 57, 0.1);
   --code-bg:              #dce0e8;  /* crust */
   --code-text:            #8839ef;  /* mauve */
+  --warning-soft:         rgba(223, 142, 29, 0.14);  /* yellow, light */
 }
 
 /* ── Catppuccin Frappe (dark) ── */
@@ -41,6 +42,7 @@
     --error-soft:           rgba(231, 130, 132, 0.12);
     --code-bg:              #232634;  /* crust */
     --code-text:            #ca9ee6;  /* mauve */
+    --warning-soft:         rgba(229, 200, 144, 0.14);  /* yellow, dark */
   }
 }
 
@@ -343,6 +345,7 @@ body.show-thinking .thinking { display: block; }
 form {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 0.5rem;
   padding: 0.65rem 2rem 0.85rem;
@@ -381,6 +384,46 @@ form {
 
 #send:hover:not(:disabled) { opacity: 0.8; }
 #send:disabled { opacity: 0.35; cursor: default; }
+
+/* ── LLM status banner ── */
+.llm-banner {
+  margin: 0.5rem 0;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--activity);
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.bubble.degraded {
+  border-left: 3px solid var(--activity);
+  background: var(--warning-soft);
+}
+
+/* ── Command chips ── */
+.command-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  width: 100%;
+  margin-bottom: 0.35rem;
+}
+
+.command-chips[hidden] {
+  display: none;
+}
+
+.command-chips button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
 
 /* ── Mobile ── */
 @media (max-width: 600px) {

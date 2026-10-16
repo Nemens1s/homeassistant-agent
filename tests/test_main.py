@@ -78,10 +78,20 @@ def test_frontend_served_at_root():
     assert "html" in resp.headers["content-type"]
 
 
+def test_hidden_command_chips_stay_hidden():
+    # `.command-chips { display: flex }` beats the UA `[hidden]` rule, so the
+    # chips need their own [hidden] rule or they are always visible.
+    from pathlib import Path
+
+    css = (Path(__file__).parent.parent / "frontend" / "style.css").read_text()
+    compact = "".join(css.split())
+    assert ".command-chips[hidden]{display:none;}" in compact
+
+
 def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None, fast_path_health=None):
         captured["audit"] = ctx.audit
         captured["rest"] = ctx.rest
         class A:
@@ -106,7 +116,7 @@ def test_lifespan_wires_durable_checkpointer(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None, fast_path_health=None):
         captured["checkpointer"] = checkpointer
         class A:
             async def ainvoke(self, *a, **k):
@@ -231,7 +241,7 @@ def test_lifespan_builds_fast_path_when_fast_path_enabled(monkeypatch):
     registry._reset_for_tests()
     captured = {}
 
-    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None):
+    def fake_build_agent(settings, ctx, checkpointer=None, fast_path=None, telemetry=None, enabled=None, fast_path_health=None):
         # Does NOT call registry.load_all(), so only the lifespan can load it.
         captured["fast_path"] = fast_path
         class A:
@@ -310,3 +320,63 @@ def test_create_app_makes_agent_info_logs_visible():
         assert logger.handlers, name  # uvicorn configures only its own loggers
     create_app(_settings())  # idempotent: building twice adds no second handler
     assert len(logging.getLogger("agent").handlers) == 1
+
+
+def test_health_reports_tracker_state_and_stays_200():
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        resp = client.get("/api/health")
+    body = resp.json()
+    assert resp.status_code == 200
+    for key in ("llm_state", "llm_since", "llm_error", "provider", "fast_path_state"):
+        assert key in body
+    assert body["llm_state"] in ("unknown", "down")
+    assert body["llm"] is False
+    assert body["fast_path_state"] is None
+
+
+def test_health_llm_true_when_tracker_up():
+    from app.health import UP
+
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        client.portal.call(client.app.state.llm_health.stop)
+        client.app.state.llm_health.state = UP
+        body = client.get("/api/health").json()
+    assert body["llm"] is True
+    assert body["llm_state"] == "up"
+
+
+def test_unresolved_auto_provider_hot_swaps_agent_on_recovery(monkeypatch):
+    from app.agent import llm_health as llm_health_mod
+
+    async def boot_probe_failed(cfg, client=None):
+        return cfg.model_copy(update={"llm_provider": "openai"})
+
+    reresolve_calls = []
+
+    async def now_ollama(cfg, client=None):
+        reresolve_calls.append(1)
+        return cfg.model_copy(update={"llm_provider": "ollama"})
+
+    monkeypatch.setattr("app.main.resolve_llm_settings", boot_probe_failed)
+    monkeypatch.setattr(llm_health_mod, "resolve_llm_settings", now_ollama)
+    app = create_app(_settings())
+    with TestClient(app) as client:
+        state = client.app.state
+        client.portal.call(state.llm_health.stop)
+        assert state.llm_health.state == "down"
+        old_agent = state.agent
+        old_probe = state.llm_health._probe
+        client.portal.call(state.llm_health.mark_up)
+        assert state.settings.llm_provider == "ollama"
+        assert state.agent is not old_agent
+        assert reresolve_calls == [1]
+        # The probe now targets the resolved provider, not the unresolved set.
+        assert state.llm_health._probe is not old_probe
+        # A later outage + recovery does not re-resolve again.
+        swapped_agent = state.agent
+        state.llm_health.mark_down("refused")
+        client.portal.call(state.llm_health.mark_up)
+        assert reresolve_calls == [1]
+        assert state.agent is swapped_agent

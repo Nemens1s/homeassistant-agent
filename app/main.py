@@ -21,12 +21,23 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent.checkpointer import open_checkpointer
+from app.agent.history import close_dangling_turn, ran_action_this_turn
+from app.agent.llm_health import (
+    build_fast_path_probe,
+    build_llm_probe,
+    is_llm_outage,
+    needs_reresolve,
+    reresolve,
+)
 from app.agent.llm_probe import resolve_llm_settings
 from app.agent.run_scope import scope_configurable
 from app.agent.streaming import stream_events
 from app.agent.factory import build_agent
 from app.audit import AuditSink
+from app.degraded import Reply
+from app.degraded.router import CommandRouter, offline_message
 from app.constants import WRITE_DOMAINS
+from app.health import DOWN, UNKNOWN, ServiceHealth
 from app.needle.factory import build_fast_path_backend
 from app.config import Settings, load_settings, warn_if_llm_unset
 from app.i18n import build_language_adapter, set_language_attributes
@@ -98,6 +109,8 @@ class ChatResponse(BaseModel):
     # translated. Gosling ignores unknown fields, so this is additive.
     language: str | None = None
     reply_en: str | None = None
+    # True when answered without the LLM (command or degraded mode); the reply is English.
+    degraded: bool = False
 
 
 class LabelRequest(BaseModel):
@@ -167,6 +180,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # write to the same DB.  None when telemetry is disabled or DB failed to open.
         app.state.telemetry_store = snapshot_conn
 
+        health_client = None
+        llm_health = None
+        fp_health = None
         try:
             try:
                 await ws.start(connect_timeout=cfg.ws_connect_timeout)
@@ -183,6 +199,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # this point uses run_cfg.
             run_cfg = await resolve_llm_settings(cfg)
 
+            # One client for every health probe; closed in `finally`.
+            health_client = httpx.AsyncClient()
+            unresolved = needs_reresolve(cfg, run_cfg)
+            initial = DOWN if unresolved else UNKNOWN
+            llm_health = ServiceHealth(
+                "llm", build_llm_probe(run_cfg, health_client, unresolved), initial=initial,
+            )
+            app.state.llm_health = llm_health
+
             ctx = ToolContext(settings=run_cfg, rest=rest, ws=ws, audit=audit, notes=notes, lang=language)
             # Load the tool registry before building the fast path: it guards on
             # registry.get("trigger_action"), and build_agent (which also
@@ -197,6 +222,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:
                 log.exception("fast path failed to build; running agent-only")
 
+            if fast_path is not None:
+                fp_health = ServiceHealth(
+                    "fast_path", build_fast_path_probe(run_cfg.fast_path_url, health_client),
+                )
+            app.state.fp_health = fp_health
+
             # Build telemetry tuple for build_agent when enabled.
             telemetry_arg = None
             if telemetry_provider is not None:
@@ -206,13 +237,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             async with open_checkpointer(run_cfg) as checkpointer:
                 agent = build_agent(
                     run_cfg, ctx, checkpointer=checkpointer, fast_path=fast_path,
-                    telemetry=telemetry_arg, enabled=enabled,
+                    telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
                 )
                 app.state.settings = run_cfg
                 app.state.ctx = ctx
                 app.state.rest = rest
                 app.state.ws = ws
                 app.state.agent = agent
+                app.state.router = CommandRouter(
+                    ctx, enabled, llm_health, fast_path=fast_path, fp_health=fp_health,
+                )
+
+                # Only an `auto` provider that could not be identified at boot
+                # needs re-resolving; an explicit provider never changes. Once
+                # resolved, the flag goes False for good.
+                still_unresolved = [unresolved]
+
+                async def _on_llm_recovered() -> None:
+                    if not still_unresolved[0]:
+                        return
+                    fresh = await reresolve(cfg, app.state.settings)
+                    if fresh is None:
+                        return
+                    log.info("llm: provider resolved to %s on recovery; rebuilding agent",
+                             fresh.llm_provider)
+                    app.state.agent = build_agent(
+                        fresh, ctx, checkpointer=checkpointer, fast_path=fast_path,
+                        telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
+                    )
+                    app.state.settings = fresh
+                    llm_health.set_probe(build_llm_probe(fresh, health_client))
+                    still_unresolved[0] = False
+
+                llm_health.on_recovery(_on_llm_recovered)
+                llm_health.start()
+                if fp_health is not None:
+                    fp_health.start()
 
                 # Event-triggered notes: the runner reads app.state.agent at fire
                 # time, the listener subscribes now (or on the first connect).
@@ -235,6 +295,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
                 yield
         finally:
+            if llm_health is not None:
+                await llm_health.stop()
+            if fp_health is not None:
+                await fp_health.stop()
+            if health_client is not None:
+                await health_client.aclose()
             if snapshot_conn is not None:
                 try:
                     snapshot_conn.close()
@@ -262,6 +328,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             reply_native=reply if reply != reply_en else None,
         )
 
+    def _wants_router(message: str) -> bool:
+        if CommandRouter.is_command(message):
+            return True
+        llm_health = getattr(app.state, "llm_health", None)
+        return llm_health is not None and llm_health.is_down
+
+    async def _router_reply(message: str, thread_id: str) -> Reply:
+        """The router's answer, or the generic offline reply if it fails —
+        a router bug must never turn into a 500."""
+        llm_health = getattr(app.state, "llm_health", None)
+        try:
+            reply = await app.state.router.handle(message, thread_id)
+        except Exception:
+            log.exception("degraded: router failed")
+            reply = None
+        if reply is None:
+            reply = Reply(offline_message(llm_health), "degraded")
+        return reply
+
+    async def _degraded_after_outage(exc: Exception, message: str, thread_id: str) -> Reply:
+        llm_health = getattr(app.state, "llm_health", None)
+        if llm_health is not None:
+            llm_health.mark_down(exc)
+        # An action may already have run before the model call that failed;
+        # re-running the same text through the router could fire it twice.
+        if await ran_action_this_turn(app.state.agent, thread_id):
+            text = ("I started on that, but my language model went offline before I "
+                    "could finish. Check the result before trying again. "
+                    + offline_message(llm_health))
+            return Reply(text, "degraded")
+        await close_dangling_turn(app.state.agent, thread_id)
+        return await _router_reply(message, thread_id)
+
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(req: ChatRequest) -> ChatResponse:
         log.info("chat thread=%s len=%d", req.thread_id, len(req.message))
@@ -274,6 +373,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request_id: str | None = None
 
         with tracer.start_as_current_span(C.SPAN_INVOKE_AGENT) as span:
+            # Commands, and every message while the LLM is down, are answered
+            # deterministically — before lang-mt, which may share the LLM's host.
+            if _wants_router(req.message):
+                reply = await _router_reply(req.message, req.thread_id)
+                try:
+                    span.set_attribute(C.GOSLING_PATH, reply.kind)
+                    span.set_attribute(C.GOSLING_OUTCOME, "ok")
+                except Exception:
+                    pass
+                return ChatResponse(reply=reply.text, degraded=True, language="en")
+
             # Translate on the way in; everything past this point is English.
             language = app.state.language
             inbound = await language.inbound(req.message, req.thread_id)
@@ -333,7 +443,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     request_id=request_id,
                 )
 
-            except Exception:
+            except Exception as exc:
+                if is_llm_outage(exc):
+                    # Original text on purpose: action names may be
+                    # non-English, and lang-mt may share the LLM's machine.
+                    reply = await _degraded_after_outage(exc, req.message, req.thread_id)
+                    try:
+                        span.set_attribute(C.GOSLING_OUTCOME, "llm_unavailable")
+                        span.set_attribute(C.GOSLING_PATH, reply.kind)
+                    except Exception:
+                        pass
+                    return ChatResponse(reply=reply.text, request_id=request_id,
+                                        degraded=True, language="en")
                 try:
                     span.set_attribute(C.GOSLING_OUTCOME, "error")
                     span.set_attribute(C.GOSLING_PATH, "agent")
@@ -355,7 +476,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def _sse(event: dict) -> str:
             return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
 
+        def _reply_events(reply: Reply, request_id) -> list[str]:
+            frames = []
+            for call in reply.tool_calls:
+                frames.append(_sse({"type": "tool_call", "name": call["name"], "args": {}}))
+                frames.append(_sse({"type": "tool_result", "name": call["name"],
+                                    "status": call["status"]}))
+            frames.append(_sse({"type": "done", "reply": reply.text, "reply_en": None,
+                                "language": "en", "degraded": True, "request_id": request_id}))
+            return frames
+
         async def sse() -> AsyncIterator[str]:
+            outcome = "ok"
             span = tracer.start_span(C.SPAN_INVOKE_AGENT)
             request_id: str | None = None
             # Make the root span CURRENT across the whole stream: child spans
@@ -365,6 +497,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # rows. Keep the manual .end() in `finally` (end_on_exit=False).
             try:
                 with trace.use_span(span, end_on_exit=False):
+                    trace_id = span.get_span_context().trace_id
+                    request_id = format(trace_id, "032x") if trace_id else None
+
+                    # Commands, and every message while the LLM is down, are
+                    # answered deterministically — before lang-mt.
+                    if _wants_router(req.message):
+                        reply = await _router_reply(req.message, req.thread_id)
+                        try:
+                            span.set_attribute(C.GOSLING_PATH, reply.kind)
+                        except Exception:
+                            pass
+                        for frame in _reply_events(reply, request_id):
+                            yield frame
+                        return
+
                     language = app.state.language
                     inbound = await language.inbound(req.message, req.thread_id)
                     set_language_attributes(span, language, inbound)
@@ -374,10 +521,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         span.set_attribute(C.GOSLING_CHANNEL, channel)
                     except Exception:
                         pass
-
-                    trace_id = span.get_span_context().trace_id
-                    request_id = format(trace_id, "032x") if trace_id else None
-                    outcome = "ok"
 
                     # Fast path is handled transparently by FastPathMiddleware inside the agent.
                     async for event in stream_events(
@@ -412,6 +555,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         elif event.get("type") == "error":
                             outcome = "error"
                             yield _sse({**event, "request_id": request_id})
+                        elif event.get("type") == "llm_unavailable":
+                            # Partial tokens already sent are overwritten by
+                            # the frontend with the `done` text.
+                            outcome = "llm_unavailable"
+                            reply = await _degraded_after_outage(
+                                ConnectionError(event.get("error", "")), req.message, req.thread_id,
+                            )
+                            for frame in _reply_events(reply, request_id):
+                                yield frame
                         else:
                             yield _sse(event)
 
@@ -435,28 +587,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict:
+        # Always HTTP 200: the Supervisor watchdog polls this endpoint, and a
+        # non-200 during an LLM outage would restart-loop the add-on. The body
+        # carries the real state; the trackers are read, never probed here.
         ha_ok = False
-        llm_ok = False
         try:
             ha_ok = await app.state.rest.ping()
         except Exception:
             pass
-        try:
-            s = app.state.settings
-            if s.llm_provider == "ollama":
-                health_url = f"{s.llm_url}/api/version"
-            else:
-                health_url = f"{s.llm_url}/health"
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(health_url)
-                llm_ok = resp.status_code == 200
-        except Exception:
-            pass
+        llm_health = getattr(app.state, "llm_health", None)
+        if llm_health is not None:
+            llm_snap = llm_health.snapshot()
+        else:
+            llm_snap = {"state": UNKNOWN, "since": None, "error": None}
+        llm_ok = llm_snap["state"] == "up"
+        fp_health = getattr(app.state, "fp_health", None)
+        fast_path_state = fp_health.state if fp_health is not None else None
         ws_ok = app.state.ws is not None and app.state.ws.connected
         return {
             "status": "ok" if (ha_ok and llm_ok) else "degraded",
             "ha": ha_ok,
             "llm": llm_ok,
+            "llm_state": llm_snap["state"],
+            "llm_since": llm_snap["since"],
+            "llm_error": llm_snap["error"],
+            "provider": app.state.settings.llm_provider,
+            "fast_path_state": fast_path_state,
             "websocket": ws_ok,
         }
 

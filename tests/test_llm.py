@@ -83,3 +83,24 @@ def test_openai_compat_provider_defaults_model_name_when_unset():
     llm = build_llm(s)
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name  # non-empty fallback
+
+
+def test_ollama_client_fails_fast_on_connect():
+    from app.agent.llm import build_llm
+    from app.config import Settings
+
+    llm = build_llm(Settings(_env_file=None, llm_provider="ollama"))
+    timeout = llm.client_kwargs["timeout"]
+    assert timeout.connect == 3.0
+    assert timeout.read == 300.0
+
+
+def test_openai_compatible_clients_fail_fast_and_retry_once():
+    from app.agent.llm import build_llm
+    from app.config import Settings
+
+    for provider in ("llamacpp", "openai"):
+        llm = build_llm(Settings(_env_file=None, llm_provider=provider, llm_url="http://x/v1"))
+        assert llm.request_timeout.connect == 3.0
+        assert llm.request_timeout.read == 300.0
+        assert llm.max_retries == 1

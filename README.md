@@ -143,6 +143,31 @@ normal agent on any network error, a low-confidence decision, or no match.
 | `fast_path_url` | `` | Base URL of the remote fast-path service |
 | `fast_path_confidence_threshold` | `0.0` | Fire only at/above this confidence |
 
+## Degraded mode (LLM offline)
+
+Gosling probes its LLM server (llama.cpp `/health`, Ollama `/api/version`,
+others `/models`) every 15 s while it is down and every 60 s while it is up,
+and marks it down immediately when a request fails to connect. While the LLM
+is down:
+
+- Requests fail in about 3 s instead of hanging, and the web UI shows an
+  "LLM offline — command mode" banner.
+- Typed text is matched against your `ai_*` action names. One clear match
+  runs (still subject to the AI-actions switch) when every word you typed is
+  part of the action's name and the text is not a question ("is the garage
+  door open?" never opens it); otherwise you get a numbered "did you mean"
+  list. Anything else gets an "LLM offline" reply.
+- Requests about later ("when…", "at 18:00…") are refused, never run now.
+
+Slash commands work at any time, LLM or not, and always answer in English:
+`/actions`, `/run <number or name> [key=value …]`, `/notes`,
+`/cancel <id>`, `/help`. They are not saved in the conversation.
+
+If the fast path is configured, its `/health` is probed the same way; while
+it is down, requests skip it instead of waiting out its timeout.
+`/api/health` reports `llm_state`, `llm_since`, `fast_path_state` and always
+returns HTTP 200 (so the Supervisor watchdog never restart-loops the add-on).
+
 ## Tools
 
 The agent's tool menu is assembled once at add-on start: every tool allowed

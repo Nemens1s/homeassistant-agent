@@ -122,7 +122,7 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
 
 def build_agent(
     settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None,
-    telemetry=None, enabled=None,
+    telemetry=None, enabled=None, fast_path_health=None,
 ):
     """Build the agent.
 
@@ -133,6 +133,8 @@ def build_agent(
         enabled: Optional set of tool names to offer (see
             ``registry.resolve_enabled``). ``None`` builds every tool allowed
             by tier, which is the current behaviour.
+        fast_path_health: ServiceHealth of the fast-path service; the
+            middleware skips classification while it is down.
     """
     registry.load_all()
     llm = build_llm(settings)
@@ -158,6 +160,7 @@ def build_agent(
             telemetry_tracer=telemetry_tracer,
             telemetry_store_conn=telemetry_store_conn,
             rest=ctx.rest,
+            fast_path_health=fast_path_health,
         ),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )

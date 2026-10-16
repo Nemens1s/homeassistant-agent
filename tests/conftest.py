@@ -108,3 +108,25 @@ def _skip_llm_probe(monkeypatch):
 
     monkeypatch.setattr("app.main.resolve_llm_settings", _identity)
     monkeypatch.setattr("app.cli.resolve_llm_settings", _identity)
+
+
+@pytest.fixture(autouse=True)
+def _llm_health_without_verdict(monkeypatch):
+    """Nothing listens on the tests' llm_url, so the lifespan's background
+    LLM probe would mark the tracker down within moments and the degraded
+    router would answer every chat request instead of the fake agent. A probe
+    that never returns keeps the tracker at its boot state (unknown), like a
+    fresh boot before the first probe. Tests that need a verdict set it
+    themselves (mark_down / mark_up); tests/test_llm_health.py exercises the
+    real probe directly.
+    """
+    import asyncio
+
+    def _no_verdict_probe(settings, client, unresolved=False):
+        async def probe():
+            await asyncio.Event().wait()
+            return False
+
+        return probe
+
+    monkeypatch.setattr("app.main.build_llm_probe", _no_verdict_probe)

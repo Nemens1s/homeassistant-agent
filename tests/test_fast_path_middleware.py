@@ -293,3 +293,59 @@ async def test_deferred_request_falls_through_to_llm():
     )
     assert called == {"yes": True}
     assert resp.content == "saving a note"
+
+
+@pytest.mark.asyncio
+async def test_skips_classification_while_fast_path_down():
+    from app.health import ServiceHealth
+
+    class _Counting:
+        name = "counting"
+
+        def __init__(self):
+            self.calls = 0
+
+        async def classify(self, message, menu):
+            # Counted, not raised: the middleware swallows classify errors,
+            # so raising here would pass even if the skip were missing.
+            self.calls += 1
+            return Decision("automation.ai_action_night", 0.9)
+
+    async def _probe():
+        return False
+
+    backend = _Counting()
+    health = ServiceHealth("fast_path", _probe)
+    health.mark_down("off")
+    mw = FastPathMiddleware(backend, _FakeMenu(_MENU), threshold=0.0, health=health)
+
+    async def handler(request):
+        return AIMessage("llm reply")
+
+    resp = await mw.awrap_model_call(_request([HumanMessage("goodnight")]), handler)
+    assert resp.content == "llm reply"
+    assert backend.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_connection_error_marks_fast_path_down():
+    import httpx
+    from app.health import DOWN, ServiceHealth
+
+    class _Refused:
+        name = "refused"
+        async def classify(self, message, menu):
+            raise httpx.ConnectError("refused")
+
+    async def _probe():
+        return True
+
+    health = ServiceHealth("fast_path", _probe)
+    mw = FastPathMiddleware(_Refused(), _FakeMenu(_MENU), threshold=0.0, health=health)
+
+    async def handler(request):
+        return AIMessage("llm reply")
+
+    resp = await mw.awrap_model_call(_request([HumanMessage("goodnight")]), handler)
+    assert resp.content == "llm reply"
+    assert health.state == DOWN

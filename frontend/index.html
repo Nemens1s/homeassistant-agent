@@ -18,8 +18,16 @@
   </header>
   <div class="layout">
     <div class="chat-column">
+      <div id="llm-banner" class="llm-banner" hidden></div>
       <main id="log"></main>
       <form id="row">
+        <div id="command-chips" class="command-chips" hidden>
+          <button type="button" data-cmd="/actions">/actions</button>
+          <button type="button" data-cmd="/run ">/run</button>
+          <button type="button" data-cmd="/notes">/notes</button>
+          <button type="button" data-cmd="/cancel ">/cancel</button>
+          <button type="button" data-cmd="/help">/help</button>
+        </div>
         <input id="input" placeholder="Ask about your home…" autocomplete="off" autofocus />
         <button id="send" type="submit">→</button>
       </form>

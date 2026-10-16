@@ -10,9 +10,59 @@ dropped).
 
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, HumanMessage
+import logging
+
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.telemetry.thinking import split_thinking
+
+log = logging.getLogger("agent.history")
+
+# Closes a turn whose model call failed because the LLM was unreachable, so
+# the thread never holds two user messages in a row. Hidden from the UI.
+UNANSWERED_MARKER = "(not answered: language model unavailable)"
+
+
+async def close_dangling_turn(agent, thread_id: str) -> None:
+    """If the thread ends with a user message (its model call failed),
+    append the marker as the model's reply. Best-effort; never raises."""
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        snapshot = await agent.aget_state(config)
+        messages = (snapshot.values or {}).get("messages", [])
+        if messages and isinstance(messages[-1], HumanMessage):
+            await agent.aupdate_state(
+                config, {"messages": [AIMessage(content=UNANSWERED_MARKER)]}, as_node="model",
+            )
+    except Exception:
+        log.warning("could not close dangling turn for thread %s", thread_id, exc_info=True)
+
+
+def _is_action_tool(name: str | None) -> bool:
+    from app.tools import registry
+    from app.tools.base import Tier
+
+    definition = registry.get(name or "")
+    return definition is not None and definition.tier >= Tier.ACTION
+
+
+async def ran_action_this_turn(agent, thread_id: str) -> bool:
+    """True when an ACTION-tier tool (trigger_action, notify_user) already
+    ran since the thread's last user message — so the router must not run
+    the same text again after the LLM died mid-turn. Best-effort; never
+    raises, False on any error."""
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        snapshot = await agent.aget_state(config)
+        messages = (snapshot.values or {}).get("messages", [])
+        for message in reversed(messages):
+            if isinstance(message, HumanMessage):
+                return False
+            if isinstance(message, ToolMessage) and _is_action_tool(message.name):
+                return True
+    except Exception:
+        log.warning("could not inspect the current turn of thread %s", thread_id, exc_info=True)
+    return False
 
 
 def display_transcript(messages) -> list[dict]:
@@ -30,6 +80,8 @@ def display_transcript(messages) -> list[dict]:
             if text.strip():
                 turns.append({"role": "user", "text": text})
         elif isinstance(message, AIMessage):
+            if message.content == UNANSWERED_MARKER:
+                continue
             _, text = split_thinking(message)
             if text.strip():
                 turns.append({"role": "bot", "text": text})
