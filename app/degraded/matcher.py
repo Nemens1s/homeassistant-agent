@@ -1,8 +1,10 @@
 """Fuzzy match of free text against action names, for when the LLM is down.
 
 Never guesses on a write: an action fires only with one clear winner (high
-score AND a clear margin over the runner-up). Anything less returns a short
-candidate list for the user to pick from with /run <n>.
+score AND a clear margin over the runner-up), when every meaningful word of
+the text is part of that action's name, and when the text is not a question
+("is the garage door open?" must never open it). Anything less returns a
+short candidate list for the user to pick from with /run <n>.
 """
 
 from __future__ import annotations
@@ -22,6 +24,13 @@ _PREFIX = "ai action:"
 _FILLER = frozenset({
     "please", "can", "could", "you", "the", "a", "an",
     "turn", "switch", "run", "do", "my", "to",
+    "in", "of", "for", "at", "into", "with",
+})
+# A text starting with one of these is a question about the home, never an
+# order to change it.
+_QUESTION_WORDS = frozenset({
+    "is", "are", "did", "does", "do", "was", "were", "what", "why", "when",
+    "how", "which", "who", "can", "could", "will", "would", "should",
 })
 _NON_WORD = re.compile(r"[^\w\s]")
 
@@ -57,6 +66,25 @@ def score(query: str, name: str) -> float:
     return 0.6 * jaccard + 0.4 * ratio
 
 
+def is_question(text: str) -> bool:
+    stripped = text.strip()
+    if stripped.endswith("?"):
+        return True
+    words = _NON_WORD.sub(" ", stripped.lower()).split()
+    if not words:
+        return False
+    return words[0] in _QUESTION_WORDS
+
+
+def _covers(query: str, name: str) -> bool:
+    """Every meaningful word of *query* is a word of the action *name*."""
+    name_words = set(normalise(name))
+    for word in normalise(query):
+        if word not in name_words:
+            return False
+    return True
+
+
 def _row_name(row: dict) -> str:
     name = row.get("name") or ""
     if name:
@@ -82,7 +110,8 @@ def match_action(text: str, rows: list[dict]) -> Match:
     second_score = 0.0
     if len(scored) > 1:
         second_score = scored[1][0]
-    if best_score >= FIRE_SCORE and best_score - second_score >= FIRE_MARGIN:
+    clear_winner = best_score >= FIRE_SCORE and best_score - second_score >= FIRE_MARGIN
+    if clear_winner and not is_question(text) and _covers(text, _row_name(rows[best_index])):
         return Match(winner=rows[best_index])
     candidates = []
     for value, row_index in scored[:MAX_CANDIDATES]:
