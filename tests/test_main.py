@@ -78,6 +78,16 @@ def test_frontend_served_at_root():
     assert "html" in resp.headers["content-type"]
 
 
+def test_hidden_command_chips_stay_hidden():
+    # `.command-chips { display: flex }` beats the UA `[hidden]` rule, so the
+    # chips need their own [hidden] rule or they are always visible.
+    from pathlib import Path
+
+    css = (Path(__file__).parent.parent / "frontend" / "style.css").read_text()
+    compact = "".join(css.split())
+    assert ".command-chips[hidden]{display:none;}" in compact
+
+
 def test_lifespan_wires_audit_and_write_domains(monkeypatch, tmp_path):
     captured = {}
 

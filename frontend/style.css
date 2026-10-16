@@ -410,6 +410,10 @@ form {
   margin-bottom: 0.35rem;
 }
 
+.command-chips[hidden] {
+  display: none;
+}
+
 .command-chips button {
   font: inherit;
   font-size: 0.85rem;
