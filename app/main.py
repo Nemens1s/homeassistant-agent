@@ -41,6 +41,7 @@ from app.i18n import build_language_adapter
 from app.i18n.store import LangOverlay
 from app.memory.store import NoteStore
 from app.needle.factory import build_fast_path_backend
+from app.retention import RetentionJob, ThreadActivity
 from app.telemetry.setup import get_tracer, init_telemetry, shutdown_telemetry
 from app.telemetry.store import open_store
 from app.tools import registry
@@ -262,7 +263,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await listener.start()
                 app.state.event_listener = listener
 
-                yield
+                # Daily pruning of old telemetry and idle threads. Threads are
+                # only pruned when they are durable (checkpoint_db_path set).
+                activity = None
+                if run_cfg.checkpoint_db_path:
+                    try:
+                        activity = ThreadActivity(run_cfg.checkpoint_db_path)
+                    except Exception:
+                        log.warning("retention: thread activity unavailable", exc_info=True)
+                retention = RetentionJob(
+                    run_cfg, telemetry_conn=snapshot_conn, checkpointer=checkpointer,
+                    activity=activity, overlay=overlay,
+                )
+                retention.start()
+
+                try:
+                    yield
+                finally:
+                    # Stop before the checkpointer closes: a prune uses it.
+                    retention.stop()
+                    if activity is not None:
+                        activity.close()
         finally:
             if tools_refresh is not None:
                 tools_refresh.cancel()

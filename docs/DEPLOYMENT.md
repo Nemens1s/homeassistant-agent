@@ -46,7 +46,8 @@ this path.
    `max_history_messages`, `enable_tool_subsetting`, `fast_path_*`,
    `person_name_exclude`, the language-layer tuning knobs
    (`lang_mt_url`/`default_language`/`min_confidence`/`lang_mt_timeout_s`),
-   `telemetry_enabled`, and the note-scheduling knobs
+   `telemetry_enabled`, `telemetry_retention_days`, `thread_retention_days`
+   (daily pruning, 30 days each; 0 keeps everything), and the note-scheduling knobs
    (`memory_note_default_ttl_hours`, `memory_note_max_ttl_hours`,
    `time_note_grace_minutes`) — has a code default and stays hidden from the
    Configuration tab until you add it explicitly. `checkpoint_db_path`,

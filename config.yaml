@@ -73,6 +73,8 @@ schema:
   min_confidence: "float(0,1)?"
   lang_mt_timeout_s: "float(0.1,60)?"
   telemetry_enabled: "bool?"
+  telemetry_retention_days: "int(0,3650)?"
+  thread_retention_days: "int(0,3650)?"
   watched_entities: ["str"]
   clock_entity: "str"
   event_confirmations_enabled: "bool"

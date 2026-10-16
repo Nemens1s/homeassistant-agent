@@ -59,7 +59,8 @@ Everything else (LLM sampling knobs like `temperature`/`top_p`/`num_ctx`,
 `llm_provider`, `recursion_limit`, `max_rows`,
 `max_history_messages`, `enable_tool_subsetting`, the `fast_path_*` keys,
 `person_name_exclude`, the `lang_mt_*`/`default_language`/`min_confidence`
-language-layer tuning, `telemetry_enabled`, and the `memory_note_*`/
+language-layer tuning, `telemetry_enabled`, the `telemetry_retention_days`/
+`thread_retention_days` pruning windows, and the `memory_note_*`/
 `time_note_grace_minutes` note-scheduling knobs) stays in the add-on schema
 with a code default and is hidden from the Configuration tab until you add
 it yourself. `checkpoint_db_path`, `telemetry_db_path`, and `glossary_path`

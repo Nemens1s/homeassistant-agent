@@ -87,7 +87,6 @@ def test_allowed_domains_is_gone_and_ignored():
 def test_dead_options_are_gone():
     s = Settings(_env_file=None)
     assert not hasattr(s, "otlp_endpoint")
-    assert not hasattr(s, "telemetry_retention_days")
     assert not hasattr(s, "needle_menu_ttl_s")
 
 
