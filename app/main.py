@@ -4,6 +4,7 @@ config-injected and testable (no import-time singletons)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -53,6 +54,9 @@ log = logging.getLogger("agent")
 # loggers, so without this every agent.* INFO line (tool audit, event
 # matches, firings) is silently dropped and only warnings get through.
 _APP_LOGGERS = ("agent", "fast_path")
+
+# How often tool availability probes re-run (see registry.refresh_enabled).
+_TOOLS_REFRESH_SECONDS = 300
 
 
 def _configure_app_logging() -> None:
@@ -140,6 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.telemetry_store = snapshot_conn
 
         health_client = None
+        tools_refresh = None
         llm_health = None
         fp_health = None
         try:
@@ -211,6 +216,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # resolved, the flag goes False for good.
                 still_unresolved = [unresolved]
 
+                def _rebuild_agent(settings: Settings) -> None:
+                    # Runs already in flight finish on the old agent; the
+                    # event runner reads app.state.agent at fire time.
+                    app.state.agent = build_agent(
+                        settings, ctx, checkpointer=checkpointer, fast_path=fast_path,
+                        telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
+                    )
+                    app.state.settings = settings
+
                 async def _on_llm_recovered() -> None:
                     if not still_unresolved[0]:
                         return
@@ -219,14 +233,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         return
                     log.info("llm: provider resolved to %s on recovery; rebuilding agent",
                              fresh.llm_provider)
-                    app.state.agent = build_agent(
-                        fresh, ctx, checkpointer=checkpointer, fast_path=fast_path,
-                        telemetry=telemetry_arg, enabled=enabled, fast_path_health=fp_health,
-                    )
-                    app.state.settings = fresh
+                    _rebuild_agent(fresh)
                     llm_health.set_probe(build_llm_probe(fresh, health_client))
                     still_unresolved[0] = False
 
+                async def _refresh_tools_forever() -> None:
+                    # Availability probes ran once above; a half-booted HA (no
+                    # vacuum.* yet, say) would hide those tools until restart.
+                    while True:
+                        await asyncio.sleep(_TOOLS_REFRESH_SECONDS)
+                        try:
+                            if await registry.refresh_enabled(ctx, enabled):
+                                _rebuild_agent(app.state.settings)
+                        except Exception:
+                            log.warning("tools: refresh failed; keeping the current set",
+                                        exc_info=True)
+
+                tools_refresh = asyncio.create_task(_refresh_tools_forever())
                 llm_health.on_recovery(_on_llm_recovered)
                 llm_health.start()
                 if fp_health is not None:
@@ -241,6 +264,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
                 yield
         finally:
+            if tools_refresh is not None:
+                tools_refresh.cancel()
             if llm_health is not None:
                 await llm_health.stop()
             if fp_health is not None:

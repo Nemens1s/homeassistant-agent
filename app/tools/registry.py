@@ -98,6 +98,22 @@ async def resolve_enabled(ctx) -> set[str]:
     return enabled
 
 
+async def refresh_enabled(ctx, enabled: set[str]) -> bool:
+    """Re-run the availability probes and update `enabled` IN PLACE (the
+    router and event runner hold the same set). Returns True when it changed,
+    i.e. when the agent must be rebuilt to offer the new tool list. A home
+    that was half-booted at startup gets its missing tools back this way."""
+    fresh = await resolve_enabled(ctx)
+    if fresh == enabled:
+        return False
+    added = sorted(fresh - enabled)
+    removed = sorted(enabled - fresh)
+    log.info("tools changed: added=%s removed=%s", added, removed)
+    enabled.clear()
+    enabled.update(fresh)
+    return True
+
+
 def load_all(modules: tuple[str, ...] = _DEFAULT_MODULES) -> None:
     """Import every tool module so its register() call runs. Clears first so
     it is safe to call even when side-effect imports have already registered
