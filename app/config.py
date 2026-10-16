@@ -28,13 +28,13 @@ class Settings(BaseSettings):
     # LLM backend
     # "auto" (default) probes llm_url to pick ollama/llamacpp/openai; see
     # app/agent/llm_probe.py. Set explicitly to skip the probe.
-    llm_provider: str = "auto"  # "ollama", "llamacpp" (llama-server HTTP API), or any litellm provider
+    llm_provider: str = "auto"  # "ollama", "llamacpp" (llama-server), or anything else = OpenAI-compatible
     llm_url: str = Field(
         "http://localhost:11434",
         validation_alias=AliasChoices("LLM_URL"),
     )
     llm_model: str = "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
-    api_key: str = ""  # cloud provider key, used only by litellm providers
+    api_key: str = ""  # key for an OpenAI-compatible endpoint; unused by Ollama
 
     # Model options — small-model tuning (spec: LLM factory & model settings)
     temperature: float = Field(

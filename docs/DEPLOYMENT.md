@@ -25,7 +25,7 @@ this path.
    |---|---|---|
    | `llm_url` | `` | Ollama, llama.cpp (llama-server), or any OpenAI-compatible base URL |
    | `llm_model` | `` | Model tag served by the LLM backend |
-   | `api_key` | `` | Cloud provider key (only litellm providers) |
+   | `api_key` | `` | Key for an OpenAI-compatible endpoint (unused by Ollama) |
    | `allow_actions` | `false` | `true` unlocks `trigger_action`/`notify_user`/scheduling |
    | `ai_actions_switch` | `input_boolean.ai_triggered_actions` | Home-level AI kill switch; empty disables it |
    | `notify_action` | `script.ai_action_notify` | The only script `notify_user` may call |
