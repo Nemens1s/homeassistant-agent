@@ -4,6 +4,47 @@ const sendBtn = document.getElementById('send');
 const resetBtn = document.getElementById('reset');
 const form = document.getElementById('row');
 const thinkingToggle = document.getElementById('thinking-toggle');
+const llmBanner = document.getElementById('llm-banner');
+const commandChips = document.getElementById('command-chips');
+
+// LLM status banner. /api/health reads the server's trackers, so polling is
+// cheap. Relative path for HA ingress.
+async function refreshHealth() {
+  let health;
+  try {
+    const resp = await fetch('api/health');
+    health = await resp.json();
+  } catch (err) {
+    return;
+  }
+  if (health.llm_state === 'down') {
+    let since = '';
+    if (health.llm_since) {
+      since = ' since ' + new Date(health.llm_since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    let text = 'LLM offline' + since + ' — command mode. Type /help.';
+    if (health.fast_path_state === 'down') {
+      text += ' · fast path offline';
+    }
+    llmBanner.textContent = text;
+    llmBanner.hidden = false;
+  } else {
+    llmBanner.hidden = true;
+  }
+}
+refreshHealth();
+setInterval(refreshHealth, 20000);
+
+input.addEventListener('input', function () {
+  commandChips.hidden = !input.value.startsWith('/');
+});
+commandChips.addEventListener('click', function (e) {
+  const cmd = e.target.getAttribute('data-cmd');
+  if (!cmd) return;
+  input.value = cmd;
+  commandChips.hidden = true;
+  input.focus();
+});
 
 const LOADING_WORDS = [
   'Cogitating', 'Reticulating', 'Percolating', 'Discombobulating',
@@ -365,6 +406,10 @@ async function sendMessage() {
           }
           bubble.className = 'bubble rendered';
           bubble.innerHTML = renderMarkdown(finalText);
+          if (evt.degraded) {
+            bubble.classList.add('degraded');
+            refreshHealth();
+          }
           if (evt.request_id) {
             addFeedback(turn, evt.request_id);
           }
@@ -396,6 +441,7 @@ function newConversation() {
 
 form.addEventListener('submit', function (e) {
   e.preventDefault();
+  commandChips.hidden = true;
   sendMessage();
 });
 resetBtn.addEventListener('click', newConversation);
