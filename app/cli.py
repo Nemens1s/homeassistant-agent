@@ -1,6 +1,6 @@
 """Capability-testing REPL. Streams tokens; tool calls appear via the
 agent.tools audit log lines (INFO). Requires HA_BASE_URL, HA_TOKEN and an
-Ollama server (see .env)."""
+LLM server (see .env)."""
 
 import argparse
 import asyncio

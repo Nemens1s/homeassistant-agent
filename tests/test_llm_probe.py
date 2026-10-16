@@ -13,12 +13,6 @@ def _client(routes):
     return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://llm")
 
 
-async def test_detects_ollama():
-    c = _client({"/api/tags": lambda r: httpx.Response(200, json={"models": []})})
-    s = await resolve_llm_settings(Settings(_env_file=None, llm_url="http://llm"), c)
-    assert s.llm_provider == "ollama"
-
-
 async def test_detects_llamacpp_and_reads_n_ctx():
     c = _client({"/props": lambda r: httpx.Response(
         200, json={"default_generation_settings": {"n_ctx": 32768}})})
@@ -34,7 +28,7 @@ async def test_api_key_means_cloud_without_probing():
 
 
 async def test_explicit_provider_is_kept():
-    c = _client({"/api/tags": lambda r: httpx.Response(200, json={})})
+    c = _client({"/props": lambda r: httpx.Response(200, json={})})
     s = await resolve_llm_settings(Settings(_env_file=None, llm_provider="llamacpp"), c)
     assert s.llm_provider == "llamacpp"
 

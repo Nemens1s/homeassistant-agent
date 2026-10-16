@@ -1,5 +1,6 @@
-"""LLM factory: local Ollama by default, any OpenAI-compatible cloud provider via ChatOpenAI.
-Everything downstream sees a BaseChatModel and stays provider-agnostic.
+"""LLM factory: every backend (llama.cpp's llama-server or any OpenAI-compatible
+cloud provider) goes through ChatOpenAI. Everything downstream sees a
+BaseChatModel and stays provider-agnostic.
 
 One builder per provider, dispatched by llm_provider. Unknown providers fall back
 to the plain OpenAI-compatible builder (safe for cloud APIs)."""
@@ -10,7 +11,6 @@ import httpx
 import logging
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_ollama import ChatOllama
 
 from app.agent.reasoning_chat_openai import ReasoningChatOpenAI
 from app.config import Settings
@@ -24,26 +24,6 @@ LLM_HTTP_TIMEOUT = httpx.Timeout(300.0, connect=3.0)
 # One retry rides out a blip; the SDK default (2, with backoff) multiplies an
 # outage into minutes.
 LLM_MAX_RETRIES = 1
-
-
-def _build_ollama(settings: Settings) -> BaseChatModel:
-    log.info(
-        "ChatOllama params: model=%s num_gpu=%s num_ctx=%s num_predict=%s temperature=%s seed=%s reasoning=%s keep_alive=%s",
-        settings.llm_model, settings.num_gpu, settings.num_ctx, settings.num_predict,
-        settings.temperature, settings.seed, settings.reasoning, settings.keep_alive,
-    )
-    return ChatOllama(
-        base_url=settings.llm_url,
-        model=settings.llm_model,
-        temperature=settings.temperature,
-        seed=settings.seed,
-        reasoning=settings.reasoning,
-        num_predict=settings.num_predict,
-        num_gpu=settings.num_gpu,
-        num_ctx=settings.num_ctx,
-        keep_alive=settings.keep_alive,
-        client_kwargs={"timeout": LLM_HTTP_TIMEOUT},
-    )
 
 
 def _build_llamacpp(settings: Settings) -> BaseChatModel:
@@ -63,8 +43,7 @@ def _openai_compat_kwargs(settings: Settings) -> dict:
     """Kwargs shared by every OpenAI-compatible endpoint (cloud or local).
     Only OpenAI-spec params — provider-specific knobs are added by the caller."""
     log.info(
-        "ChatOpenAI params: model=%s url=%s temperature=%s top_p=%s seed=%s max_tokens=%s"
-        " — num_ctx/num_gpu/keep_alive/reasoning are Ollama-only, ignored here",
+        "ChatOpenAI params: model=%s url=%s temperature=%s top_p=%s seed=%s max_tokens=%s",
         settings.llm_model, settings.llm_url, settings.temperature, settings.top_p,
         settings.seed, settings.num_predict,
     )
@@ -90,7 +69,6 @@ def _build_openai_compat(settings: Settings) -> BaseChatModel:
 
 # Provider -> builder. Anything not listed falls back to _build_openai_compat.
 _BUILDERS = {
-    "ollama": _build_ollama,
     "llamacpp": _build_llamacpp,
 }
 

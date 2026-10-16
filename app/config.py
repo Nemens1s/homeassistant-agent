@@ -26,15 +26,15 @@ class Settings(BaseSettings):
     ws_connect_timeout: float = 10.0
 
     # LLM backend
-    # "auto" (default) probes llm_url to pick ollama/llamacpp/openai; see
+    # "auto" (default) probes llm_url to pick llamacpp/openai; see
     # app/agent/llm_probe.py. Set explicitly to skip the probe.
-    llm_provider: str = "auto"  # "ollama", "llamacpp" (llama-server), or anything else = OpenAI-compatible
+    llm_provider: str = "auto"  # "llamacpp" (llama-server), or anything else = OpenAI-compatible
     llm_url: str = Field(
-        "http://localhost:11434",
+        "http://localhost:8080",
         validation_alias=AliasChoices("LLM_URL"),
     )
-    llm_model: str = "hf.co/empero-ai/Qwen3.8-2B-GGUF:Q6_K"
-    api_key: str = ""  # key for an OpenAI-compatible endpoint; unused by Ollama
+    llm_model: str = ""  # empty = a placeholder name (llama-server ignores it)
+    api_key: str = ""  # key for an OpenAI-compatible endpoint
 
     # Model options — small-model tuning (spec: LLM factory & model settings)
     temperature: float = Field(
@@ -53,11 +53,10 @@ class Settings(BaseSettings):
         1.1, description="Penalty on already-seen tokens to curb repetition (1.0 = none). llamacpp path."
     )
     seed: int = 42
-    reasoning: bool = False
-    num_predict: int = 2048
-    num_gpu: int = 16
+    num_predict: int = 2048  # sent as max_tokens
+    # Context size the history trimmer budgets for; with llm_provider "auto"
+    # it is read from llama-server's /props.
     num_ctx: int = 8192
-    keep_alive: int = -1
 
     show_thinking: bool = False  # stream <think> content to stdout in the CLI
 

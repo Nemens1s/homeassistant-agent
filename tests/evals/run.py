@@ -128,8 +128,7 @@ async def _agent_trace(settings, prompt: str) -> list[dict]:
                     pending[idx]["name"] += chunk["name"]
                 pending[idx]["args"] += chunk.get("args") or ""
             if pending:
-                # Ollama emits each tool call's args atomically, but OpenAI-compatible
-                # providers (llama.cpp, etc.) stream args incrementally — the first
+                # OpenAI-compatible providers (llama.cpp, etc.) stream args incrementally — the first
                 # delta is often a lone "{". json.loads on that partial raises; use
                 # LangChain's streaming-tolerant parser (same one it uses internally).
                 current["calls"] = [
@@ -218,7 +217,6 @@ async def main() -> int:
     output: dict = {
         "model": settings.llm_model,
         "provider": settings.llm_provider,
-        "num_gpu": settings.num_gpu,
         "num_ctx": settings.num_ctx,
         "cases": {},
     }

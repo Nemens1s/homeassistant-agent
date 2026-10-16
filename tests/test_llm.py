@@ -1,26 +1,7 @@
-from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
 from app.agent.llm import build_llm
 from app.config import Settings
-
-
-def test_ollama_provider_builds_chat_ollama_with_options():
-    s = Settings(
-        _env_file=None,
-        llm_provider="ollama", llm_url="http://laptop:11434",
-        llm_model="qwen3:8b", temperature=0.0, seed=7, reasoning=False,
-        num_predict=1024, num_ctx=4096, keep_alive=-1,
-    )
-    llm = build_llm(s)
-    assert isinstance(llm, ChatOllama)
-    assert llm.base_url == "http://laptop:11434"
-    assert llm.model == "qwen3:8b"
-    assert llm.seed == 7
-    assert llm.reasoning is False
-    assert llm.num_predict == 1024
-    assert llm.num_ctx == 4096
-    assert llm.keep_alive == -1
 
 
 def test_cloud_provider_builds_chat_openai():
@@ -83,16 +64,6 @@ def test_openai_compat_provider_defaults_model_name_when_unset():
     llm = build_llm(s)
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name  # non-empty fallback
-
-
-def test_ollama_client_fails_fast_on_connect():
-    from app.agent.llm import build_llm
-    from app.config import Settings
-
-    llm = build_llm(Settings(_env_file=None, llm_provider="ollama"))
-    timeout = llm.client_kwargs["timeout"]
-    assert timeout.connect == 3.0
-    assert timeout.read == 300.0
 
 
 def test_openai_compatible_clients_fail_fast_and_retry_once():

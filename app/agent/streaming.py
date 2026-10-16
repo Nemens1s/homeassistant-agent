@@ -18,9 +18,7 @@ class _ThinkBuffer:
 
     Handles <think>...</think> tags that may be split across chunk boundaries,
     as produced by llama.cpp and other OpenAI-compatible providers that inline
-    reasoning in the content stream. Ollama exposes reasoning separately via
-    additional_kwargs["reasoning_content"] and produces no <think> tags, so
-    feeding Ollama content through this buffer is a safe no-op.
+    reasoning in the content stream.
     """
 
     _OPEN = "<think>"
@@ -100,7 +98,7 @@ async def stream_events(
                 for tc in msg.tool_calls:
                     yield {"type": "tool_call", "name": tc["name"], "args": tc["args"]}
 
-                # Ollama reasoning models expose thinking here; other providers leave it empty.
+                # Providers that split reasoning out (ReasoningChatOpenAI) put it here.
                 thinking = msg.additional_kwargs.get("reasoning_content", "")
                 if thinking:
                     yield {"type": "thinking", "text": thinking}

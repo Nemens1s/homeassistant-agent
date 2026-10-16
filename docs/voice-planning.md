@@ -13,7 +13,7 @@ captured so the design decisions and hardware constraints aren't lost. Related:
 - Local-first: keep it on-prem, no cloud round-trip, matching the rest of the
   project.
 - Hardware today: HA host = mid-2011 Mac Mini (Sandy Bridge, **no AVX2**, weak);
-  "Ollama box" = laptop, **Intel i5-8250U** (4c/8t, **has AVX2**), 16 GB RAM,
+  "LLM box" = laptop, **Intel i5-8250U** (4c/8t, **has AVX2**), 16 GB RAM,
   2 GB VRAM GPU; dev/app currently runs on an Apple-Silicon Mac.
 
 ## The pipeline
@@ -22,7 +22,7 @@ captured so the design decisions and hardware constraints aren't lost. Related:
 [satellite: mic + wake word] → HA → STT → conversation agent → TTS → [satellite: speaker]
                                       │           │
                                       │           ├─ fast path: Needle → trigger automation.ai_*   [no LLM]
-                                      │           └─ fallback: Ollama LLM (read queries)            [GPU]
+                                      │           └─ fallback: llama.cpp LLM (read queries)            [GPU]
 ```
 
 Where language matters: **STT** (must handle RU/ET audio) and **the response**
@@ -37,8 +37,8 @@ then the conversation agent, then TTS. Neither the satellite nor our app is the
 conductor.
 
 - **Whisper is a separate service that HA calls**, running side-by-side with
-  Ollama on the i5 laptop (`wyoming-faster-whisper` container, Wyoming protocol).
-  Ollama and Whisper don't know about each other — HA talks to both. **Our app
+  llama.cpp on the i5 laptop (`wyoming-faster-whisper` container, Wyoming protocol).
+  llama.cpp and Whisper don't know about each other — HA talks to both. **Our app
   never touches audio.**
 - **Our app is HA's *conversation agent*** — it receives already-transcribed
   **text**, runs Needle/agent, returns a reply which HA speaks via TTS (Piper).
@@ -51,7 +51,7 @@ So our app has **two text entry points**, and STT is HA's job in both:
 
 1. **A small custom HA integration to make our app the conversation agent.** HA
    has no built-in "call an arbitrary HTTP endpoint" agent (the stock ones point
-   at Ollama/OpenAI/Anthropic directly, bypassing Needle). We'd write a thin
+   at llama.cpp/OpenAI/Anthropic directly, bypassing Needle). We'd write a thin
    `ConversationEntity` that forwards the text to `/api/chat` and returns the
    reply, then select it in the Assist pipeline.
 2. **Deciding where translation happens** — see below.
@@ -111,7 +111,7 @@ PyTorch Whisper. Multilingual models only (not `.en`).
 
 - The i5-8250U has **AVX2** (the Mac Mini does not), so `faster-whisper` is
   efficient on CPU: ~1–2 s for a typical 2–3 s command. Snappy enough.
-- Running on **CPU leaves the 2 GB GPU entirely for Ollama** — no VRAM
+- Running on **CPU leaves the 2 GB GPU entirely for llama.cpp** — no VRAM
   contention. And fast-path (trigger) turns never invoke the LLM anyway, so the
   common case is just STT (CPU) → Needle → HA.
 - **Not on the Mac Mini** — no AVX2, weak, already loaded; `small` there would be
@@ -119,7 +119,7 @@ PyTorch Whisper. Multilingual models only (not `.en`).
 - If `small` feels slow, try **`base`** (~2–3× faster, still decent RU for short
   commands) and A/B. GPU is a fallback if you want `small` faster.
 
-Deploy as a **`wyoming-faster-whisper`** container on the Ollama box
+Deploy as a **`wyoming-faster-whisper`** container on the LLM box
 (`--model small`, `--language ru` or auto-detect, int8, **model kept warm**). HA
 points its STT at it over the network — STT need not live on the HA host.
 
@@ -179,7 +179,7 @@ and the app.
   written: the app is packaged as an HA **App** on the HA host, and **Needle is
   decoupled** — it runs as a `remote` backend (`needle_backend: remote`,
   `needle_remote_url`) on a separate always-on machine to minimise latency. So
-  no heavy inference sits on the HA host: the LLM goes to Ollama and Needle to
+  no heavy inference sits on the HA host: the LLM goes to llama.cpp and Needle to
   its remote sidecar, both off-host.
 - Response localization: LLM answering directly in RU vs translate-back for TTS.
 
