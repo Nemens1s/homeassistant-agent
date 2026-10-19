@@ -3,6 +3,7 @@ from __future__ import annotations
 from langchain.agents.middleware import AgentMiddleware
 
 from app.agent.middleware.context_window_middleware import ContextWindowMiddleware
+from app.agent.middleware.current_time_middleware import CurrentTimeMiddleware
 from app.agent.middleware.history_cap_middleware import HistoryCapMiddleware
 from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware
@@ -53,4 +54,7 @@ def build_middleware(
         # outer to it, must see the raw message; a fast-path hit with the
         # block attached matches nothing, so every request fell through.
         middleware.append(WatchedEntitiesMiddleware(rest, settings.watched_entities))
+    # Innermost of all, for the same reason, and so the time is the very last
+    # thing in the prompt: everything before it stays a cacheable prefix.
+    middleware.append(CurrentTimeMiddleware())
     return middleware

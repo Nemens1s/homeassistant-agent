@@ -14,11 +14,11 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
-from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.utils.json import parse_partial_json
 
 from app.agent.factory import build_agent, build_system_prompt
-from app.agent.middleware.context_window_middleware import timestamped_system
+from app.agent.middleware.current_time_middleware import current_time_line
 from app.agent.llm import build_llm
 from app.agent.tool_router import select_tools
 from app.config import load_settings
@@ -213,7 +213,7 @@ async def main() -> int:
     enabled = await registry.resolve_enabled(ctx)
     tools = build_tools(ctx, max_tier=max_tier, enabled=enabled)
     llm = build_llm(settings)
-    system = timestamped_system(build_system_prompt(settings, ctx.skills_dir))
+    system = SystemMessage(build_system_prompt(settings, ctx.skills_dir))
     output: dict = {
         "model": settings.llm_model,
         "provider": settings.llm_provider,
@@ -256,7 +256,7 @@ async def main() -> int:
             case_data["trace"] = trace
         else:
             bound = llm.bind_tools(case_tools)
-            msg = await bound.ainvoke([system, HumanMessage(case["prompt"])])
+            msg = await bound.ainvoke([system, HumanMessage(case["prompt"] + "\n\n" + current_time_line())])
             ok, reason = check(case, msg.tool_calls)
             passed += ok
             case_data = {"passed": ok}

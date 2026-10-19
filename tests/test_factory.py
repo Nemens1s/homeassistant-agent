@@ -2,7 +2,8 @@ from datetime import datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from app.agent.middleware.context_window_middleware import timestamped_system, trim_history
+from app.agent.middleware.context_window_middleware import ContextWindowMiddleware, trim_history
+from app.agent.middleware.current_time_middleware import CurrentTimeMiddleware, with_current_time
 from app.agent.factory import build_agent, build_system_prompt
 from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware, latest_human_text
@@ -62,11 +63,53 @@ def test_read_only_prompt_does_not_mention_triggering(tmp_path):
     assert "trigger_action" not in prompt
 
 
-def test_timestamped_system_injects_current_time():
-    msg = timestamped_system("Base.")
-    assert isinstance(msg, SystemMessage)
-    assert msg.content.startswith("Base.")
-    assert f"Current time: {datetime.now().year}-" in msg.content
+def test_context_window_system_prompt_is_static():
+    # Byte-identical across calls, so llama.cpp can reuse the cached prefix.
+    seen = []
+
+    def handler(req):
+        seen.append(req.system_message.content)
+        return AIMessage("ok")
+
+    middleware = ContextWindowMiddleware("Base.", max_tokens=1000)
+    middleware.wrap_model_call(_model_request([], [HumanMessage("hi")]), handler)
+    middleware.wrap_model_call(_model_request([], [HumanMessage("hi")]), handler)
+    assert seen == ["Base.", "Base."]
+
+
+def test_current_time_goes_on_latest_human_only():
+    old = HumanMessage("earlier")
+    latest = HumanMessage("what time is it?")
+    out = with_current_time([old, AIMessage("hi"), latest, AIMessage("", tool_calls=[])])
+    assert out[0].content == "earlier"
+    assert out[2].content.startswith("what time is it?\n\nCurrent time: ")
+    assert f"Current time: {datetime.now().year}-" in out[2].content
+    assert latest.content == "what time is it?"  # original untouched
+
+
+def test_current_time_is_minute_precision():
+    out = with_current_time([HumanMessage("hi")])
+    stamp = out[0].content.split("Current time: ")[1].split(" ")[0]
+    # 2026-10-19T14:03+03:00 — no seconds, so calls within a run match.
+    assert stamp.count(":") == 2
+
+
+def test_current_time_multimodal_adds_text_part():
+    out = with_current_time([HumanMessage([{"type": "text", "text": "look"}])])
+    assert out[0].content[-1]["text"].startswith("Current time: ")
+
+
+def test_current_time_without_human_falls_back_to_system():
+    seen = {}
+
+    def handler(req):
+        seen["req"] = req
+        return AIMessage("ok")
+
+    req = _model_request([], [AIMessage("only ai")], system_message=SystemMessage("Base."))
+    CurrentTimeMiddleware().wrap_model_call(req, handler)
+    assert seen["req"].system_message.content.startswith("Base.\n\nCurrent time: ")
+    assert seen["req"].messages[0].content == "only ai"
 
 
 def test_trim_history_keeps_recent_and_starts_on_human():
@@ -174,11 +217,11 @@ def test_latest_human_text_empty_when_no_human():
     assert latest_human_text([AIMessage("only ai")]) == ""
 
 
-def _model_request(tools, messages):
+def _model_request(tools, messages, system_message=None):
     from langchain.agents.middleware import ModelRequest
 
     return ModelRequest(
-        model=object(), messages=messages, system_message=None, tool_choice=None,
+        model=object(), messages=messages, system_message=system_message, tool_choice=None,
         tools=tools, response_format=None, state={}, runtime=None,
     )
 

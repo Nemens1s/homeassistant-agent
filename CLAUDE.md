@@ -66,8 +66,10 @@ class in `app/config.py`; in the addon container it reads
   (connection/timeout/5xx = outage; bad output is not), and re-resolving an
   `auto` provider that could not be identified at boot (agent hot-swap).
 - `agent/factory.py` — `build_agent`: langchain v1 `create_agent` + custom
-  middleware (per-call history trimming + current-time injection into the
-  system prompt; never mutate checkpointed state) + per-run loop-guard reset.
+  middleware (per-call history trimming + the current time appended to the
+  latest user turn; never mutate checkpointed state) + per-run loop-guard
+  reset. The system prompt must stay byte-identical between calls — anything
+  per-call goes at the END of the prompt, or llama.cpp's prefix cache misses.
 - `i18n/` — the language adapter at the HTTP edge (off by default,
   `language_layer_enabled`). `inbound()` translates the user's message to
   English before the agent runs, `outbound()` translates the reply back, via
