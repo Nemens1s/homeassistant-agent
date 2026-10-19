@@ -5,6 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.middleware import build_middleware
+from app.agent.middleware.current_time_middleware import CurrentTimeMiddleware
 from app.agent.middleware.fast_path_middleware import FastPathMiddleware
 from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
 from app.fast_path.backend import Decision, FakeBackend
@@ -25,8 +26,10 @@ def test_fastpath_added_when_provided_and_tier2():
     s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False)
     mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()))
     assert "FastPathMiddleware" in _types(mws)
-    # outermost-first: with no watched entities FastPath is the innermost entry
-    assert isinstance(mws[-1], FastPathMiddleware)
+    # outermost-first: with no watched entities FastPath sits just outside
+    # CurrentTime, which is always innermost
+    assert isinstance(mws[-2], FastPathMiddleware)
+    assert isinstance(mws[-1], CurrentTimeMiddleware)
 
 
 def test_fastpath_absent_without_tier2():
@@ -71,8 +74,8 @@ class _Req:
 
 @pytest.mark.asyncio
 async def test_fastpath_classifies_raw_text_without_watched_entities_block():
-    # The <home_context> block is for the LLM only; with it attached the
-    # classifier matches nothing and every request falls through.
+    # The <home_context> block and the current time are for the LLM only; with
+    # them attached the classifier matches nothing and every request falls through.
     s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False,
                  watched_entities=["vacuum.x"])
     backend = _RecordingBackend()
@@ -80,9 +83,9 @@ async def test_fastpath_classifies_raw_text_without_watched_entities_block():
                            rest=_Rest())
     chain = []
     for m in mws:
-        if isinstance(m, (FastPathMiddleware, WatchedEntitiesMiddleware)):
+        if isinstance(m, (FastPathMiddleware, WatchedEntitiesMiddleware, CurrentTimeMiddleware)):
             chain.append(m)
-    assert len(chain) == 2
+    assert len(chain) == 3
 
     async def model(request):
         return AIMessage(content="ok")

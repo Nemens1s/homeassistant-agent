@@ -2,20 +2,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from datetime import datetime
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, SystemMessage, trim_messages
 from langchain_core.messages.utils import count_tokens_approximately
 
 log = logging.getLogger("agent.factory")
-
-
-def timestamped_system(base_prompt: str) -> SystemMessage:
-    now = datetime.now().astimezone()
-    return SystemMessage(
-        f"{base_prompt}\n\nCurrent time: {now.isoformat(timespec='seconds')} ({now.tzname()})"
-    )
 
 
 def _drop_reasoning(messages: list) -> list:
@@ -73,7 +65,8 @@ def trim_history(messages: list, max_tokens: int) -> list:
 
 class ContextWindowMiddleware(AgentMiddleware):
     """Non-destructive per-call trimming (the checkpointed history is left
-    intact) + fresh timestamp in the system prompt."""
+    intact). The system prompt is static so llama.cpp can reuse its cached
+    prefix; the current time is added at the end by CurrentTimeMiddleware."""
 
     def __init__(self, base_prompt: str, max_tokens: int):
         super().__init__()
@@ -82,7 +75,7 @@ class ContextWindowMiddleware(AgentMiddleware):
 
     def _prepare(self, request):
         messages = _drop_reasoning(trim_history(list(request.messages), self._max_tokens))
-        system = timestamped_system(self._base_prompt)
+        system = SystemMessage(self._base_prompt)
         try:
             return replace(request, messages=messages, system_message=system)
         except TypeError:  # pragma: no cover — future langchain versions may swap the dataclass for .override()

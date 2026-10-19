@@ -1,6 +1,6 @@
 """Builds the agent: LLM + tier-filtered tools + middleware that keeps a
-small model healthy (history trimmed to a token budget, current time injected
-into the system prompt on every call)."""
+small model healthy (history trimmed to a token budget, current time appended
+to the latest user turn on every call)."""
 
 from __future__ import annotations
 
