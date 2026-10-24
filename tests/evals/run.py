@@ -21,6 +21,7 @@ from langchain_core.utils.json import parse_partial_json
 
 from app.agent.factory import build_agent, build_system_prompt
 from app.agent.middleware.current_time_middleware import current_time_line
+from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
 from app.agent.llm import build_llm
 from app.agent.tool_router import select_tools
 from app.config import load_settings
@@ -71,7 +72,15 @@ def _forbidden(case: dict) -> list[str]:
     return forbidden
 
 
-def check(case: dict, tool_calls: list) -> tuple[bool, str]:
+def _context_answer_allowed(case: dict, watched) -> bool:
+    """Whether the case may be answered with no tool call: its entity is
+    watched, so its state is already in the <home_context> block production
+    attaches to the user turn (WatchedEntitiesMiddleware)."""
+    entity = case.get("context_answer_ok")
+    return bool(entity) and entity in watched
+
+
+def check(case: dict, tool_calls: list, watched=()) -> tuple[bool, str]:
     """Direct grade: was the FIRST tool call the expected one?"""
     banned = case.get("expect_not_tool")
     if banned:
@@ -80,6 +89,8 @@ def check(case: dict, tool_calls: list) -> tuple[bool, str]:
         return True, ""
 
     if not tool_calls:
+        if _context_answer_allowed(case, watched):
+            return True, ""
         return False, "no tool call"
     call = tool_calls[0]
     if call["name"] in _forbidden(case):
@@ -97,7 +108,7 @@ def all_calls(trace: list[dict]) -> list[dict]:
     return calls
 
 
-def check_reached(case: dict, trace: list[dict]) -> tuple[bool, str]:
+def check_reached(case: dict, trace: list[dict], watched=()) -> tuple[bool, str]:
     """Reached grade (verbose runs): the expected call happened at any point,
     no forbidden tool was called, and the run ended with an answer. Looking
     something up first is fine; acting wrongly or never answering is not."""
@@ -111,7 +122,8 @@ def check_reached(case: dict, trace: list[dict]) -> tuple[bool, str]:
         if call["name"] in forbidden:
             return False, f"called forbidden tool {call['name']}"
 
-    if not case.get("expect_not_tool"):
+    answered_from_context = not calls and _context_answer_allowed(case, watched)
+    if not case.get("expect_not_tool") and not answered_from_context:
         first_mismatch = ""
         found = False
         for call in calls:
@@ -133,7 +145,10 @@ def check_reached(case: dict, trace: list[dict]) -> tuple[bool, str]:
     return True, ""
 
 
-EXPECT_KEYS = ("expect_tool", "expect_any_tool", "expect_not_tool", "expect_params", "forbid_tools")
+EXPECT_KEYS = (
+    "expect_tool", "expect_any_tool", "expect_not_tool", "expect_params", "forbid_tools",
+    "context_answer_ok",
+)
 
 
 def case_expectation(case: dict) -> dict:
@@ -372,6 +387,11 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     if sampling_overrides:
         output["sampling_overrides"] = sampling_overrides
 
+    watched = settings.watched_entities
+    # Plain runs call the model directly, so add what production's middleware
+    # would: the watched-entities block, then the time (see app/agent/middleware).
+    home_context = WatchedEntitiesMiddleware(ctx.rest, watched)
+
     cases = yaml.safe_load(CASES_FILE.read_text())
     passed = 0
     passed_with_errors = 0
@@ -401,8 +421,8 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
             lc_calls = next(
                 (entry["calls"] for entry in trace if "calls" in entry), []
             )
-            direct = check(case, lc_calls)
-            ok, reason = check_reached(case, trace)
+            direct = check(case, lc_calls, watched=watched)
+            ok, reason = check_reached(case, trace, watched=watched)
             tool_errors = _tool_errors(trace)
             passed += ok
             direct_passed += direct[0]
@@ -414,10 +434,15 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
                                     tool_errors=tool_errors, trace=trace, direct=direct)
         else:
             bound = llm.bind_tools(case_tools)
+            user_turn = case["prompt"]
+            block = await home_context.context_block()
+            if block:
+                user_turn += "\n\n" + block
+            user_turn += "\n\n" + current_time_line()
             start = time.monotonic()
-            msg = await bound.ainvoke([system, HumanMessage(case["prompt"] + "\n\n" + current_time_line())])
+            msg = await bound.ainvoke([system, HumanMessage(user_turn)])
             duration = time.monotonic() - start
-            ok, reason = check(case, msg.tool_calls)
+            ok, reason = check(case, msg.tool_calls, watched=watched)
             passed += ok
             case_data = case_record(case, ok, reason, duration)
 

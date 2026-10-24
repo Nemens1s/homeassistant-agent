@@ -140,3 +140,38 @@ def test_record_direct_pass_has_no_reason():
     rec = case_record(CASE, True, "", 3.0, direct=(True, ""))
     assert rec["direct"] is True
     assert "direct_reason" not in rec
+
+
+# --- answering from the watched-entities home context ----------------------
+
+VACUUM = {"prompt": "Is the vacuum running?", "expect_tool": "get_vacuum_state",
+          "context_answer_ok": "vacuum.roborock_qrevo_s"}
+WATCHED = ["vacuum.roborock_qrevo_s"]
+
+
+def test_context_answer_passes_reached_when_entity_is_watched():
+    trace = [{"thinking": "home context says docked", "answer": "No, it's docked."}]
+    assert check_reached(VACUUM, trace, watched=WATCHED) == (True, "")
+
+
+def test_context_answer_passes_direct_when_entity_is_watched():
+    assert check(VACUUM, [], watched=WATCHED) == (True, "")
+
+
+def test_context_answer_needs_the_entity_watched():
+    trace = [{"answer": "No, it's docked."}]
+    assert check_reached(VACUUM, trace, watched=[]) == (False, "never called get_vacuum_state")
+    assert check(VACUUM, [], watched=[]) == (False, "no tool call")
+
+
+def test_context_answer_still_needs_a_final_answer():
+    assert check_reached(VACUUM, [{"thinking": "hm"}], watched=WATCHED) == (False, "no final answer")
+
+
+def test_calling_the_tool_still_passes_with_context_available():
+    trace = _trace(("get_vacuum_state", {}))
+    assert check_reached(VACUUM, trace, watched=WATCHED) == (True, "")
+
+
+def test_expectation_records_context_answer_ok():
+    assert case_expectation(VACUUM)["context_answer_ok"] == "vacuum.roborock_qrevo_s"

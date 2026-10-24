@@ -39,6 +39,14 @@ class WatchedEntitiesMiddleware(AgentMiddleware):
         self._cached_at = now
         return self._cached_block
 
+    async def context_block(self) -> str:
+        """The <home_context> block, or "" when there is nothing to attach
+        (no watched entities, or more than the cap). The eval runner uses it
+        to give plain runs the same user turn production sends."""
+        if not self._ids or len(self._ids) > self._cap:
+            return ""
+        return await self._block()
+
     async def awrap_model_call(self, request, handler):
         if not self._ids or len(self._ids) > self._cap:
             return await handler(request)
@@ -49,7 +57,7 @@ class WatchedEntitiesMiddleware(AgentMiddleware):
                 break
         if index is None or not isinstance(request.messages[index].content, str):
             return await handler(request)
-        block = await self._block()
+        block = await self.context_block()
         messages = list(request.messages)
         original = messages[index]
         messages[index] = original.model_copy(update={"content": original.content + "\n\n" + block})
