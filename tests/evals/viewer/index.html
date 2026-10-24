@@ -155,7 +155,8 @@ function el(tag, props, ...children) {
 }
 
 function cellStatus(caseData) {
-  if (caseData === undefined) return "missing";
+  // A hand-edited file can hold anything; treat a non-object as absent.
+  if (caseData === undefined || caseData === null || typeof caseData !== "object") return "missing";
   if (caseData.passed) {
     if (caseData.tool_errors && caseData.tool_errors.length) return "warn";
     return "pass";
@@ -179,7 +180,13 @@ function fmtOverrides(overrides) {
 }
 
 async function fetchJSON(url) {
-  const response = await fetch(url);
+  let response;
+  try {
+    response = await fetch(url);
+  } catch (err) {
+    // fetch only rejects when no HTTP response came back at all.
+    throw new Error("server not reachable — is `uv run python -m tests.evals.view` still running?");
+  }
   if (!response.ok) throw new Error(url + " → HTTP " + response.status);
   return response.json();
 }

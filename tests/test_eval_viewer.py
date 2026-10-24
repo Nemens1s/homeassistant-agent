@@ -4,7 +4,7 @@ import json
 import socket
 import threading
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -135,3 +135,32 @@ def test_main_port_in_use(capsys):
     finally:
         taken.close()
     assert "in use" in capsys.readouterr().err
+
+
+ODD = "2026-10-24T21-00-00_qwen3-8b@q4_k_m_llamacpp.json"
+
+
+def test_run_with_odd_model_characters_is_listed_and_served(results, server):
+    (results / ODD).write_text('{"cases": {"a": {"passed": true}}}')
+    labels = []
+    for run in list_runs(results):
+        labels.append(run["label"])
+    assert "qwen3-8b@q4_k_m" in labels
+    body = json.loads(urlopen(server + "/api/runs/" + ODD.replace("@", "%40")).read())
+    assert body["cases"]["a"]["passed"] is True
+
+
+def test_non_string_started_at_does_not_break_the_list(results):
+    (results / "2026-10-27T10-00-00_weird_llamacpp.json").write_text('{"started_at": 5, "cases": {}}')
+    runs = list_runs(results)
+    assert runs[0]["file"] == "2026-10-27T10-00-00_weird_llamacpp.json"
+    assert runs[0]["started_at"] == "2026-10-27T10:00:00"
+
+
+def test_http_rejects_foreign_host_header(server):
+    # DNS rebinding: a page on another domain resolving to 127.0.0.1 must not
+    # be able to read results.
+    request = Request(server + "/api/runs", headers={"Host": "evil.example:8765"})
+    with pytest.raises(HTTPError) as err:
+        urlopen(request)
+    assert err.value.code == 404

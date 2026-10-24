@@ -19,7 +19,6 @@ from urllib.parse import unquote, urlsplit
 DEFAULT_DIR = Path(__file__).resolve().parent.parent.parent / ".evals"
 VIEWER_HTML = Path(__file__).parent / "viewer" / "index.html"
 
-RUN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.json$")
 # run.py names files "<YYYY-MM-DDTHH-MM-SS>_<model>_<provider>.json".
 FILENAME_TIMESTAMP = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})$")
 
@@ -41,13 +40,17 @@ def parse_filename(name: str) -> dict:
 
 
 def safe_run_path(results_dir: Path, name: str) -> Path | None:
-    """The file for `name`, only if it's a plain .json file directly in results_dir."""
-    if not RUN_NAME.match(name):
+    """The file for `name`, only if it's a plain .json file directly in results_dir.
+
+    Checked by membership in the directory listing rather than by a character
+    whitelist: run.py keeps most of the model id in the filename, so names can
+    hold characters like `@` or `+`."""
+    if "/" in name or "\\" in name or name.startswith(".") or not name.endswith(".json"):
         return None
-    path = results_dir / name
-    if not path.is_file():
-        return None
-    return path
+    for path in results_dir.glob("*.json"):
+        if path.name == name and path.is_file():
+            return path
+    return None
 
 
 def summarize_run(path: Path) -> dict:
@@ -73,7 +76,7 @@ def summarize_run(path: Path) -> dict:
         else:
             failed += 1
 
-    if data.get("started_at"):
+    if isinstance(data.get("started_at"), str) and data["started_at"]:
         summary["started_at"] = data["started_at"]
     summary["model"] = data.get("model")
     summary["provider"] = data.get("provider")
@@ -106,6 +109,12 @@ def list_runs(results_dir: Path) -> list[dict]:
 def make_server(results_dir: Path, port: int) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
+            # Only answer requests addressed to this server by its local name,
+            # so a web page using DNS rebinding can't read the results.
+            own_port = self.server.server_address[1]
+            if self.headers.get("Host", "") not in (f"127.0.0.1:{own_port}", f"localhost:{own_port}"):
+                self._send(404, "text/plain; charset=utf-8", b"not found")
+                return
             path = urlsplit(self.path).path
             if path == "/":
                 self._send(200, "text/html; charset=utf-8", VIEWER_HTML.read_bytes())
