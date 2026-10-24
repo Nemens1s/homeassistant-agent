@@ -1,8 +1,8 @@
 """Tool-selection eval: does the configured model call the right tool with
 the right params on the first turn? Usage:
 
-    venv/bin/python -m tests.evals.run            # uses .env settings
-    LLM_MODEL=llama3.1:8b venv/bin/python -m tests.evals.run
+    uv run python -m tests.evals.run            # uses .env settings
+    LLM_MODEL=llama3.1:8b uv run python -m tests.evals.run
 """
 
 import argparse
@@ -65,6 +65,37 @@ def check(case: dict, tool_calls: list) -> tuple[bool, str]:
         elif actual != exp_val:
             return False, f"param {key}={actual!r}, expected {exp_val!r}"
     return True, ""
+
+
+EXPECT_KEYS = ("expect_tool", "expect_any_tool", "expect_not_tool", "expect_params")
+
+
+def case_expectation(case: dict) -> dict:
+    """What the case checked, copied from cases.yaml so an old results file
+    can be read without today's (possibly edited) case list."""
+    expected = {}
+    for key in EXPECT_KEYS:
+        if key in case:
+            expected[key] = case[key]
+    return expected
+
+
+def case_record(case: dict, ok: bool, reason: str, duration_s: float,
+                tool_errors: list[str] | None = None,
+                trace: list[dict] | None = None) -> dict:
+    """One case's entry in the results file."""
+    record: dict = {"passed": ok}
+    if reason:
+        record["reason"] = reason
+    if tool_errors:
+        record["tool_errors"] = tool_errors
+    record["prompt"] = case["prompt"]
+    record["expected"] = case_expectation(case)
+    record["duration_s"] = round(duration_s, 1)
+    if trace is not None:
+        record["trace"] = trace
+    return record
+
 
 def _write_to_file(output: dict) -> None:
     title = f"{datetime.now().isoformat(timespec='seconds')} {output['model']} {output['provider']}"
@@ -260,6 +291,7 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
         "model": settings.llm_model,
         "provider": settings.llm_provider,
         "num_ctx": settings.num_ctx,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
         "cases": {},
     }
     if sampling_overrides:
@@ -287,32 +319,29 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
         trace: list[dict] = []
         tool_errors: list[str] = []
         if verbose:
+            start = time.monotonic()
             trace = await _agent_trace(settings, ctx, enabled, case["prompt"])
+            duration = time.monotonic() - start
             lc_calls = next(
                 (entry["calls"] for entry in trace if "calls" in entry), []
             )
             ok, reason = check(case, lc_calls)
             tool_errors = _tool_errors(trace)
             passed += ok
-            case_data: dict = {"passed": ok}
-            if reason:
-                case_data["reason"] = reason
             # The score grades only the first call; a pass whose run then hit
             # tool errors is flagged so it doesn't hide behind the score.
-            if tool_errors:
-                case_data["tool_errors"] = tool_errors
-                if ok:
-                    passed_with_errors += 1
-            case_data['prompt'] = case["prompt"]
-            case_data["trace"] = trace
+            if tool_errors and ok:
+                passed_with_errors += 1
+            case_data = case_record(case, ok, reason, duration,
+                                    tool_errors=tool_errors, trace=trace)
         else:
             bound = llm.bind_tools(case_tools)
+            start = time.monotonic()
             msg = await bound.ainvoke([system, HumanMessage(case["prompt"] + "\n\n" + current_time_line())])
+            duration = time.monotonic() - start
             ok, reason = check(case, msg.tool_calls)
             passed += ok
-            case_data = {"passed": ok}
-            if reason:
-                case_data["reason"] = reason
+            case_data = case_record(case, ok, reason, duration)
 
         output["cases"][case["id"]] = case_data
         status = "PASS" if ok else "FAIL"
