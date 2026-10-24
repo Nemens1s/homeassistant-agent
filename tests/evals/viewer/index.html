@@ -67,6 +67,26 @@
   .secs { color: var(--subtext); font-size: 12px; }
   .colhead .meta { font-weight: 400; }
   .empty td { color: var(--subtext); text-align: center; padding: 20px; }
+  .sort {
+    font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+    text-decoration: underline dotted;
+  }
+
+  tr.detail > td { background: var(--mantle); padding: 12px 16px 16px; }
+  .detail h3 { font-size: 14px; margin: 0 0 10px; }
+  .facts { display: grid; grid-template-columns: 90px 1fr; gap: 4px 12px; margin-bottom: 12px; }
+  .facts > .k { color: var(--subtext); font-size: 12px; padding-top: 1px; }
+  .trace { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--surface0); }
+  .trace li { display: grid; grid-template-columns: 70px 1fr; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--surface0); }
+  .tag { font-family: var(--mono); font-size: 11px; color: var(--subtext); padding-top: 2px; }
+  .trace li.bad .tag, .trace li.bad .body > summary, .trace li.bad > .body { color: var(--red); }
+  .body { min-width: 0; overflow-wrap: anywhere; }
+  .body pre, pre.body {
+    font-family: var(--mono); font-size: 12px; white-space: pre-wrap; margin: 4px 0 0;
+    max-height: 420px; overflow: auto; background: var(--base); padding: 8px; border-radius: 4px;
+  }
+  .body summary { cursor: pointer; }
+  .answer { white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -269,10 +289,30 @@ function defaultFilter() {
   return "all";
 }
 
+function durationIn(file, id) {
+  for (const run of state.runs) {
+    if (run.file !== file) continue;
+    const data = caseOf(run, id);
+    if (data && typeof data.duration_s === "number") return data.duration_s;
+  }
+  return null;
+}
+
 function visibleIds() {
   const ids = [];
   for (const id of caseIds()) {
     if (matchesFilter(state.filter, rowStatuses(id)) && matchesQuery(id)) ids.push(id);
+  }
+  if (state.sortBy) {
+    // Slowest first in the chosen run; cases without a duration go last.
+    ids.sort((a, b) => {
+      const da = durationIn(state.sortBy, a);
+      const db = durationIn(state.sortBy, b);
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;
+      if (db === null) return -1;
+      return db - da;
+    });
   }
   return ids;
 }
@@ -310,12 +350,107 @@ function renderPicker() {
 function renderHeader() {
   const row = el("tr", null, el("th", null, "case"));
   for (const run of state.runs) {
+    const sorted = state.sortBy === run.file;
+    const sortButton = el("button", {
+      type: "button", class: "sort",
+      title: sorted ? "Back to case order" : "Sort cases by this run's time, slowest first",
+      onclick: () => {
+        state.sortBy = sorted ? null : run.file;
+        renderGrid();
+      },
+    }, fmtSeconds(run.data.elapsed) + (sorted ? " ↓" : ""));
     row.append(el("th", { class: "colhead", title: run.file },
       run.label,
-      el("div", { class: "meta" }, (run.data.score || "—") + " · " + fmtSeconds(run.data.elapsed)),
+      el("div", { class: "meta" }, (run.data.score || "—") + " · ", sortButton),
     ));
   }
   document.querySelector("#grid thead").replaceChildren(row);
+}
+
+// A collapsed block: `label` is always visible, `full` shows on click.
+function collapsible(label, full) {
+  return el("details", { class: "body" }, el("summary", null, label), el("pre", null, full));
+}
+
+function shortened(text, limit) {
+  return text.length > limit ? text.slice(0, limit) + "…" : text;
+}
+
+function traceLine(tag, body, bad) {
+  return el("li", { class: bad ? "bad" : null }, el("span", { class: "tag" }, tag), body);
+}
+
+function resultLine(raw) {
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch (err) { parsed = null; }
+  if (parsed && typeof parsed === "object" && typeof parsed.status === "string") {
+    let label = parsed.status;
+    const isError = parsed.status === "error";
+    if (isError && parsed.error && parsed.error.code) label += " · " + parsed.error.code;
+    if (isError && parsed.error && parsed.error.message) label += " · " + shortened(String(parsed.error.message), 140);
+    return traceLine("result", collapsible(label, JSON.stringify(parsed, null, 2)), isError);
+  }
+  return traceLine("result", collapsible(shortened(raw, 120), raw), false);
+}
+
+function renderTrace(trace) {
+  const list = el("ol", { class: "trace" });
+  for (const entry of trace) {
+    if (entry.thinking) {
+      const text = String(entry.thinking);
+      const body = text.length > 120
+        ? collapsible(shortened(text, 120), text)
+        : el("div", { class: "body" }, text);
+      list.append(traceLine("think", body, false));
+    }
+    for (const call of entry.calls || []) {
+      const args = JSON.stringify(call.args || {});
+      list.append(traceLine("call", el("div", { class: "body mono" }, (call.name || "?") + "(" + args + ")"), false));
+    }
+    if (entry.tool_result !== undefined) list.append(resultLine(String(entry.tool_result)));
+    if (entry.answer) list.append(traceLine("answer", el("div", { class: "body answer" }, String(entry.answer)), false));
+    if (entry.error) list.append(traceLine("error", el("div", { class: "body" }, String(entry.error)), true));
+  }
+  return list;
+}
+
+function renderDetail(run, id) {
+  const data = caseOf(run, id);
+  const status = cellStatus(data);
+  const facts = el("div", { class: "facts" });
+
+  facts.append(el("div", { class: "k" }, "prompt"),
+    data.prompt ? el("div", null, data.prompt) : el("div", { class: "muted" }, "Prompt not recorded"));
+
+  const expected = data.expected && Object.keys(data.expected).length ? data.expected : null;
+  const expectedBox = el("div", { class: expected ? "mono" : "muted" });
+  if (expected) {
+    for (const [key, value] of Object.entries(expected)) {
+      expectedBox.append(el("div", null, key + ": " + (typeof value === "string" ? value : JSON.stringify(value))));
+    }
+  } else {
+    expectedBox.append("Expectation not recorded");
+  }
+  facts.append(el("div", { class: "k" }, "expected"), expectedBox);
+
+  const result = el("div", { class: status }, el("span", { class: "sym" }, SYMBOL[status]),
+    { pass: "passed", warn: "passed, with tool errors", fail: "failed" }[status]);
+  if (data.reason) result.append(" — " + data.reason);
+  facts.append(el("div", { class: "k" }, "result"), result);
+  if (data.tool_errors && data.tool_errors.length) {
+    facts.append(el("div", { class: "k" }, "tool errors"), el("div", { class: "mono" }, data.tool_errors.join(", ")));
+  }
+  facts.append(el("div", { class: "k" }, "time"), el("div", null, fmtSeconds(data.duration_s)));
+
+  const trace = Array.isArray(data.trace)
+    ? renderTrace(data.trace)
+    : el("div", { class: "muted" }, "No trace: run with -v to record one.");
+  return el("div", { class: "detail" }, el("h3", null, run.label + " · " + id), facts, trace);
+}
+
+function runByFile(file) {
+  for (const run of state.runs) if (run.file === file) return run;
+  return null;
 }
 
 function renderCell(run, id) {
@@ -340,12 +475,19 @@ function renderGrid() {
   renderHeader();
 
   const ids = visibleIds();
+  if (state.open && !ids.includes(state.open.caseId)) state.open = null;
   const body = document.querySelector("#grid tbody");
   body.replaceChildren();
   for (const id of ids) {
     const row = el("tr", { dataset: { case: id } }, el("td", { class: "case" }, id));
     for (const run of state.runs) row.append(renderCell(run, id));
     body.append(row);
+    if (state.open && state.open.caseId === id) {
+      const run = runByFile(state.open.file);
+      if (run && caseOf(run, id)) {
+        body.append(el("tr", { class: "detail" }, el("td", { colspan: state.runs.length + 1 }, renderDetail(run, id))));
+      }
+    }
   }
   if (!ids.length) {
     body.append(el("tr", { class: "empty" }, el("td", { colspan: state.runs.length + 1 }, "No cases match.")));
@@ -365,6 +507,18 @@ document.getElementById("filters").addEventListener("click", event => {
   if (!filter) return;
   state.filter = filter;
   state.filterTouched = true;
+  renderGrid();
+});
+
+// Click a result to open its detail under the row; click it again to close.
+// Another cell in the same row switches the panel to that run.
+document.querySelector("#grid tbody").addEventListener("click", event => {
+  const cell = event.target.closest("td.cell");
+  if (!cell || cell.classList.contains("missing")) return;
+  const caseId = cell.parentElement.dataset.case;
+  const file = cell.dataset.file;
+  const isOpen = state.open && state.open.caseId === caseId && state.open.file === file;
+  state.open = isOpen ? null : { caseId, file };
   renderGrid();
 });
 

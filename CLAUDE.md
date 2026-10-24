@@ -17,6 +17,8 @@ and plans live in `docs/superpowers/`.
 - Capability REPL: `uv run python -m app.cli` (needs `.env` + live HA + LLM server).
 - Tool-selection evals: `uv run python -m tests.evals.run` (needs a live
   LLM server; deliberately NOT collected by pytest).
+- Eval results viewer: `uv run python -m tests.evals.view` (read-only page
+  over `.evals/`; compare up to 3 runs).
 - Server (dev): `uv run uvicorn app.main:create_app --factory --port 8099`.
 
 ## Dev environment
