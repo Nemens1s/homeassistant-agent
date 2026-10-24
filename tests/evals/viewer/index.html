@@ -59,9 +59,12 @@
   #grid td.cell.missing { cursor: default; }
   #grid td.cell.missing:hover { background: none; }
   #grid td.cell.open { outline: 2px solid var(--blue); outline-offset: -2px; }
-  .sym { font-weight: 700; display: inline-block; min-width: 2em; }
+  .sym { font-weight: 700; display: inline-block; min-width: 2.6em; }
   .pass .sym { color: var(--green); }
   .warn .sym { color: var(--yellow); }
+  .indirect .sym { color: var(--blue); }
+  .legend { color: var(--subtext); font-size: 12px; margin: -4px 0 10px; }
+  .legend span { margin-right: 14px; }
   .fail .sym { color: var(--red); }
   .missing .sym { color: var(--overlay0); }
   .secs { color: var(--subtext); font-size: 12px; }
@@ -107,10 +110,18 @@
       <button type="button" data-filter="all">All</button>
       <button type="button" data-filter="failed">Any failed</button>
       <button type="button" data-filter="disagree">Runs disagree</button>
+      <button type="button" data-filter="indirect">Reached, not first call</button>
       <button type="button" data-filter="warn">Passed with tool errors</button>
     </div>
     <input id="search" type="search" placeholder="Search case, prompt, tool, reason" aria-label="Search cases">
     <span id="count"></span>
+  </div>
+  <div class="legend">
+    <span class="pass"><span class="sym">✓</span>right tool first</span>
+    <span class="indirect"><span class="sym">✓↪</span>got there after other calls</span>
+    <span class="warn"><span class="sym">✓*</span>passed, a tool call errored</span>
+    <span class="fail"><span class="sym">✗</span>failed</span>
+    <span class="missing"><span class="sym">—</span>not in this run</span>
   </div>
   <table id="grid"><thead></thead><tbody></tbody></table>
 </section>
@@ -119,13 +130,13 @@
 "use strict";
 
 const MAX_RUNS = 3;
-const SYMBOL = { pass: "✓", warn: "✓*", fail: "✗", missing: "—" };
+const SYMBOL = { pass: "✓", indirect: "✓↪", warn: "✓*", fail: "✗", missing: "—" };
 
 // Everything the page shows is derived from this. `runs` is in selection order.
 const state = {
   summaries: [],
   runs: [],            // [{file, label, data}]
-  filter: "all",       // "all" | "failed" | "disagree" | "warn"
+  filter: "all",       // "all" | "failed" | "disagree" | "indirect" | "warn"
   filterTouched: false,
   query: "",
   open: null,          // {caseId, file} | null
@@ -159,6 +170,8 @@ function cellStatus(caseData) {
   if (caseData === undefined || caseData === null || typeof caseData !== "object") return "missing";
   if (caseData.passed) {
     if (caseData.tool_errors && caseData.tool_errors.length) return "warn";
+    // Verbose runs grade "reached"; `direct` says whether the first call was right.
+    if (caseData.direct === false) return "indirect";
     return "pass";
   }
   return "fail";
@@ -267,8 +280,17 @@ function rowStatuses(id) {
   return state.runs.map(run => cellStatus(caseOf(run, id)));
 }
 
-function matchesFilter(filter, statuses) {
+function reachedIndirectly(id) {
+  for (const run of state.runs) {
+    const data = caseOf(run, id);
+    if (data && typeof data === "object" && data.passed && data.direct === false) return true;
+  }
+  return false;
+}
+
+function matchesFilter(filter, statuses, id) {
   if (filter === "failed") return statuses.includes("fail");
+  if (filter === "indirect") return reachedIndirectly(id);
   if (filter === "warn") return statuses.includes("warn");
   if (filter === "disagree") return new Set(statuses.filter(s => s !== "missing")).size > 1;
   return true;
@@ -308,7 +330,7 @@ function durationIn(file, id) {
 function visibleIds() {
   const ids = [];
   for (const id of caseIds()) {
-    if (matchesFilter(state.filter, rowStatuses(id)) && matchesQuery(id)) ids.push(id);
+    if (matchesFilter(state.filter, rowStatuses(id), id) && matchesQuery(id)) ids.push(id);
   }
   if (state.sortBy) {
     // Slowest first in the chosen run; cases without a duration go last.
@@ -346,7 +368,8 @@ function renderPicker() {
       el("td", { class: "mono" }, fmtDate(summary.started_at)),
       el("td", null, el("label", { for: id }, summary.label), summary.error ? el("span", { class: "note" }, summary.error) : null),
       el("td", { class: "muted" }, summary.provider || ""),
-      el("td", null, summary.score || "—"),
+      el("td", null, summary.score || "—",
+        summary.direct_score ? el("span", { class: "muted" }, " · direct " + summary.direct_score) : null),
       el("td", null, summary.error ? "" : String(summary.failed)),
       el("td", null, fmtSeconds(summary.elapsed)),
       el("td", { class: "mono muted" }, fmtOverrides(summary.sampling_overrides)),
@@ -368,10 +391,16 @@ function renderHeader() {
     }, fmtSeconds(run.data.elapsed) + (sorted ? " ↓" : ""));
     row.append(el("th", { class: "colhead", title: run.file },
       run.label,
-      el("div", { class: "meta" }, (run.data.score || "—") + " · ", sortButton),
+      el("div", { class: "meta" }, scoreText(run.data) + " · ", sortButton),
     ));
   }
   document.querySelector("#grid thead").replaceChildren(row);
+}
+
+function scoreText(data) {
+  let text = data.score || "—";
+  if (data.direct_score) text += " · direct " + data.direct_score;
+  return text;
 }
 
 // A collapsed block: `label` is always visible, `full` shows on click.
@@ -441,9 +470,13 @@ function renderDetail(run, id) {
   facts.append(el("div", { class: "k" }, "expected"), expectedBox);
 
   const result = el("div", { class: status }, el("span", { class: "sym" }, SYMBOL[status]),
-    { pass: "passed", warn: "passed, with tool errors", fail: "failed" }[status]);
+    { pass: "passed", indirect: "passed, after other calls", warn: "passed, with tool errors", fail: "failed" }[status]);
   if (data.reason) result.append(" — " + data.reason);
   facts.append(el("div", { class: "k" }, "result"), result);
+  if (typeof data.direct === "boolean") {
+    const direct = data.direct ? "yes" : "no — " + (data.direct_reason || "first call was something else");
+    facts.append(el("div", { class: "k" }, "first call right"), el("div", null, direct));
+  }
   if (data.tool_errors && data.tool_errors.length) {
     facts.append(el("div", { class: "k" }, "tool errors"), el("div", { class: "mono" }, data.tool_errors.join(", ")));
   }

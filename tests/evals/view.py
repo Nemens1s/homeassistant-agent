@@ -67,12 +67,15 @@ def summarize_run(path: Path) -> dict:
 
     failed = 0
     passed_with_tool_errors = 0
+    indirect = 0
     for case in data["cases"].values():
         if not isinstance(case, dict):
             continue
         if case.get("passed"):
             if case.get("tool_errors"):
                 passed_with_tool_errors += 1
+            if case.get("direct") is False:
+                indirect += 1
         else:
             failed += 1
 
@@ -81,11 +84,14 @@ def summarize_run(path: Path) -> dict:
     summary["model"] = data.get("model")
     summary["provider"] = data.get("provider")
     summary["score"] = data.get("score")
+    summary["direct_score"] = data.get("direct_score")
+    summary["grading"] = data.get("grading")
     summary["elapsed"] = data.get("elapsed")
     summary["sampling_overrides"] = data.get("sampling_overrides")
     summary["cases"] = len(data["cases"])
     summary["failed"] = failed
     summary["passed_with_tool_errors"] = passed_with_tool_errors
+    summary["indirect"] = indirect
     return summary
 
 

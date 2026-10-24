@@ -164,3 +164,21 @@ def test_http_rejects_foreign_host_header(server):
     with pytest.raises(HTTPError) as err:
         urlopen(request)
     assert err.value.code == 404
+
+
+def test_summary_passes_through_grading_and_direct_score(results):
+    path = results / "2026-10-28T10-00-00_graded_llamacpp.json"
+    path.write_text(json.dumps({
+        "grading": "reached", "score": "2/2", "direct_score": "1/2",
+        "cases": {"a": {"passed": True, "direct": True}, "b": {"passed": True, "direct": False}},
+    }))
+    summary = summarize_run(path)
+    assert summary["grading"] == "reached"
+    assert summary["direct_score"] == "1/2"
+    assert summary["indirect"] == 1
+
+
+def test_old_summary_has_no_direct_score(results):
+    summary = summarize_run(results / OLD)
+    assert summary["direct_score"] is None
+    assert summary["indirect"] == 0

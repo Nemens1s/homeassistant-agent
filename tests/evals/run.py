@@ -1,5 +1,7 @@
-"""Tool-selection eval: does the configured model call the right tool with
-the right params on the first turn? Usage:
+"""Tool-selection eval. Plain runs grade the first tool call only. Verbose
+runs (-v) run the whole agent and grade whether it reached the expected call
+at any point, with no forbidden tool and a final answer; the first-call grade
+is kept as `direct`. Usage:
 
     uv run python -m tests.evals.run            # uses .env settings
     LLM_MODEL=llama3.1:8b uv run python -m tests.evals.run
@@ -33,7 +35,44 @@ from app.tools.context import ToolContext
 CASES_FILE = Path(__file__).parent / "cases.yaml"
 
 
+def _param_mismatch(case: dict, args: dict) -> str:
+    """Why `args` miss the case's expect_params, or "" when they match.
+
+    Case-insensitive for strings: HA area/friendly names vary in case and the
+    handlers match case-insensitively, so "Bedroom" == "bedroom" is a pass."""
+    for key, exp_val in (case.get("expect_params") or {}).items():
+        actual = args.get(key)
+        if isinstance(actual, str) and isinstance(exp_val, str):
+            if actual.lower() != exp_val.lower():
+                return f"param {key}={actual!r}, expected {exp_val!r}"
+        elif actual != exp_val:
+            return f"param {key}={actual!r}, expected {exp_val!r}"
+    return ""
+
+
+def _call_mismatch(case: dict, call: dict) -> str:
+    """Why this call isn't what the case expects, or "" when it is."""
+    # Accept expect_tool (str) or expect_any_tool (list) — both are valid.
+    any_of = case.get("expect_any_tool")
+    expected = any_of or [case.get("expect_tool")]
+    if call["name"] not in expected:
+        return f"called {call['name']} (args {call['args']})"
+    # Skip param check when the model called an alternate tool from
+    # expect_any_tool instead of the primary expect_tool.
+    if any_of and call["name"] != case.get("expect_tool"):
+        return ""
+    return _param_mismatch(case, call["args"])
+
+
+def _forbidden(case: dict) -> list[str]:
+    forbidden = list(case.get("forbid_tools") or [])
+    if case.get("expect_not_tool"):
+        forbidden.append(case["expect_not_tool"])
+    return forbidden
+
+
 def check(case: dict, tool_calls: list) -> tuple[bool, str]:
+    """Direct grade: was the FIRST tool call the expected one?"""
     banned = case.get("expect_not_tool")
     if banned:
         if tool_calls and tool_calls[0]["name"] == banned:
@@ -43,31 +82,58 @@ def check(case: dict, tool_calls: list) -> tuple[bool, str]:
     if not tool_calls:
         return False, "no tool call"
     call = tool_calls[0]
+    if call["name"] in _forbidden(case):
+        return False, f"called forbidden tool {call['name']}"
+    mismatch = _call_mismatch(case, call)
+    return mismatch == "", mismatch
 
-    # Accept expect_tool (str) or expect_any_tool (list) — both are valid.
-    any_of = case.get("expect_any_tool")
-    expected = any_of or [case.get("expect_tool")]
-    if call["name"] not in expected:
-        return False, f"called {call['name']} (args {call['args']})"
 
-    # Skip param check when the model called an alternate "discovery" tool
-    # from expect_any_tool instead of the primary expect_tool.
-    if any_of and call["name"] != case.get("expect_tool"):
-        return True, ""
+def all_calls(trace: list[dict]) -> list[dict]:
+    """Every tool call in the trace, in order."""
+    calls = []
+    for entry in trace:
+        for call in entry.get("calls", []):
+            calls.append(call)
+    return calls
 
-    # Case-insensitive param check: HA area/friendly names vary in case and the
-    # handlers match case-insensitively, so "Bedroom" == "bedroom" is a pass.
-    for key, exp_val in (case.get("expect_params") or {}).items():
-        actual = call["args"].get(key)
-        if isinstance(actual, str) and isinstance(exp_val, str):
-            if actual.lower() != exp_val.lower():
-                return False, f"param {key}={actual!r}, expected {exp_val!r}"
-        elif actual != exp_val:
-            return False, f"param {key}={actual!r}, expected {exp_val!r}"
+
+def check_reached(case: dict, trace: list[dict]) -> tuple[bool, str]:
+    """Reached grade (verbose runs): the expected call happened at any point,
+    no forbidden tool was called, and the run ended with an answer. Looking
+    something up first is fine; acting wrongly or never answering is not."""
+    for entry in trace:
+        if entry.get("error"):
+            return False, f"agent error: {entry['error']}"
+
+    calls = all_calls(trace)
+    forbidden = _forbidden(case)
+    for call in calls:
+        if call["name"] in forbidden:
+            return False, f"called forbidden tool {call['name']}"
+
+    if not case.get("expect_not_tool"):
+        first_mismatch = ""
+        found = False
+        for call in calls:
+            mismatch = _call_mismatch(case, call)
+            if mismatch == "":
+                found = True
+                break
+            # Remember a wrong-params miss on the right tool: it explains more
+            # than "never called".
+            if not first_mismatch and mismatch.startswith("param "):
+                first_mismatch = mismatch
+        if not found:
+            if first_mismatch:
+                return False, first_mismatch
+            return False, f"never called {case.get('expect_tool')}"
+
+    if not trace or not trace[-1].get("answer"):
+        return False, "no final answer"
     return True, ""
 
 
-EXPECT_KEYS = ("expect_tool", "expect_any_tool", "expect_not_tool", "expect_params")
+EXPECT_KEYS = ("expect_tool", "expect_any_tool", "expect_not_tool", "expect_params", "forbid_tools")
 
 
 def case_expectation(case: dict) -> dict:
@@ -82,9 +148,15 @@ def case_expectation(case: dict) -> dict:
 
 def case_record(case: dict, ok: bool, reason: str, duration_s: float,
                 tool_errors: list[str] | None = None,
-                trace: list[dict] | None = None) -> dict:
-    """One case's entry in the results file."""
+                trace: list[dict] | None = None,
+                direct: tuple[bool, str] | None = None) -> dict:
+    """One case's entry in the results file. In verbose runs `ok`/`reason` are
+    the reached grade and `direct` is the first-call grade."""
     record: dict = {"passed": ok}
+    if direct is not None:
+        record["direct"] = direct[0]
+        if direct[1]:
+            record["direct_reason"] = direct[1]
     if reason:
         record["reason"] = reason
     if tool_errors:
@@ -292,6 +364,9 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
         "provider": settings.llm_provider,
         "num_ctx": settings.num_ctx,
         "started_at": datetime.now().isoformat(timespec="seconds"),
+        # verbose runs grade the whole run (reached) and keep the first-call
+        # grade as `direct`; plain runs only see the first call.
+        "grading": "reached" if verbose else "first_call",
         "cases": {},
     }
     if sampling_overrides:
@@ -300,6 +375,7 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     cases = yaml.safe_load(CASES_FILE.read_text())
     passed = 0
     passed_with_errors = 0
+    direct_passed = 0
     run = 0
     subset = settings.enable_tool_subsetting
     print(f"model: {settings.llm_model} via {settings.llm_provider} "
@@ -325,15 +401,17 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
             lc_calls = next(
                 (entry["calls"] for entry in trace if "calls" in entry), []
             )
-            ok, reason = check(case, lc_calls)
+            direct = check(case, lc_calls)
+            ok, reason = check_reached(case, trace)
             tool_errors = _tool_errors(trace)
             passed += ok
-            # The score grades only the first call; a pass whose run then hit
-            # tool errors is flagged so it doesn't hide behind the score.
+            direct_passed += direct[0]
+            # A pass whose run hit tool errors on the way is flagged so it
+            # doesn't hide behind the score.
             if tool_errors and ok:
                 passed_with_errors += 1
             case_data = case_record(case, ok, reason, duration,
-                                    tool_errors=tool_errors, trace=trace)
+                                    tool_errors=tool_errors, trace=trace, direct=direct)
         else:
             bound = llm.bind_tools(case_tools)
             start = time.monotonic()
@@ -350,6 +428,8 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
         line = f"  {status}  {case['id']}"
         if reason:
             line += f" — {reason}"
+        if verbose and ok and not case_data["direct"]:
+            line += f" (not direct: {case_data['direct_reason']})"
         if tool_errors:
             line += f" (tool errors: {', '.join(tool_errors)})"
         print(line)
@@ -361,9 +441,12 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     elapsed = time.monotonic() - t0
     output["score"] = f"{passed}/{run}"
     if verbose:
+        output["direct_score"] = f"{direct_passed}/{run}"
         output["passed_with_tool_errors"] = passed_with_errors
     output["elapsed"] = round(elapsed, 1)
     print(f"\nscore: {passed}/{run}")
+    if verbose:
+        print(f"  direct (right tool first): {direct_passed}/{run}")
     if verbose and passed_with_errors:
         print(f"  of which {passed_with_errors} passed with tool errors (PASS*)")
     print(f"\n[{elapsed:.1f}s]\n")
