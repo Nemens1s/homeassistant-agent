@@ -1,2 +1,391 @@
 <!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Eval results</title>
+<style>
+  /* Catppuccin Latte (light) / Mocha (dark), matching the add-on UI. */
+  :root {
+    --base: #eff1f5; --mantle: #e6e9ef; --crust: #dce0e8;
+    --surface0: #ccd0da; --surface1: #bcc0cc; --overlay0: #9ca0b0;
+    --subtext: #6c6f85; --text: #4c4f69;
+    --green: #40a02b; --yellow: #df8e1d; --red: #d20f39; --blue: #1e66f5;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --base: #1e1e2e; --mantle: #181825; --crust: #11111b;
+      --surface0: #313244; --surface1: #45475a; --overlay0: #6c7086;
+      --subtext: #a6adc8; --text: #cdd6f4;
+      --green: #a6e3a1; --yellow: #f9e2af; --red: #f38ba8; --blue: #89b4fa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 28px 60px; background: var(--base); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--subtext); margin: 0 0 8px; }
+  section { margin-bottom: 24px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--surface0); vertical-align: top; }
+  th { font-weight: 600; font-size: 12px; color: var(--subtext); background: var(--mantle); position: sticky; top: 0; }
+  .muted { color: var(--subtext); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .note { color: var(--red); margin-left: 12px; font-size: 13px; text-transform: none; letter-spacing: normal; font-weight: 400; }
+
+  #run-list tr.selected td { background: var(--mantle); }
+  #run-list tr.broken td { color: var(--overlay0); }
+  #run-list td:first-child { width: 28px; }
+  #run-list label { cursor: pointer; }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .toolbar button {
+    font: inherit; font-size: 13px; color: var(--text); background: var(--mantle);
+    border: 1px solid var(--surface1); border-radius: 14px; padding: 3px 12px; cursor: pointer;
+  }
+  .toolbar button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--base); }
+  .toolbar input {
+    font: inherit; font-size: 13px; color: var(--text); background: var(--mantle);
+    border: 1px solid var(--surface1); border-radius: 6px; padding: 4px 8px; width: 280px;
+  }
+  #count { color: var(--subtext); font-size: 13px; }
+
+  #grid td.case { font-family: var(--mono); font-size: 12px; }
+  #grid td.cell { cursor: pointer; white-space: nowrap; }
+  #grid td.cell:hover { background: var(--mantle); }
+  #grid td.cell.missing { cursor: default; }
+  #grid td.cell.missing:hover { background: none; }
+  #grid td.cell.open { outline: 2px solid var(--blue); outline-offset: -2px; }
+  .sym { font-weight: 700; display: inline-block; min-width: 2em; }
+  .pass .sym { color: var(--green); }
+  .warn .sym { color: var(--yellow); }
+  .fail .sym { color: var(--red); }
+  .missing .sym { color: var(--overlay0); }
+  .secs { color: var(--subtext); font-size: 12px; }
+  .colhead .meta { font-weight: 400; }
+  .empty td { color: var(--subtext); text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<h1>Eval results</h1>
+
+<section id="picker">
+  <h2>Runs <span id="note" class="note" role="status"></span></h2>
+  <table id="run-list">
+    <thead><tr><th></th><th>started</th><th>run</th><th>provider</th><th>score</th><th>failed</th><th>time</th><th>sampling</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section id="compare" hidden>
+  <h2>Comparison</h2>
+  <div class="toolbar">
+    <div id="filters" role="group" aria-label="Filter cases">
+      <button type="button" data-filter="all">All</button>
+      <button type="button" data-filter="failed">Any failed</button>
+      <button type="button" data-filter="disagree">Runs disagree</button>
+      <button type="button" data-filter="warn">Passed with tool errors</button>
+    </div>
+    <input id="search" type="search" placeholder="Search case, prompt, tool, reason" aria-label="Search cases">
+    <span id="count"></span>
+  </div>
+  <table id="grid"><thead></thead><tbody></tbody></table>
+</section>
+
+<script>
+"use strict";
+
+const MAX_RUNS = 3;
+const SYMBOL = { pass: "✓", warn: "✓*", fail: "✗", missing: "—" };
+
+// Everything the page shows is derived from this. `runs` is in selection order.
+const state = {
+  summaries: [],
+  runs: [],            // [{file, label, data}]
+  filter: "all",       // "all" | "failed" | "disagree" | "warn"
+  filterTouched: false,
+  query: "",
+  open: null,          // {caseId, file} | null
+  sortBy: null,        // file | null
+};
+const runCache = new Map();
+
+// Build DOM nodes. Text always goes in as text nodes, never as HTML: traces
+// hold model output, which can contain anything.
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  if (props) {
+    for (const [key, value] of Object.entries(props)) {
+      if (value === undefined || value === null || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key === "dataset") Object.assign(node.dataset, value);
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else if (key in node && typeof value !== "string") node[key] = value;
+      else node.setAttribute(key, value === true ? "" : value);
+    }
+  }
+  for (const child of children) {
+    if (child === undefined || child === null || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+function cellStatus(caseData) {
+  if (caseData === undefined) return "missing";
+  if (caseData.passed) {
+    if (caseData.tool_errors && caseData.tool_errors.length) return "warn";
+    return "pass";
+  }
+  return "fail";
+}
+
+function fmtSeconds(value) {
+  return typeof value === "number" ? value.toFixed(1) + "s" : "—";
+}
+
+function fmtDate(iso) {
+  return iso ? iso.replace("T", " ") : "—";
+}
+
+function fmtOverrides(overrides) {
+  if (!overrides) return "";
+  const parts = [];
+  for (const [key, value] of Object.entries(overrides)) parts.push(key + "=" + value);
+  return parts.join(" ");
+}
+
+async function fetchJSON(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(url + " → HTTP " + response.status);
+  return response.json();
+}
+
+function showNote(text) {
+  document.getElementById("note").textContent = text;
+}
+
+// ---- selection --------------------------------------------------------
+
+async function loadRun(file) {
+  if (!runCache.has(file)) runCache.set(file, await fetchJSON("/api/runs/" + encodeURIComponent(file)));
+  return runCache.get(file);
+}
+
+function summaryFor(file) {
+  for (const summary of state.summaries) if (summary.file === file) return summary;
+  return null;
+}
+
+async function selectRuns(files) {
+  const runs = [];
+  for (const file of files) {
+    const summary = summaryFor(file);
+    if (!summary || summary.error) continue;
+    try {
+      runs.push({ file, label: summary.label, data: await loadRun(file) });
+    } catch (err) {
+      showNote("Could not load " + file + ": " + err.message);
+    }
+  }
+  state.runs = runs.slice(0, MAX_RUNS);
+  state.open = null;
+  if (state.sortBy && !state.runs.some(run => run.file === state.sortBy)) state.sortBy = null;
+  if (!state.filterTouched) state.filter = defaultFilter();
+  const params = new URLSearchParams(location.search);
+  if (state.runs.length) params.set("runs", state.runs.map(run => run.file).join(","));
+  else params.delete("runs");
+  const query = params.toString();
+  history.replaceState(null, "", location.pathname + (query ? "?" + query.replace(/%2C/g, ",") : ""));
+}
+
+async function toggleRun(file, checked) {
+  showNote("");
+  let files = state.runs.map(run => run.file);
+  if (checked) {
+    if (files.length >= MAX_RUNS) {
+      showNote("Compare up to 3 runs at a time.");
+      renderPicker();
+      return;
+    }
+    files.push(file);
+  } else {
+    files = files.filter(f => f !== file);
+  }
+  await selectRuns(files);
+  render();
+}
+
+// ---- grid model -------------------------------------------------------
+
+function caseIds() {
+  const ids = [];
+  const seen = new Set();
+  for (const run of state.runs) {
+    for (const id of Object.keys(run.data.cases || {})) {
+      if (!seen.has(id)) { seen.add(id); ids.push(id); }
+    }
+  }
+  return ids;
+}
+
+function caseOf(run, id) {
+  return (run.data.cases || {})[id];
+}
+
+function rowStatuses(id) {
+  return state.runs.map(run => cellStatus(caseOf(run, id)));
+}
+
+function matchesFilter(filter, statuses) {
+  if (filter === "failed") return statuses.includes("fail");
+  if (filter === "warn") return statuses.includes("warn");
+  if (filter === "disagree") return new Set(statuses.filter(s => s !== "missing")).size > 1;
+  return true;
+}
+
+function matchesQuery(id) {
+  const query = state.query.trim().toLowerCase();
+  if (!query) return true;
+  const haystack = [id];
+  for (const run of state.runs) {
+    const data = caseOf(run, id);
+    if (!data) continue;
+    haystack.push(data.prompt || "", data.reason || "");
+    for (const entry of data.trace || []) {
+      for (const call of entry.calls || []) haystack.push(call.name || "");
+    }
+  }
+  return haystack.join("\n").toLowerCase().includes(query);
+}
+
+function defaultFilter() {
+  for (const id of caseIds()) {
+    if (matchesFilter("failed", rowStatuses(id))) return "failed";
+  }
+  return "all";
+}
+
+function visibleIds() {
+  const ids = [];
+  for (const id of caseIds()) {
+    if (matchesFilter(state.filter, rowStatuses(id)) && matchesQuery(id)) ids.push(id);
+  }
+  return ids;
+}
+
+// ---- rendering --------------------------------------------------------
+
+function renderPicker() {
+  const body = document.querySelector("#run-list tbody");
+  body.replaceChildren();
+  const selected = new Set(state.runs.map(run => run.file));
+  if (!state.summaries.length) {
+    body.append(el("tr", { class: "empty" }, el("td", { colspan: 8 }, "No results in .evals/ yet. Run: uv run python -m tests.evals.run --save-results")));
+    return;
+  }
+  for (const summary of state.summaries) {
+    const id = "run-" + summary.file;
+    const box = el("input", {
+      type: "checkbox", id, checked: selected.has(summary.file), disabled: Boolean(summary.error),
+      onchange: event => toggleRun(summary.file, event.target.checked),
+    });
+    const rowClass = summary.error ? "broken" : (selected.has(summary.file) ? "selected" : "");
+    body.append(el("tr", { class: rowClass, title: summary.file },
+      el("td", null, box),
+      el("td", { class: "mono" }, fmtDate(summary.started_at)),
+      el("td", null, el("label", { for: id }, summary.label), summary.error ? el("span", { class: "note" }, summary.error) : null),
+      el("td", { class: "muted" }, summary.provider || ""),
+      el("td", null, summary.score || "—"),
+      el("td", null, summary.error ? "" : String(summary.failed)),
+      el("td", null, fmtSeconds(summary.elapsed)),
+      el("td", { class: "mono muted" }, fmtOverrides(summary.sampling_overrides)),
+    ));
+  }
+}
+
+function renderHeader() {
+  const row = el("tr", null, el("th", null, "case"));
+  for (const run of state.runs) {
+    row.append(el("th", { class: "colhead", title: run.file },
+      run.label,
+      el("div", { class: "meta" }, (run.data.score || "—") + " · " + fmtSeconds(run.data.elapsed)),
+    ));
+  }
+  document.querySelector("#grid thead").replaceChildren(row);
+}
+
+function renderCell(run, id) {
+  const data = caseOf(run, id);
+  const status = cellStatus(data);
+  const isOpen = state.open && state.open.caseId === id && state.open.file === run.file;
+  return el("td", {
+    class: "cell " + status + (isOpen ? " open" : ""),
+    title: data && data.reason ? data.reason : null,
+    dataset: { file: run.file },
+  }, el("span", { class: "sym" }, SYMBOL[status]), status === "missing" ? null : el("span", { class: "secs" }, fmtSeconds(data.duration_s)));
+}
+
+function renderGrid() {
+  const section = document.getElementById("compare");
+  section.hidden = state.runs.length === 0;
+  if (section.hidden) return;
+
+  for (const button of document.querySelectorAll("#filters button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.filter === state.filter));
+  }
+  renderHeader();
+
+  const ids = visibleIds();
+  const body = document.querySelector("#grid tbody");
+  body.replaceChildren();
+  for (const id of ids) {
+    const row = el("tr", { dataset: { case: id } }, el("td", { class: "case" }, id));
+    for (const run of state.runs) row.append(renderCell(run, id));
+    body.append(row);
+  }
+  if (!ids.length) {
+    body.append(el("tr", { class: "empty" }, el("td", { colspan: state.runs.length + 1 }, "No cases match.")));
+  }
+  document.getElementById("count").textContent = ids.length + " of " + caseIds().length + " cases";
+}
+
+function render() {
+  renderPicker();
+  renderGrid();
+}
+
+// ---- wiring -----------------------------------------------------------
+
+document.getElementById("filters").addEventListener("click", event => {
+  const filter = event.target.dataset && event.target.dataset.filter;
+  if (!filter) return;
+  state.filter = filter;
+  state.filterTouched = true;
+  renderGrid();
+});
+
+document.getElementById("search").addEventListener("input", event => {
+  state.query = event.target.value;
+  renderGrid();
+});
+
+async function init() {
+  try {
+    state.summaries = await fetchJSON("/api/runs");
+  } catch (err) {
+    showNote("Could not list runs: " + err.message);
+    return;
+  }
+  const wanted = (new URLSearchParams(location.search).get("runs") || "").split(",").filter(Boolean);
+  await selectRuns(wanted.slice(0, MAX_RUNS));
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
