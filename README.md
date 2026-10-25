@@ -259,6 +259,39 @@ uv run python -m tests.evals.run                  # tool-selection scoring
 uv run uvicorn app.main:create_app --factory --port 8099  # local server
 ```
 
+### Evals
+
+Tool-selection evals need `.env`, a reachable HA and a running LLM server. Cases live in `tests/evals/cases.yaml`. The header comment there explains each key.
+
+```bash
+uv run python -m tests.evals.run --save-results   # plain: grades the first tool call
+uv run python -m tests.evals.run -v               # verbose: runs the whole agent, saves full traces
+```
+
+- **Plain** runs only ask the model which tool it would call first. No tool executes.
+- **Verbose** (`-v`) runs the full agent against real HA, so ACTION-tier tools (`trigger_action`, `notify_user`) really fire. A case passes when the expected call happens at any point, no forbidden tool is called, and the run ends with an answer. The first-call result is kept as the separate "direct" score.
+
+Results are saved as JSON in `.evals/` (git-ignored). To browse them:
+
+```bash
+uv run python -m tests.evals.view        # opens http://127.0.0.1:8765/
+uv run python -m tests.evals.view --port 9000 --no-open
+```
+
+The viewer is read-only and only reachable from this machine. Pick up to 3 runs to compare them case by case.
+
+- Each cell shows the result and how long the case took.
+  - ✓ right tool first
+  - ✓↪ got there after other calls
+  - ✓* passed, but a tool call errored
+  - ✗ failed
+  - — case not in that run
+- Filters: any failed, runs disagree, reached but not first call, passed with tool errors, plus a search over case, prompt, tool and reason.
+- Click a cell to see that run's prompt, expectation, result and full trace. Click a run's time in the column header to sort its cases by time, slowest first.
+- The selected runs are kept in the URL. Reload the page to pick up new runs.
+
+The viewer is dev tooling under `tests/evals/` and isn't part of the App image.
+
 Deploy to HA during dev (needs SSH access):
 
 ```bash

@@ -94,3 +94,18 @@ def test_sync_wrap_passes_through_unchanged():
 
     mw.wrap_model_call(req, handler)
     assert seen["req"].messages[-1].content == "hi"
+
+
+async def test_context_block_lists_watched_states():
+    mw = WatchedEntitiesMiddleware(FakeRest({"vacuum.x": "docked"}), ["vacuum.x"])
+    block = await mw.context_block()
+    assert block.startswith("<home_context>")
+    assert 'vacuum.x "X" = docked' in block
+
+
+async def test_context_block_empty_when_nothing_to_attach():
+    assert await WatchedEntitiesMiddleware(FakeRest({}), []).context_block() == ""
+    ids = []
+    for i in range(31):
+        ids.append(f"sensor.s{i}")
+    assert await WatchedEntitiesMiddleware(FakeRest({}), ids, cap=30).context_block() == ""

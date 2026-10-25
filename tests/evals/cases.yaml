@@ -1,5 +1,15 @@
-# Each case: one prompt, the tool the model MUST call first, and params that
-# must match exactly (subset — unlisted params are not checked).
+# Each case: one prompt, the expected tool, and params that must match
+# (subset — unlisted params are not checked; strings case-insensitively).
+#   expect_tool      the right tool
+#   expect_any_tool  other tools that are also a right answer (no param check)
+#   expect_not_tool  a tool that must not be called (no expected tool)
+#   forbid_tools     tools that fail the case if called at all
+#   context_answer_ok  an entity id: when it is in WATCHED_ENTITIES its state is
+#                    already in the prompt (<home_context>), so answering with
+#                    no tool call passes too
+# Plain runs grade the FIRST call. Verbose runs (-v) grade "reached": the
+# expected call at any point, no forbidden tool, and a final answer; the
+# first-call grade is kept as `direct`.
 - id: entity_state_direct
   prompt: "What is the state of light.living_room_concorde_smart_plug?"
   expect_tool: get_entity_state
@@ -89,10 +99,15 @@
 - id: vacuum_running
   prompt: "Is the vacuum running right now?"
   expect_tool: get_vacuum_state
+  # The vacuum entity's own state answers "is it running" just as well.
+  expect_any_tool: [get_vacuum_state, get_entity_state]
+  context_answer_ok: vacuum.roborock_qrevo_s
 
 - id: vacuum_current_room
   prompt: "What room is the Roborock currently cleaning?"
   expect_tool: get_vacuum_state
+  # "Docked, not cleaning" from the home context is a right answer when docked.
+  context_answer_ok: vacuum.roborock_qrevo_s
 
 - id: weather_current
   prompt: "What is the current weather at home?"
@@ -184,6 +199,8 @@
     entity_id: vacuum.roborock_qrevo_s
     to_state: cleaning
     action_entity_id: script.ai_action_stop_vacuum
+  # Acting now instead of scheduling is the failure this case exists for.
+  forbid_tools: [trigger_action]
 
 - id: time_reminder
   prompt: "Remind me at 18:00 to call mum."
