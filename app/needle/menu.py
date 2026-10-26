@@ -86,24 +86,27 @@ def fields_to_parameters(fields: dict) -> dict:
     return out
 
 
-async def _empty_meta() -> tuple[str, dict]:
-    return "", {}
+# Each fetcher returns (description, parameters), or None when HA could not be
+# read — the caller then keeps the last known values instead of blanking them.
+
+async def _no_meta() -> None:
+    return None
 
 
-async def _fetch_automation_meta(rest, unique_id: str) -> tuple[str, dict]:
+async def _fetch_automation_meta(rest, unique_id: str) -> tuple[str, dict] | None:
     try:
         config = await rest.get_automation_config(unique_id)
         return config.get("description") or "", {}
     except Exception:
-        return "", {}
+        return None
 
 
-async def _fetch_script_meta(rest, object_id: str) -> tuple[str, dict]:
+async def _fetch_script_meta(rest, object_id: str) -> tuple[str, dict] | None:
     try:
         config = await rest.get_script_config(object_id)
         return config.get("description") or "", fields_to_parameters(config.get("fields") or {})
     except Exception:
-        return "", {}
+        return None
 
 
 async def _entity_unique_ids(ws) -> dict[str, str]:
@@ -130,8 +133,11 @@ class MenuProvider:
         self._exclude = frozenset(exclude)  # e.g. the notify script: notify_user only
         self._cached: Menu | None = None
         self._fetched_at = 0.0
-        self._desc_cache: dict[str, str] = {}  # entity_id → description; session-persistent
-        self._params_cache: dict[str, dict] = {}  # entity_id → parameters; session-persistent
+        # entity_id → last successfully read description / parameters. Re-read on
+        # every refresh so edited script fields (e.g. a new room option) reach
+        # Needle without an agent restart; kept when a read fails.
+        self._desc_cache: dict[str, str] = {}
+        self._params_cache: dict[str, dict] = {}
 
     async def get(self) -> Menu:
         now = time.monotonic()
@@ -148,19 +154,24 @@ class MenuProvider:
             attrs = state.get("attributes") or {}
             name = attrs.get("friendly_name") or entity_id
             candidates.append((entity_id, name))
-        new_eids = [eid for eid, _ in candidates if eid not in self._desc_cache]
-        if new_eids:
+        eids = []
+        for eid, _name in candidates:
+            eids.append(eid)
+        if eids:
             unique_ids = await _entity_unique_ids(self._ws) if ws_is_ready(self._ws) else {}
             tasks = []
-            for eid in new_eids:
+            for eid in eids:
                 if eid.startswith("script."):
                     tasks.append(_fetch_script_meta(self._rest, eid.split(".", 1)[1]))
                 elif eid in unique_ids:
                     tasks.append(_fetch_automation_meta(self._rest, unique_ids[eid]))
                 else:
-                    tasks.append(_empty_meta())
+                    tasks.append(_no_meta())
             fetched = await asyncio.gather(*tasks)
-            for eid, (desc, params) in zip(new_eids, fetched):
+            for eid, meta in zip(eids, fetched):
+                if meta is None:
+                    continue
+                desc, params = meta
                 self._desc_cache[eid] = desc
                 self._params_cache[eid] = params
         items = []
