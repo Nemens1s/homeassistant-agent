@@ -147,3 +147,39 @@ async def test_menu_keeps_only_opted_in_actions():
         "script.ai_action_lights_on": "turn on the lights.",
         "script.ai_action_fast": "start the coffee machine.",
     }
+
+
+async def test_menu_picks_up_changed_script_fields_after_ttl():
+    configs = {"ai_action_lights_on": SCRIPT_CONFIGS["ai_action_lights_on"]}
+    provider = MenuProvider(FakeRest(SCRIPT_STATES, configs), ttl_s=0,
+                            prefixes=(AI_SCRIPT_PREFIX_ACTION,))
+    await provider.get()
+    configs["ai_action_lights_on"] = {
+        **SCRIPT_CONFIGS["ai_action_lights_on"],
+        "fields": {"room": {"required": True,
+                            "selector": {"select": {"options": ["living_room", "all"]}}}},
+    }
+    menu = await provider.get()
+    assert menu.items[0].parameters["properties"]["room"]["enum"] == ["living_room", "all"]
+
+
+class FlakyRest(FakeRest):
+    """Script config reads fail after the first refresh."""
+
+    def __init__(self, states, script_configs):
+        super().__init__(states, script_configs)
+        self.fail = False
+
+    async def get_script_config(self, object_id):
+        if self.fail:
+            raise RuntimeError("HA unavailable")
+        return await super().get_script_config(object_id)
+
+
+async def test_menu_keeps_last_known_config_when_a_read_fails():
+    rest = FlakyRest(SCRIPT_STATES, SCRIPT_CONFIGS)
+    provider = MenuProvider(rest, ttl_s=0, prefixes=(AI_SCRIPT_PREFIX_ACTION,))
+    first = await provider.get()
+    rest.fail = True
+    second = await provider.get()
+    assert second.items == first.items
