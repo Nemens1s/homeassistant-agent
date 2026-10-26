@@ -1,5 +1,5 @@
 name: "Agent Gosling"
-version: "0.4.38"
+version: "0.4.39"
 slug: agent_gosling
 description: "Chat agent over Home Assistant state, powered by a local model (any OpenAI-compatible cloud endpoint optional)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
