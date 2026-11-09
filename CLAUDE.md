@@ -72,6 +72,8 @@ class in `app/config.py`; in the addon container it reads
   latest user turn; never mutate checkpointed state) + per-run loop-guard
   reset. The system prompt must stay byte-identical between calls — anything
   per-call goes at the END of the prompt, or llama.cpp's prefix cache misses.
+  `RequestContextMiddleware` (request area/speaker line) sits inside FastPath
+  and just before CurrentTime, so the classifier never sees it.
 - `i18n/` — the language adapter at the HTTP edge (off by default,
   `language_layer_enabled`). `inbound()` translates the user's message to
   English before the agent runs, `outbound()` translates the reply back, via
@@ -104,7 +106,9 @@ class in `app/config.py`; in the addon container it reads
   DB. One-shot notes (state or time trigger), English instruction + original
   text, never raises.
 - `agent/run_scope.py` — per-run facts the agent never sees (user language,
-  notify suppression, thread id). Callers put them in `configurable`; the
+  notify suppression, thread id, and `RequestFacts`: the area/speaker
+  `ChatTurn` resolved from Gosling's `context` ids via
+  `tools/helpers/request_context.py`). Callers put them in `configurable`; the
   adapter exposes them to handlers via `current_scope()`.
 - `main.py` — FastAPI app FACTORY (`create_app`; run with `--factory`).
   Holds only the lifespan (builds everything onto `app.state`) and router
