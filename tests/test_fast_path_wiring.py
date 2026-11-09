@@ -27,8 +27,9 @@ def test_fastpath_added_when_provided_and_tier2():
     mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()))
     assert "FastPathMiddleware" in _types(mws)
     # outermost-first: with no watched entities FastPath sits just outside
-    # CurrentTime, which is always innermost
-    assert isinstance(mws[-2], FastPathMiddleware)
+    # RequestContext, then CurrentTime, which is always innermost
+    assert isinstance(mws[-3], FastPathMiddleware)
+    assert type(mws[-2]).__name__ == "RequestContextMiddleware"
     assert isinstance(mws[-1], CurrentTimeMiddleware)
 
 

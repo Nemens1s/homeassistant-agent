@@ -359,3 +359,12 @@ def test_save_note_descriptions_explain_they_run_later():
         assert "action_entity_id" in description, name
         assert "reminder" in description, name
     reg._reset_for_tests()
+
+
+def test_request_context_is_just_before_current_time():
+    from app.agent.factory import build_middleware
+    from app.tools.adapter import LoopGuard
+
+    s = Settings(_env_file=None, enable_tool_subsetting=False, watched_entities=["vacuum.x"])
+    names = [type(m).__name__ for m in build_middleware(s, LoopGuard(), "prompt", 1024, rest=object())]
+    assert names[-3:] == ["WatchedEntitiesMiddleware", "RequestContextMiddleware", "CurrentTimeMiddleware"]
