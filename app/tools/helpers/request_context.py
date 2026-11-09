@@ -106,14 +106,16 @@ def room_terms(areas: list[dict], enum_values: list[str]) -> list[str]:
 
 
 def names_a_room(text: str, terms: list[str]) -> bool:
-    """Whether the utterance names one of the rooms (whole words; a plural
-    "s" and a possessive "'s" still count)."""
+    """Whether the utterance names one of the rooms. Errs toward yes: a missed
+    name would move the action to the satellite's room, a false hit only keeps
+    the classifier's room. So a term matches at a word start, as a prefix
+    ("hall" in "hallway"), with its words joined or apart ("livingroom")."""
     text = _normalise(text or "")
     for term in terms:
         words = []
         for word in term.split():
             words.append(re.escape(word))
-        pattern = r"\b" + r"\s+".join(words) + r"s?\b"
+        pattern = r"\b" + r"\s*".join(words)
         if re.search(pattern, text):
             return True
     return False

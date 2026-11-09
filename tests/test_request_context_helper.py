@@ -129,6 +129,10 @@ def test_names_a_room_tolerates_hyphen_and_possessive():
     assert names_a_room("turn off the bedrooms", terms)
 
 
-def test_names_a_room_word_bounded():
+def test_names_a_room_errs_toward_named():
+    # A missed room name overrides to the satellite's room (wrong-room action);
+    # a false hit only keeps the classifier's room (today's behaviour).
     terms = room_terms(_AREAS, [])
-    assert not names_a_room("light in the hallway", terms)
+    assert names_a_room("light in the hallway", terms)
+    assert names_a_room("livingroom lights on", terms)
+    assert not names_a_room("dim the lights to 15%", terms)
