@@ -10,6 +10,7 @@ fail or stall over optional context. Not a tool module — registers nothing.
 from __future__ import annotations
 
 import logging
+import re
 
 from app.agent.run_scope import RequestFacts
 from app.tools.context import ws_ready
@@ -77,3 +78,42 @@ async def resolve_request_facts(ctx, device_id: str | None, user_id: str | None)
     if person is not None:
         person_name, person_entity_id = person
     return RequestFacts(area_id, area_name, person_name, person_entity_id)
+
+
+def _normalise(text: str) -> str:
+    text = text.lower().replace("’", "'")
+    text = text.replace("'s", "")
+    return text.replace("-", " ").replace("_", " ")
+
+
+def room_terms(areas: list[dict], enum_values: list[str]) -> list[str]:
+    """Every way a room can be named: area names, area_ids, area aliases and
+    the tool's own `room` values. Lower-cased, longest first."""
+    raw = []
+    for area in areas:
+        raw.append(area.get("name") or "")
+        raw.append(area.get("area_id") or "")
+        for alias in area.get("aliases") or []:
+            raw.append(alias)
+    for value in enum_values:
+        raw.append(value)
+    terms = set()
+    for term in raw:
+        term = " ".join(_normalise(str(term)).split())
+        if term:
+            terms.add(term)
+    return sorted(terms, key=lambda t: (-len(t), t))
+
+
+def names_a_room(text: str, terms: list[str]) -> bool:
+    """Whether the utterance names one of the rooms (whole words; a plural
+    "s" and a possessive "'s" still count)."""
+    text = _normalise(text or "")
+    for term in terms:
+        words = []
+        for word in term.split():
+            words.append(re.escape(word))
+        pattern = r"\b" + r"\s+".join(words) + r"s?\b"
+        if re.search(pattern, text):
+            return True
+    return False

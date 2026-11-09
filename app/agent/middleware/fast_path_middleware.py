@@ -5,6 +5,7 @@ templated reply. Never fails a request: any error falls through to the LLM."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import re
@@ -15,9 +16,12 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.llm_health import is_fast_path_outage
+from app.agent.run_scope import scope_from_running_graph
+from app.ha.websocket import ws_is_ready
 from app.agent.middleware.tool_subset_middleware import latest_human_text
 from app.telemetry import conventions
 from app.telemetry.snapshots import menu_hash, register_menu
+from app.tools.helpers.request_context import names_a_room, room_terms
 
 log = logging.getLogger("fast_path")
 
@@ -71,8 +75,9 @@ def _opted_out(request) -> bool:
 
 class FastPathMiddleware(AgentMiddleware):
     def __init__(self, backend, menu_provider, threshold: float, tracer=None, store_conn=None,
-                 health=None):
+                 health=None, ws=None):
         super().__init__()
+        self._ws = ws  # for the area registry (room correction); None disables it
         self._backend = backend
         self._menu_provider = menu_provider
         self._threshold = threshold
@@ -208,7 +213,50 @@ class FastPathMiddleware(AgentMiddleware):
             self._safe_set(span, conventions.GOSLING_FP_ENTITY_ID, decision.entity_id or "")
             self._safe_set(span, conventions.GOSLING_FP_CONFIDENCE, decision.confidence)
             self._safe_set(span, conventions.GOSLING_FP_ACCEPTED, accepted)
+            if accepted:
+                decision = await self._correct_room(decision, menu, message, span)
+                if decision is None:
+                    return None
             return decision, menu
+
+    async def _correct_room(self, decision, menu, message: str, span):
+        """The classifier has no idea where the request came from, and its
+        `room` is required, so it invents one when none is spoken. With a
+        request area and no room named, use the area instead. Returns the
+        decision to run, or None to fall through to the LLM (the area is not
+        a room this action supports)."""
+        # A (re)connecting socket would make the lookup wait out its timeout.
+        if "room" not in decision.arguments or not ws_is_ready(self._ws):
+            return decision
+        area_id = scope_from_running_graph().request.area_id
+        if area_id is None:
+            return decision
+        item = None
+        for candidate in menu.items:
+            if candidate.entity_id == decision.entity_id:
+                item = candidate
+                break
+        if item is None:
+            return decision
+        properties = item.parameters.get("properties") or {}
+        allowed = (properties.get("room") or {}).get("enum")
+        try:
+            areas = await self._ws.request_cached("config/area_registry/list")
+        except Exception:
+            log.debug("fast path: area registry unavailable; keeping the classifier's room")
+            return decision
+        if names_a_room(message, room_terms(areas, allowed or [])):
+            self._safe_set(span, conventions.GOSLING_FP_ROOM_OVERRIDE, "kept")
+            return decision
+        if allowed and area_id not in allowed:
+            self._safe_set(span, conventions.GOSLING_FP_ROOM_OVERRIDE, "unsupported")
+            self._safe_set(span, conventions.GOSLING_FP_ACCEPTED, False)
+            self._safe_set(span, conventions.GOSLING_FP_SKIP_REASON, "room_unsupported")
+            return None
+        self._safe_set(span, conventions.GOSLING_FP_ROOM_OVERRIDE, "overridden")
+        arguments = dict(decision.arguments)
+        arguments["room"] = area_id
+        return dataclasses.replace(decision, arguments=arguments)
 
     def _synthetic_call(self, entity_id: str, arguments: dict | None = None,
                         name: str = "") -> AIMessage:

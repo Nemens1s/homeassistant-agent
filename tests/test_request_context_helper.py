@@ -100,3 +100,35 @@ async def test_resolve_request_facts_combines_and_tolerates_none_ids():
     assert (await resolve_request_facts(ctx, None, None)).is_empty
     facts = await resolve_request_facts(ctx, "abc", "u1")
     assert facts == RequestFacts("living_room", "Living Room", "Ilja", "person.ilja")
+
+
+# --- room matching (fast path) ---
+
+from app.tools.helpers.request_context import names_a_room, room_terms  # noqa: E402
+
+_AREAS = [
+    {"area_id": "living_room", "name": "Living Room", "aliases": ["lounge"]},
+    {"area_id": "bedroom", "name": "Bedroom"},
+    {"area_id": "hall", "name": "Hall"},
+]
+
+
+def test_names_a_room_by_name_id_alias_and_enum():
+    terms = room_terms(_AREAS, ["living_room", "bedroom", "balcony"])
+    assert names_a_room("dim the living room", terms)
+    assert names_a_room("dim the lounge", terms)
+    assert names_a_room("bedroom lights off", terms)
+    assert names_a_room("lights on at the balcony", terms)
+    assert not names_a_room("dim the lights to 15%", terms)
+
+
+def test_names_a_room_tolerates_hyphen_and_possessive():
+    terms = room_terms(_AREAS, [])
+    assert names_a_room("living-room lights on", terms)
+    assert names_a_room("the bedroom's lamp", terms)
+    assert names_a_room("turn off the bedrooms", terms)
+
+
+def test_names_a_room_word_bounded():
+    terms = room_terms(_AREAS, [])
+    assert not names_a_room("light in the hallway", terms)

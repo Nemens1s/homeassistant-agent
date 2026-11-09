@@ -139,6 +139,10 @@ GOSLING_FP_ACCEPTED = "gosling.fast_path.accepted"
 # Reason not classified: disabled | empty_menu | error
 GOSLING_FP_SKIP_REASON = "gosling.fast_path.skip_reason"
 
+# overridden | kept | unsupported — the request's area vs the classifier's
+# `room` argument; set only when the correction step ran
+GOSLING_FP_ROOM_OVERRIDE = "gosling.fast_path.room_override"
+
 # --- execute_tool span ---
 
 # Tool input arguments as JSON with sorted keys

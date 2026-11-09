@@ -24,6 +24,7 @@ def build_middleware(
     telemetry_store_conn=None,
     rest=None,
     fast_path_health=None,
+    ws=None,
 ) -> list[AgentMiddleware]:
     middleware: list[AgentMiddleware] = [
         ContextWindowMiddleware(base_prompt, budget),
@@ -48,6 +49,7 @@ def build_middleware(
             tracer=telemetry_tracer,
             store_conn=telemetry_store_conn,
             health=fast_path_health,
+            ws=ws,
         ))
     if settings.watched_entities and rest is not None:
         # Innermost: it appends the home_context block to the user's text for

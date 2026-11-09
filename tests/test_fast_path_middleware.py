@@ -374,3 +374,144 @@ async def test_menu_fetch_error_does_not_mark_fast_path_down():
     resp = await mw.awrap_model_call(_request([HumanMessage("goodnight")]), handler)
     assert resp.content == "llm reply"
     assert health.state != DOWN
+
+
+# --- satellite area fills `room` when none is spoken ---
+
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter  # noqa: E402
+
+from app.agent.middleware import fast_path_middleware as fpm  # noqa: E402
+from app.agent.run_scope import RequestFacts, RunScope  # noqa: E402
+
+_ROOM_MENU = Menu(
+    items=(
+        MenuItem(
+            "script.ai_action_set_brightness",
+            "Set Brightness",
+            "Set room brightness",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "room": {"type": "string", "enum": ["living_room", "bedroom"]},
+                    "percentage": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                "required": ["room", "percentage"],
+            },
+        ),
+    ),
+    signature="s3",
+)
+
+_INVENTED = Decision("script.ai_action_set_brightness", 0.9, {"room": "living_room", "percentage": 15})
+
+
+class _AreaWs:
+    def __init__(self, fail=False):
+        self.fail = fail
+
+    async def request_cached(self, msg_type, ttl=60.0):
+        if self.fail:
+            raise RuntimeError("ws down")
+        assert msg_type == "config/area_registry/list"
+        return [
+            {"area_id": "living_room", "name": "Living Room"},
+            {"area_id": "bedroom", "name": "Bedroom"},
+            {"area_id": "hall", "name": "Hall"},
+        ]
+
+
+class _RecordingBackend:
+    name = "fake"
+
+    def __init__(self, decision):
+        self.decision = decision
+        self.messages = []
+
+    async def classify(self, message, menu):
+        self.messages.append(message)
+        return self.decision
+
+
+def _satellite(monkeypatch, area_id):
+    scope = RunScope()
+    if area_id is not None:
+        scope = RunScope(request=RequestFacts(area_id=area_id, area_name=area_id.title()))
+    monkeypatch.setattr(fpm, "scope_from_running_graph", lambda: scope)
+
+
+async def _run(text, ws=None, tracer=None, backend=None):
+    mw = FastPathMiddleware(backend or FakeBackend(_INVENTED), _FakeMenu(_ROOM_MENU),
+                            threshold=0.0, tracer=tracer, ws=ws)
+    fallback = AIMessage("llm")
+
+    async def handler(request):
+        return fallback
+
+    resp = await mw.awrap_model_call(_request([HumanMessage(text)]), handler)
+    return resp, fallback
+
+
+async def test_satellite_area_overrides_invented_room(monkeypatch):
+    _satellite(monkeypatch, "bedroom")
+    resp, _ = await _run("dim the lights to 15%", ws=_AreaWs())
+    assert resp.tool_calls[0]["args"]["params"] == {"room": "bedroom", "percentage": 15}
+
+
+async def test_named_room_wins(monkeypatch):
+    _satellite(monkeypatch, "bedroom")
+    resp, _ = await _run("dim the living room lights to 15%", ws=_AreaWs())
+    assert resp.tool_calls[0]["args"]["params"]["room"] == "living_room"
+
+
+async def test_no_satellite_area_leaves_call_untouched(monkeypatch):
+    _satellite(monkeypatch, None)
+    resp, _ = await _run("dim the lights to 15%", ws=_AreaWs())
+    assert resp.tool_calls[0]["args"]["params"]["room"] == "living_room"
+
+
+async def test_unsupported_satellite_area_falls_through(monkeypatch):
+    _satellite(monkeypatch, "hall")
+    resp, fallback = await _run("dim the lights to 15%", ws=_AreaWs())
+    assert resp is fallback
+
+
+async def test_area_registry_error_leaves_call_untouched(monkeypatch):
+    _satellite(monkeypatch, "bedroom")
+    resp, _ = await _run("dim the lights to 15%", ws=_AreaWs(fail=True))
+    assert resp.tool_calls[0]["args"]["params"]["room"] == "living_room"
+
+
+async def test_room_override_recorded_on_span(monkeypatch):
+    _satellite(monkeypatch, "bedroom")
+    exp = InMemorySpanExporter()
+    tp = TracerProvider()
+    tp.add_span_processor(SimpleSpanProcessor(exp))
+    await _run("dim the lights to 15%", ws=_AreaWs(), tracer=tp.get_tracer("test"))
+    span = [s for s in exp.get_finished_spans() if s.name == "fast_path.classify"][0]
+    assert span.attributes["gosling.fast_path.room_override"] == "overridden"
+
+
+async def test_classifier_sees_raw_utterance(monkeypatch):
+    _satellite(monkeypatch, "bedroom")
+    backend = _RecordingBackend(_INVENTED)
+    await _run("dim the lights to 15%", ws=_AreaWs(), backend=backend)
+    assert backend.messages == ["dim the lights to 15%"]
+
+
+async def test_reconnecting_ws_is_not_waited_on(monkeypatch):
+    _satellite(monkeypatch, "bedroom")
+    ws = _AreaWs(fail=True)  # would raise if asked: it must not be asked
+    ws.connected = False
+    calls = []
+    original = ws.request_cached
+
+    async def spy(msg_type, ttl=60.0):
+        calls.append(msg_type)
+        return await original(msg_type, ttl)
+
+    ws.request_cached = spy
+    resp, _ = await _run("dim the lights to 15%", ws=ws)
+    assert resp.tool_calls[0]["args"]["params"]["room"] == "living_room"
+    assert calls == []
