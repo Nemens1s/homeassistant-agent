@@ -88,3 +88,41 @@ async def test_scope_reaches_handlers_inside_the_graph(monkeypatch):
     await agent.ainvoke({"messages": [{"role": "user", "content": "go"}]}, config=config)
     registry._reset_for_tests()
     assert seen == [RunScope(language="ru", suppress_notify=True, thread_id="events")]
+
+
+# --- request facts (area / speaker) ---
+
+from app.agent.run_scope import (  # noqa: E402
+    AREA_ID_KEY,
+    AREA_NAME_KEY,
+    RequestFacts,
+    RunScope,
+    facts_configurable,
+    scope_from_config,
+    scope_from_running_graph,
+)
+
+
+def test_facts_configurable_drops_missing_values():
+    facts = RequestFacts(area_id="living_room", area_name="Living Room")
+    assert facts_configurable(facts) == {AREA_ID_KEY: "living_room", AREA_NAME_KEY: "Living Room"}
+    assert facts_configurable(RequestFacts()) == {}
+
+
+def test_scope_from_config_reads_request_facts():
+    facts = RequestFacts("bedroom", "Bedroom", "Ilja", "person.ilja")
+    cfg = {"configurable": {"thread_id": "t", **facts_configurable(facts)}}
+    assert scope_from_config(cfg).request == facts
+
+
+def test_scope_from_config_without_facts_is_empty():
+    assert scope_from_config({"configurable": {"thread_id": "t"}}).request.is_empty
+
+
+def test_half_an_area_is_dropped():
+    cfg = {"configurable": {AREA_ID_KEY: "bedroom"}}
+    assert scope_from_config(cfg).request.area_id is None
+
+
+def test_scope_from_running_graph_outside_a_run_is_default():
+    assert scope_from_running_graph() == RunScope()

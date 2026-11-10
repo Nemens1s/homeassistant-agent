@@ -175,6 +175,7 @@ def build_agent(
             telemetry_store_conn=telemetry_store_conn,
             rest=ctx.rest,
             fast_path_health=fast_path_health,
+            ws=ctx.ws,
         ),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )

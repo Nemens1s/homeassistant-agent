@@ -17,6 +17,12 @@ def current_time_line() -> str:
 def with_current_time(messages: list) -> list | None:
     """Copy of ``messages`` with the current time appended to the latest user
     turn, or None when there is no user turn to carry it."""
+    return append_to_latest_user_turn(messages, current_time_line())
+
+
+def append_to_latest_user_turn(messages: list, line: str) -> list | None:
+    """Copy of ``messages`` with ``line`` appended to the latest user turn, or
+    None when there is no user turn to carry it. The originals are untouched."""
     index = None
     for i in range(len(messages) - 1, -1, -1):
         if getattr(messages[i], "type", None) == "human":
@@ -25,7 +31,6 @@ def with_current_time(messages: list) -> list | None:
     if index is None:
         return None
     original = messages[index]
-    line = current_time_line()
     if isinstance(original.content, str):
         content = original.content + "\n\n" + line
     elif isinstance(original.content, list):  # multimodal: add a text part

@@ -6,6 +6,7 @@ from app.agent.middleware.context_window_middleware import ContextWindowMiddlewa
 from app.agent.middleware.current_time_middleware import CurrentTimeMiddleware
 from app.agent.middleware.history_cap_middleware import HistoryCapMiddleware
 from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
+from app.agent.middleware.request_context_middleware import RequestContextMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware
 from app.agent.middleware.fast_path_middleware import FastPathMiddleware
 from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
@@ -23,6 +24,7 @@ def build_middleware(
     telemetry_store_conn=None,
     rest=None,
     fast_path_health=None,
+    ws=None,
 ) -> list[AgentMiddleware]:
     middleware: list[AgentMiddleware] = [
         ContextWindowMiddleware(base_prompt, budget),
@@ -47,6 +49,7 @@ def build_middleware(
             tracer=telemetry_tracer,
             store_conn=telemetry_store_conn,
             health=fast_path_health,
+            ws=ws,
         ))
     if settings.watched_entities and rest is not None:
         # Innermost: it appends the home_context block to the user's text for
@@ -54,6 +57,9 @@ def build_middleware(
         # outer to it, must see the raw message; a fast-path hit with the
         # block attached matches nothing, so every request fell through.
         middleware.append(WatchedEntitiesMiddleware(rest, settings.watched_entities))
+    # The request's area/speaker line: inner to FastPath so the classifier
+    # never sees it, outer to CurrentTime so the time stays last.
+    middleware.append(RequestContextMiddleware())
     # Innermost of all, for the same reason, and so the time is the very last
     # thing in the prompt: everything before it stays a cacheable prefix.
     middleware.append(CurrentTimeMiddleware())

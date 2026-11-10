@@ -7,6 +7,7 @@ two endpoints only differ in how they deliver the answer."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -20,17 +21,31 @@ from pydantic import BaseModel
 from app.agent.history import close_dangling_turn, ran_action_this_turn
 from app.agent.llm_health import is_llm_outage
 from app.agent.middleware.telemetry_middleware import fast_path_seen
-from app.agent.run_scope import scope_configurable
+from app.agent.run_scope import RequestFacts, facts_configurable, scope_configurable
 from app.agent.streaming import stream_events
 from app.degraded import Reply
 from app.degraded.router import CommandRouter, offline_message
 from app.i18n import set_language_attributes
 from app.telemetry import conventions as C
 from app.telemetry.setup import get_tracer
+from app.tools.helpers.request_context import resolve_request_facts
 
 log = logging.getLogger("agent")
 
 router = APIRouter()
+
+# Request context is optional: past this, the turn goes on without it.
+_CONTEXT_TIMEOUT_S = 1.5
+
+
+class RequestContext(BaseModel):
+    """Raw HA ids Gosling forwards from Assist; the agent resolves them."""
+
+    model_config = {"extra": "ignore"}
+
+    device_id: str | None = None
+    satellite_id: str | None = None
+    user_id: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -39,6 +54,7 @@ class ChatRequest(BaseModel):
     message: str
     thread_id: str = "default"
     channel: str | None = None
+    context: RequestContext | None = None
 
 
 class ChatResponse(BaseModel):
@@ -54,9 +70,12 @@ class ChatResponse(BaseModel):
 
 
 def _set_span(span, **attributes) -> None:
-    """Telemetry is best-effort: a failing span never fails the request."""
+    """Telemetry is best-effort: a failing span never fails the request.
+    None values are skipped (OTel attributes cannot be None)."""
     try:
         for key, value in attributes.items():
+            if value is None:
+                continue
             span.set_attribute(key, value)
     except Exception:
         pass
@@ -84,6 +103,7 @@ class ChatTurn:
         self._channel = channel
         self._language = state.language
         self.inbound = None
+        self.facts = RequestFacts()
         trace_id = span.get_span_context().trace_id
         self.request_id = format(trace_id, "032x") if trace_id else None
 
@@ -122,8 +142,36 @@ class ChatTurn:
         })
         return self.inbound.english_text
 
+    async def resolve_context(self) -> None:
+        """Resolve the forwarded ids to an area and a speaker. Fails open: a
+        slow or failing lookup leaves the facts empty."""
+        context = self._req.context
+        ctx = getattr(self._state, "ctx", None)
+        if context is None:
+            return
+        _set_span(self._span, **{
+            C.GOSLING_DEVICE_ID: context.device_id,
+            C.GOSLING_SATELLITE_ID: context.satellite_id,
+        })
+        if ctx is None:
+            return
+        try:
+            self.facts = await asyncio.wait_for(
+                resolve_request_facts(ctx, context.device_id, context.user_id),
+                timeout=_CONTEXT_TIMEOUT_S,
+            )
+        except Exception:
+            log.debug("chat: request context not resolved", exc_info=True)
+            self.facts = RequestFacts()
+        _set_span(self._span, **{
+            C.GOSLING_CONTEXT_AREA: self.facts.area_id,
+            C.GOSLING_CONTEXT_PERSON: self.facts.person_entity_id,
+        })
+
     def configurable(self) -> dict:
-        return scope_configurable(self.inbound.language)
+        configurable = scope_configurable(self.inbound.language)
+        configurable.update(facts_configurable(self.facts))
+        return configurable
 
     async def finish(self, reply_en: str) -> tuple[str, str | None]:
         """Translate the agent's English answer back. Returns the reply and
@@ -186,6 +234,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             return ChatResponse(reply=reply.text, degraded=True, language="en")
 
         english = await turn.translate_in()
+        await turn.resolve_context()
         configurable = {"thread_id": req.thread_id}
         configurable.update(turn.configurable())
         try:
@@ -263,6 +312,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                     return
 
                 english = await turn.translate_in()
+                await turn.resolve_context()
                 # Fast path is handled transparently by FastPathMiddleware inside the agent.
                 async for event in stream_events(
                     state.agent,

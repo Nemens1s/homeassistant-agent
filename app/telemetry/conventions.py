@@ -57,6 +57,12 @@ GOSLING_ENDPOINT = "gosling.endpoint"
 # Optional device_id forwarded by the Assist component
 GOSLING_DEVICE_ID = "gosling.device_id"
 
+# Request context forwarded by the Assist component, and what it resolved to:
+# the satellite entity, the device's area_id, the speaker's person entity_id
+GOSLING_SATELLITE_ID = "gosling.context.satellite_id"
+GOSLING_CONTEXT_AREA = "gosling.context.area"
+GOSLING_CONTEXT_PERSON = "gosling.context.person"
+
 # Configured LLM provider (e.g. "llamacpp", "openai"); paired with gen_ai.request.model
 GOSLING_LLM_PROVIDER = "gosling.llm.provider"
 
@@ -132,6 +138,10 @@ GOSLING_FP_ACCEPTED = "gosling.fast_path.accepted"
 
 # Reason not classified: disabled | empty_menu | error
 GOSLING_FP_SKIP_REASON = "gosling.fast_path.skip_reason"
+
+# overridden | kept | unsupported — the request's area vs the classifier's
+# `room` argument; set only when the correction step ran
+GOSLING_FP_ROOM_OVERRIDE = "gosling.fast_path.room_override"
 
 # --- execute_tool span ---
 

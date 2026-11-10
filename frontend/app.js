@@ -335,7 +335,7 @@ async function sendMessage() {
     const resp = await fetch('api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, thread_id: threadId }),
+      body: JSON.stringify({ message: text, thread_id: threadId, channel: 'ui' }),
     });
 
     if (!resp.ok || !resp.body) {
