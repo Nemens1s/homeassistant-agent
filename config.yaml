@@ -51,6 +51,7 @@ schema:
   repeat_penalty: "float(0,2)?"
   seed: "int?"
   num_predict: "int(128,32768)?"
+  llm_thinking: "bool?"
   num_ctx: "int(1024,131072)?"
   recursion_limit: "int(2,50)?"
   max_rows: "int(5,500)?"

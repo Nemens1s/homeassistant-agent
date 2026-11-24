@@ -53,7 +53,12 @@ class Settings(BaseSettings):
         1.1, description="Penalty on already-seen tokens to curb repetition (1.0 = none). llamacpp path."
     )
     seed: int = 42
-    num_predict: int = 2048  # sent as max_tokens
+    # Sent as max_tokens. With thinking off a spoken answer or a tool call
+    # never needs more; it also bounds runaway generations.
+    num_predict: int = 512
+    llm_thinking: bool = Field(
+        False, description="Let the model emit a reasoning block. Off sends enable_thinking=false to the chat template. llamacpp path."
+    )
     # Context size the history trimmer budgets for; with llm_provider "auto"
     # it is read from llama-server's /props.
     num_ctx: int = 8192

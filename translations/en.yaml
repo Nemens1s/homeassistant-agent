@@ -61,6 +61,9 @@ configuration:
   num_predict:
     name: Max output tokens
     description: Upper bound on tokens generated per response.
+  llm_thinking:
+    name: Model thinking
+    description: Let the model emit a reasoning block before answering (llama.cpp only). Off is faster and usually more accurate on small models.
   num_ctx:
     name: Context window
     description: >-

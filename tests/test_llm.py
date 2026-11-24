@@ -39,7 +39,32 @@ def test_openai_compat_forwards_sampling_params_via_extra_body():
     llm = build_llm(s)
     assert isinstance(llm, ChatOpenAI)
     assert llm.top_p == 0.9  # native OpenAI field
-    assert llm.extra_body == {"min_p": 0.03, "top_k": 20, "repeat_penalty": 1.15}
+    assert llm.extra_body == {
+        "min_p": 0.03, "top_k": 20, "repeat_penalty": 1.15,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+
+def test_llamacpp_thinking_off_by_default():
+    s = Settings(_env_file=None, llm_provider="llamacpp", llm_url="http://x:8080")
+    llm = build_llm(s)
+    assert llm.extra_body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert llm.max_tokens == 512
+
+
+def test_llamacpp_thinking_on_sends_nothing_extra():
+    s = Settings(_env_file=None, llm_provider="llamacpp", llm_url="http://x:8080", llm_thinking=True)
+    llm = build_llm(s)
+    assert "chat_template_kwargs" not in llm.extra_body
+
+
+def test_cloud_provider_never_sends_thinking_kwargs():
+    for thinking in (False, True):
+        s = Settings(
+            _env_file=None, llm_provider="anthropic", llm_model="m", api_key="k",
+            llm_thinking=thinking,
+        )
+        assert build_llm(s).extra_body is None
 
 
 def test_cloud_provider_omits_llamacpp_only_sampling_params():

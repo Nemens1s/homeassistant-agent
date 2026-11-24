@@ -55,6 +55,12 @@ this path.
    `run.sh` fixes them via `CHECKPOINT_DB_PATH`/`TELEMETRY_DB_PATH`/
    `GLOSSARY_PATH` environment variables.
 
+   Thinking is off by default (`llm_thinking: false`): the app sends
+   `enable_thinking: false` to llama-server's Jinja chat template (`--jinja`
+   must be on, as it already is for tool calling). Templates that ignore that
+   kwarg still think; for those, start llama-server with
+   `--reasoning-budget 0` as the fallback.
+
    If you run a multilingual model without the language layer turned on,
    set `enable_tool_subsetting: false` — the tool-subsetting heuristic is
    tuned on English tool descriptions and can mis-rank tools for
