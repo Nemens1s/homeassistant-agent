@@ -12,6 +12,7 @@ from app.agent.memory import BoundedMemorySaver
 
 from app.agent.llm import build_llm
 from app.agent.middleware import build_middleware
+from app.agent.middleware.action_match_middleware import ActionRowsProvider
 from app.config import Settings
 from app.skills import list_skills
 from app.telemetry.snapshots import register_prompt, register_toolset
@@ -131,6 +132,22 @@ def _register_snapshots(conn, base_prompt: str, tools) -> None:
         log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)
 
 
+def _action_rows_provider(ctx: ToolContext, tools) -> ActionRowsProvider | None:
+    """list_actions rows for the strict action matcher, or None when this
+    agent cannot both list and trigger actions."""
+    names = set()
+    for tool in tools:
+        names.add(tool.name)
+    if "list_actions" not in names or "trigger_action" not in names:
+        return None
+    definition = registry.get("list_actions")
+
+    async def fetch():
+        return await definition.handler(definition.params_model(), ctx)
+
+    return ActionRowsProvider(fetch)
+
+
 def build_agent(
     settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None,
     telemetry=None, enabled=None, fast_path_health=None,
@@ -176,6 +193,7 @@ def build_agent(
             rest=ctx.rest,
             fast_path_health=fast_path_health,
             ws=ctx.ws,
+            action_rows=_action_rows_provider(ctx, tools),
         ),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )

@@ -33,6 +33,22 @@ def test_fastpath_added_when_provided_and_tier2():
     assert isinstance(mws[-1], CurrentTimeMiddleware)
 
 
+def test_action_match_sits_just_outside_fastpath():
+    s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False)
+    mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()),
+                           action_rows=_Menu())
+    names = _types(mws)
+    assert names.index("ActionMatchMiddleware") == names.index("FastPathMiddleware") - 1
+
+
+def test_action_match_absent_without_tier2_or_rows():
+    s = Settings(_env_file=None, allow_actions=False, enable_tool_subsetting=False)
+    mws = build_middleware(s, LoopGuard(), "p", 1024, action_rows=_Menu())
+    assert "ActionMatchMiddleware" not in _types(mws)
+    s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False)
+    assert "ActionMatchMiddleware" not in _types(build_middleware(s, LoopGuard(), "p", 1024))
+
+
 def test_fastpath_absent_without_tier2():
     s = Settings(_env_file=None, allow_actions=False, enable_tool_subsetting=False)
     mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()))

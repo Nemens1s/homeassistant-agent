@@ -3,7 +3,8 @@
 Never guesses on a write: an action fires only with one clear winner (high
 score AND a clear margin over the runner-up), when every meaningful word of
 the text is part of that action's name, and when the text is not a question
-("is the garage door open?" must never open it). Anything less returns a
+("is the garage door open?" must never open it). A polite request ("can you
+turn the lights on?") is a command, not a question. Anything less returns a
 short candidate list for the user to pick from with /run <n>.
 """
 
@@ -32,6 +33,11 @@ _QUESTION_WORDS = frozenset({
     "is", "are", "did", "does", "do", "was", "were", "what", "why", "when",
     "how", "which", "who", "can", "could", "will", "would", "should",
 })
+# "<modal> you ..." is a request, never a question, whatever the punctuation:
+# voice STT adds a "?" to it (Parakeet) or never punctuates (Zipformer).
+# "can the ...", "will it ..." stay questions. Safety does not rest on this:
+# a match still needs a clear winner whose name covers every word.
+_POLITE_MODALS = frozenset({"can", "could", "would", "will"})
 _NON_WORD = re.compile(r"[^\w\s]")
 
 
@@ -39,6 +45,7 @@ _NON_WORD = re.compile(r"[^\w\s]")
 class Match:
     winner: dict | None
     candidates: list[dict] = field(default_factory=list)
+    winner_score: float = 0.0
 
 
 def normalise(text: str) -> list[str]:
@@ -66,11 +73,38 @@ def score(query: str, name: str) -> float:
     return 0.6 * jaccard + 0.4 * ratio
 
 
+def _words(text: str) -> list[str]:
+    return _NON_WORD.sub(" ", text.lower()).split()
+
+
+def _polite_request_length(words: list[str]) -> int:
+    """How many leading words form a polite request ("please can you",
+    "could you"), or 0 when the text does not start with one."""
+    start = 0
+    if words and words[0] == "please":
+        start = 1
+    if len(words) < start + 2:
+        return 0
+    if words[start] in _POLITE_MODALS and words[start + 1] == "you":
+        return start + 2
+    return 0
+
+
+def _strip_polite_request(text: str) -> str:
+    words = _words(text)
+    length = _polite_request_length(words)
+    if length == 0:
+        return text
+    return " ".join(words[length:])
+
+
 def is_question(text: str) -> bool:
     stripped = text.strip()
+    words = _words(stripped)
+    if _polite_request_length(words) > 0:
+        return False
     if stripped.endswith("?"):
         return True
-    words = _NON_WORD.sub(" ", stripped.lower()).split()
     if not words:
         return False
     return words[0] in _QUESTION_WORDS
@@ -98,6 +132,13 @@ def _by_score(pair: tuple[float, int]) -> tuple[float, int]:
 
 
 def match_action(text: str, rows: list[dict]) -> Match:
+    if is_question(text):
+        question = True
+    else:
+        question = False
+        # "would you" / "will you" are not filler words; drop the whole
+        # polite prefix so only the command itself is scored and covered.
+        text = _strip_polite_request(text)
     scored = []
     index = 0
     for row in rows:
@@ -111,8 +152,8 @@ def match_action(text: str, rows: list[dict]) -> Match:
     if len(scored) > 1:
         second_score = scored[1][0]
     clear_winner = best_score >= FIRE_SCORE and best_score - second_score >= FIRE_MARGIN
-    if clear_winner and not is_question(text) and _covers(text, _row_name(rows[best_index])):
-        return Match(winner=rows[best_index])
+    if clear_winner and not question and _covers(text, _row_name(rows[best_index])):
+        return Match(winner=rows[best_index], winner_score=best_score)
     candidates = []
     for value, row_index in scored[:MAX_CANDIDATES]:
         if value >= SUGGEST_SCORE:

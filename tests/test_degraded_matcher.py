@@ -1,4 +1,6 @@
-from app.degraded.matcher import match_action, normalise, score
+import pytest
+
+from app.degraded.matcher import is_question, match_action, normalise, score
 
 ROWS = [
     {"entity_id": "script.ai_action_lights_on", "name": "AI Action: Living Room Lights On"},
@@ -102,3 +104,85 @@ def test_one_extra_word_blocks_firing_even_with_high_score():
     text = "turn on the living room lights garage"
     assert score(text, "AI Action: Living Room Lights On") >= 0.80
     assert match_action(text, ROWS).winner is None
+
+
+# (text, is a question?) — punctuated and unpunctuated forms of each, since
+# voice STT may or may not add the "?" (Parakeet adds it, Zipformer never does).
+QUESTION_TABLE = [
+    ("can you turn the lights on", False),
+    ("Can you turn the lights on?", False),
+    ("could you turn the lights on", False),
+    ("Could you turn the lights on?", False),
+    ("would you turn the lights on", False),
+    ("Would you turn the lights on?", False),
+    ("will you turn the lights on", False),
+    ("Will you turn the lights on?", False),
+    ("can you please turn the lights on", False),
+    ("Can you please turn the lights on?", False),
+    ("please can you turn the lights on", False),
+    ("Please, can you turn the lights on?", False),
+    ("can the lights be turned on", True),
+    ("can the lights be turned on?", True),
+    ("could it be the garage door", True),
+    ("could it be the garage door?", True),
+    ("will it rain", True),
+    ("will it rain?", True),
+    ("is the garage door open", True),
+    ("is the garage door open?", True),
+    ("are the lights on", True),
+    ("are the lights on?", True),
+    ("did you unlock the front door", True),
+    ("did you unlock the front door?", True),
+    ("does the vacuum work", True),
+    ("does the vacuum work?", True),
+    ("do the lights work", True),
+    ("do the lights work?", True),
+    ("was the door open", True),
+    ("was the door open?", True),
+    ("were the lights on", True),
+    ("were the lights on?", True),
+    ("what is on", True),
+    ("what is on?", True),
+    ("should you turn the lights on", True),
+    ("turn the lights on", False),
+    ("turn the lights on?", True),
+]
+
+
+@pytest.mark.parametrize("text, expected", QUESTION_TABLE)
+def test_is_question_table(text, expected):
+    assert is_question(text) is expected
+
+
+LIGHT_ROWS = [
+    {"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On"},
+    {"entity_id": "script.ai_action_lights_off", "name": "AI Action: Lights Off"},
+    {"entity_id": "script.ai_action_stop_vacuum", "name": "AI Action: Stop Vacuum"},
+]
+
+
+@pytest.mark.parametrize("text", ["can you turn the lights on", "Can you turn the lights on?"])
+def test_can_you_turn_the_lights_on_fires_lights_on(text):
+    assert match_action(text, LIGHT_ROWS).winner["entity_id"] == "script.ai_action_lights_on"
+
+
+@pytest.mark.parametrize("text", [
+    "can you turn the living room lights on",
+    "Can you turn the living room lights on?",
+    "could you please turn on the living room lights",
+    "Would you turn on the living room lights?",
+    "will you turn the living room lights on",
+])
+def test_polite_command_fires_lights_on(text):
+    match = match_action(text, ROWS)
+    assert match.winner["entity_id"] == "script.ai_action_lights_on"
+
+
+def test_modal_question_about_the_lights_does_not_fire():
+    assert match_action("can the lights be turned on?", LIGHT_ROWS).winner is None
+    assert match_action("can the lights be turned on", LIGHT_ROWS).winner is None
+
+
+def test_polite_question_outside_the_action_name_does_not_fire():
+    rows = ROWS + [{"entity_id": "script.ai_garage_camera", "name": "AI Action: Garage Camera Snapshot"}]
+    assert match_action("can you see the garage camera?", rows).winner is None

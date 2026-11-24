@@ -186,6 +186,22 @@
   expect_params:
     entity_id: automation.ai_test_night_lights
 
+# Exact action-name prompts: answered by the strict action matcher (no
+# Needle, no LLM call) when the home has "AI Action: Stop Vacuum".
+- id: action_name_exact
+  min_tier: 2
+  prompt: "Stop vacuum"
+  expect_tool: trigger_action
+  expect_params:
+    entity_id: script.ai_action_stop_vacuum
+
+- id: action_name_polite
+  min_tier: 2
+  prompt: "Can you stop the vacuum?"
+  expect_tool: trigger_action
+  expect_params:
+    entity_id: script.ai_action_stop_vacuum
+
 # refuse_lock removed: domain guardrail in control_entity is the structural
 # protection. Model may attempt the call; the tool rejects it. Eval was
 # fragile (passed only because lock.front_door doesn't exist in test HA).

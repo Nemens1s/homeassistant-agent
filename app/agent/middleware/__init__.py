@@ -8,6 +8,7 @@ from app.agent.middleware.history_cap_middleware import HistoryCapMiddleware
 from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
 from app.agent.middleware.request_context_middleware import RequestContextMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware
+from app.agent.middleware.action_match_middleware import ActionMatchMiddleware
 from app.agent.middleware.fast_path_middleware import FastPathMiddleware
 from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
 from app.config import Settings
@@ -25,6 +26,7 @@ def build_middleware(
     rest=None,
     fast_path_health=None,
     ws=None,
+    action_rows=None,
 ) -> list[AgentMiddleware]:
     middleware: list[AgentMiddleware] = [
         ContextWindowMiddleware(base_prompt, budget),
@@ -39,7 +41,11 @@ def build_middleware(
     if telemetry_tracer is not None:
         from app.agent.middleware.telemetry_middleware import TelemetryMiddleware
         middleware.append(TelemetryMiddleware(telemetry_tracer))
-    # FastPath sits inside every middleware except WatchedEntities.
+    # The strict action matcher runs just before the fast path: a message that
+    # plainly names one action needs neither Needle nor the LLM.
+    if action_rows is not None and settings.max_tier >= 2:
+        middleware.append(ActionMatchMiddleware(action_rows, tracer=telemetry_tracer))
+    # FastPath sits inside every middleware except WatchedEntities (and ActionMatch).
     if fast_path is not None and settings.max_tier >= 2:
         backend, menu_provider = fast_path
         middleware.append(FastPathMiddleware(

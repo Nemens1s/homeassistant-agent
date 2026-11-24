@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from app.agent.history import close_dangling_turn, ran_action_this_turn
 from app.agent.llm_health import is_llm_outage
-from app.agent.middleware.telemetry_middleware import fast_path_seen
+from app.agent.middleware.telemetry_middleware import first_step_path
 from app.agent.run_scope import RequestFacts, facts_configurable, scope_configurable
 from app.agent.streaming import stream_events
 from app.degraded import Reply
@@ -179,7 +179,7 @@ class ChatTurn:
         reply = await self._language.outbound(reply_en, self.inbound)
         set_language_attributes(self._span, self._language, self.inbound, reply_native=reply)
         self._record_native_turn(reply_en, reply)
-        path = "fast_path" if fast_path_seen.get() else "agent"
+        path = first_step_path.get()
         _set_span(self._span, **{C.GOSLING_OUTPUT_TEXT: reply_en, C.GOSLING_PATH: path})
         if reply == reply_en:
             return reply, None
