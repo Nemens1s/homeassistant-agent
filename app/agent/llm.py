@@ -30,12 +30,18 @@ def _build_llamacpp(settings: Settings) -> BaseChatModel:
     """llama.cpp's llama-server: OpenAI-compatible, but also reads min_p/top_k/
     repeat_penalty from the request body. These are not OpenAI-spec, so we forward
     them via extra_body — a strict cloud API would 400 on them, hence llamacpp-only.
-    (top_p IS an OpenAI field and rides in the shared kwargs.)"""
+    (top_p IS an OpenAI field and rides in the shared kwargs.)
+
+    With llm_thinking off, chat_template_kwargs tells the Jinja chat template
+    to skip the reasoning block (Qwen3, Gemma 4 read enable_thinking; other
+    templates ignore it — `--reasoning-budget 0` on the server is the fallback)."""
     extra_body = {
         "min_p": settings.min_p,
         "top_k": settings.top_k,
         "repeat_penalty": settings.repeat_penalty,
     }
+    if not settings.llm_thinking:
+        extra_body["chat_template_kwargs"] = {"enable_thinking": False}
     return ReasoningChatOpenAI(**_openai_compat_kwargs(settings), extra_body=extra_body)
 
 
@@ -43,9 +49,9 @@ def _openai_compat_kwargs(settings: Settings) -> dict:
     """Kwargs shared by every OpenAI-compatible endpoint (cloud or local).
     Only OpenAI-spec params — provider-specific knobs are added by the caller."""
     log.info(
-        "ChatOpenAI params: model=%s url=%s temperature=%s top_p=%s seed=%s max_tokens=%s",
+        "ChatOpenAI params: model=%s url=%s temperature=%s top_p=%s seed=%s max_tokens=%s thinking=%s",
         settings.llm_model, settings.llm_url, settings.temperature, settings.top_p,
-        settings.seed, settings.num_predict,
+        settings.seed, settings.num_predict, "on" if settings.llm_thinking else "off",
     )
     return {
         "model": settings.llm_model or "model",

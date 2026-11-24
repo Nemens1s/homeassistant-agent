@@ -71,6 +71,12 @@ whether a matching entity exists in this home. `skills_enabled` (hidden,
 default `false`) turns on user-supplied troubleshooting playbooks — see
 "Skills (optional)" above.
 
+`llm_thinking` (hidden, default `false`) controls reasoning on the llamacpp
+path: off sends `chat_template_kwargs: {enable_thinking: false}` so the model
+answers without a `<think>` block (faster, and more accurate on small models
+in the evals). `num_predict` now defaults to 512 for the same reason — no
+reasoning block needs room; raise it if you turn `llm_thinking` on.
+
 If you run a multilingual model without turning on the language layer,
 set `enable_tool_subsetting: false` — the small-model tool-subsetting
 heuristic is tuned on English tool descriptions and can mis-rank tools for

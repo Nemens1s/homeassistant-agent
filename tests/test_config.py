@@ -68,6 +68,14 @@ def test_load_settings_from_options_json(tmp_path, monkeypatch):
     assert s.num_ctx == 4096
 
 
+def test_llm_thinking_round_trips_from_options_json(tmp_path, monkeypatch):
+    assert Settings(_env_file=None).llm_thinking is False
+    options = tmp_path / "options.json"
+    options.write_text(json.dumps({"llm_thinking": True}))
+    monkeypatch.setattr("app.config.OPTIONS_FILE", options)
+    assert load_settings().llm_thinking is True
+
+
 def test_allow_actions_default_off():
     s = Settings(_env_file=None)
     assert s.allow_actions is False
