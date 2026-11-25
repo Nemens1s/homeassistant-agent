@@ -14,8 +14,8 @@ from app.agent.llm import build_llm
 from app.agent.middleware import build_middleware
 from app.agent.middleware.action_match_middleware import ActionRowsProvider
 from app.config import Settings
-from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX
-from app.needle.menu import MenuProvider, exact_match_opt_in
+from app.constants import AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION
+from app.needle.menu import MenuProvider
 from app.skills import list_skills
 from app.telemetry.snapshots import register_prompt, register_toolset
 from app.tools import registry
@@ -136,17 +136,24 @@ def _register_snapshots(conn, base_prompt: str, tools) -> None:
         log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)
 
 
+def _every_action(description: str) -> bool:
+    # The matcher must see unflagged actions too: a flagged action may only
+    # win when no better unflagged one exists.
+    return True
+
+
 def _action_rows_provider(ctx: ToolContext, tools) -> ActionRowsProvider | None:
-    """EXACT-MATCH actions for the strict action matcher, or None when this
-    agent cannot trigger actions."""
+    """Every action, each marked whether it carries EXACT-MATCH, for the
+    strict action matcher; or None when this agent cannot trigger actions."""
     names = set()
     for tool in tools:
         names.add(tool.name)
     if "trigger_action" not in names:
         return None
     menu_provider = MenuProvider(
-        ctx.rest, ttl_s=_ACTION_ROWS_TTL_S, prefixes=(AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX),
-        ws=ctx.ws, exclude=(ctx.settings.notify_action,), opt_in=exact_match_opt_in,
+        ctx.rest, ttl_s=_ACTION_ROWS_TTL_S,
+        prefixes=(AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION),
+        ws=ctx.ws, exclude=(ctx.settings.notify_action,), opt_in=_every_action,
         skip_disabled=True,
     )
     return ActionRowsProvider(menu_provider)

@@ -21,6 +21,7 @@ class MenuItem:
     name: str
     description: str = ""  # optional; Needle matches on name + description
     parameters: dict = field(default_factory=dict)
+    exact_match: bool = False  # description carries the EXACT-MATCH flag
 
 
 @dataclass(frozen=True)
@@ -200,6 +201,7 @@ class MenuProvider:
                 name=name,
                 description=needle_description(description),
                 parameters=self._params_cache.get(entity_id, {}),
+                exact_match=exact_match_opt_in(description),
             ))
         items.sort(key=_by_id)
         menu = Menu(items=tuple(items), signature=_signature(items))

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -14,12 +15,13 @@ from app.agent.middleware.telemetry_middleware import synthetic_path
 from app.needle.menu import Menu, MenuItem
 
 ROWS = [
-    {"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On"},
-    {"entity_id": "script.ai_action_lights_off", "name": "AI Action: Lights Off"},
-    {"entity_id": "script.ai_action_stop_vacuum", "name": "AI Action: Stop Vacuum"},
+    {"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On", "exact_match": True},
+    {"entity_id": "script.ai_action_lights_off", "name": "AI Action: Lights Off", "exact_match": True},
+    {"entity_id": "script.ai_action_stop_vacuum", "name": "AI Action: Stop Vacuum", "exact_match": True},
     {
         "entity_id": "script.ai_action_set_brightness",
         "name": "AI Action: Set Brightness",
+        "exact_match": True,
         "params": {
             "type": "object",
             "properties": {"percentage": {"type": "integer"}},
@@ -139,10 +141,38 @@ async def test_question_falls_through_without_listing_actions():
 async def test_optional_params_fall_through():
     # An optional room is the fast path's to fill from the request area.
     rows = [{"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On",
+             "exact_match": True,
              "params": {"type": "object", "properties": {"room": {"type": "string"}}}}]
     handler = _Handler()
     await ActionMatchMiddleware(_Rows(rows)).awrap_model_call(
         _request([HumanMessage("lights on")]), handler,
+    )
+    assert handler.called
+
+
+@pytest.mark.asyncio
+async def test_unflagged_winner_falls_through():
+    rows = [{"entity_id": "script.ai_action_stop_vacuum", "name": "AI Action: Stop Vacuum",
+             "exact_match": False}]
+    handler = _Handler()
+    await ActionMatchMiddleware(_Rows(rows)).awrap_model_call(
+        _request([HumanMessage("stop vacuum")]), handler,
+    )
+    assert handler.called
+
+
+@pytest.mark.asyncio
+async def test_better_unflagged_action_beats_a_flagged_one_that_contains_the_words():
+    # Matched against flagged actions alone, "Bedroom Lights On Dim" would win.
+    rows = [
+        {"entity_id": "script.ai_action_bedroom_dim", "name": "AI Action: Bedroom Lights On Dim",
+         "exact_match": True},
+        {"entity_id": "script.ai_action_bedroom_on", "name": "AI Action: Bedroom Lights On",
+         "exact_match": False},
+    ]
+    handler = _Handler()
+    await ActionMatchMiddleware(_Rows(rows)).awrap_model_call(
+        _request([HumanMessage("bedroom lights on")]), handler,
     )
     assert handler.called
 
@@ -193,15 +223,15 @@ class _MenuProvider:
 @pytest.mark.asyncio
 async def test_rows_provider_turns_menu_items_into_sorted_rows():
     menu = _MenuProvider([
-        MenuItem("script.ai_action_stop_vacuum", "AI Action: Stop Vacuum"),
+        MenuItem("script.ai_action_stop_vacuum", "AI Action: Stop Vacuum", exact_match=True),
         MenuItem("script.ai_action_lights_on", "AI Action: Lights On", parameters={"type": "object"}),
     ])
     rows = await ActionRowsProvider(menu).get()
     assert rows == [
         {"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On",
-         "params": {"type": "object"}},
+         "params": {"type": "object"}, "exact_match": False},
         {"entity_id": "script.ai_action_stop_vacuum", "name": "AI Action: Stop Vacuum",
-         "params": {}},
+         "params": {}, "exact_match": True},
     ]
 
 
@@ -211,6 +241,25 @@ async def test_rows_provider_backs_off_after_a_failure():
     provider = ActionRowsProvider(menu, backoff_s=60)
     assert await provider.get() == []
     assert await provider.get() == []
+    assert menu.calls == 1
+
+
+class _SlowFailingMenu:
+    def __init__(self):
+        self.calls = 0
+
+    async def get(self):
+        self.calls += 1
+        await asyncio.sleep(0.01)
+        raise RuntimeError("HA timeout")
+
+
+@pytest.mark.asyncio
+async def test_requests_queued_behind_a_failed_fetch_do_not_retry():
+    menu = _SlowFailingMenu()
+    provider = ActionRowsProvider(menu, backoff_s=60)
+    results = await asyncio.gather(provider.get(), provider.get(), provider.get())
+    assert results == [[], [], []]
     assert menu.calls == 1
 
 

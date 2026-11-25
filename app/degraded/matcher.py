@@ -33,11 +33,11 @@ _QUESTION_WORDS = frozenset({
     "is", "are", "did", "does", "do", "was", "were", "what", "why", "when",
     "how", "which", "who", "can", "could", "will", "would", "should",
 })
-# "<modal> you ..." is a request, never a question, whatever the punctuation:
-# voice STT adds a "?" to it (Parakeet) or never punctuates (Zipformer).
-# "can the ...", "will it ..." stay questions. Safety does not rest on this:
-# a match still needs a clear winner whose name covers every word.
-_POLITE_MODALS = frozenset({"can", "could", "would", "will"})
+# "can you ..." / "could you ..." is a request, never a question, whatever
+# the punctuation: voice STT adds a "?" to it (Parakeet) or never punctuates
+# (Zipformer). "will you open the garage door?" and "would you ..." stay
+# questions (they can ask about intent), as do "can the ...", "will it ...".
+_POLITE_MODALS = frozenset({"can", "could"})
 _NON_WORD = re.compile(r"[^\w\s]")
 
 
@@ -45,7 +45,6 @@ _NON_WORD = re.compile(r"[^\w\s]")
 class Match:
     winner: dict | None
     candidates: list[dict] = field(default_factory=list)
-    winner_score: float = 0.0
 
 
 def normalise(text: str) -> list[str]:
@@ -136,8 +135,8 @@ def match_action(text: str, rows: list[dict]) -> Match:
         question = True
     else:
         question = False
-        # "would you" / "will you" are not filler words; drop the whole
-        # polite prefix so only the command itself is scored and covered.
+        # Drop the whole polite prefix ("please can you") so only the
+        # command itself is scored and covered.
         text = _strip_polite_request(text)
     scored = []
     index = 0
@@ -153,7 +152,7 @@ def match_action(text: str, rows: list[dict]) -> Match:
         second_score = scored[1][0]
     clear_winner = best_score >= FIRE_SCORE and best_score - second_score >= FIRE_MARGIN
     if clear_winner and not question and _covers(text, _row_name(rows[best_index])):
-        return Match(winner=rows[best_index], winner_score=best_score)
+        return Match(winner=rows[best_index])
     candidates = []
     for value, row_index in scored[:MAX_CANDIDATES]:
         if value >= SUGGEST_SCORE:

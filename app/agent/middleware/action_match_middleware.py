@@ -3,8 +3,11 @@
 A message that plainly names one action ("lights on", "stop vacuum") is
 answered with no Needle call and no LLM call: a synthetic trigger_action
 tool call that the agent's tool node runs (gate + audit + loop guard apply),
-then the templated reply. Only actions whose HA description carries the
-EXACT-MATCH flag are eligible. Stricter than offline mode: no did-you-mean
+then the templated reply. The match is strict but not literal (the matcher's
+rules: one clear winner whose name covers every word). It runs over every
+action, and fires only when the winner's HA description carries the
+EXACT-MATCH flag: a better unflagged match must win, not lose to a flagged
+one that merely contains the words. Stricter than offline mode: no did-you-mean
 list, no deferral text, no action that takes params. Anything else falls
 through silently. Never fails a request: any error falls through too."""
 
@@ -41,9 +44,9 @@ _FAILURE_BACKOFF_S = 15
 
 
 class ActionRowsProvider:
-    """Matcher rows ({entity_id, name, params}) from a MenuProvider that keeps
-    only EXACT-MATCH actions. The menu provider owns the TTL cache; this adds
-    a lock (one fetch at a time) and a short backoff after a failure."""
+    """Matcher rows ({entity_id, name, params, exact_match}) from a
+    MenuProvider of every action. The menu provider owns the TTL cache; this
+    adds a lock (one fetch at a time) and a short backoff after a failure."""
 
     def __init__(self, menu_provider, backoff_s: float = _FAILURE_BACKOFF_S):
         self._menu_provider = menu_provider
@@ -51,10 +54,19 @@ class ActionRowsProvider:
         self._failed_at: float | None = None
         self._lock = asyncio.Lock()
 
+    def _backing_off(self) -> bool:
+        if self._failed_at is None:
+            return False
+        return time.monotonic() - self._failed_at < self._backoff_s
+
     async def get(self) -> list[dict]:
-        if self._failed_at is not None and time.monotonic() - self._failed_at < self._backoff_s:
+        if self._backing_off():
             return []
         async with self._lock:
+            # Checked again: a request queued behind a failed fetch must not
+            # retry HA itself.
+            if self._backing_off():
+                return []
             try:
                 menu = await self._menu_provider.get()
             except Exception as exc:
@@ -66,7 +78,7 @@ class ActionRowsProvider:
         rows = []
         for item in menu.items:
             rows.append({"entity_id": item.entity_id, "name": item.name,
-                         "params": item.parameters})
+                         "params": item.parameters, "exact_match": item.exact_match})
         return sorted_action_rows(rows)
 
 
@@ -110,6 +122,8 @@ class ActionMatchMiddleware(AgentMiddleware):
         """The one action *text* plainly names, or None to fall through."""
         rows = await self._rows_provider.get()
         match = match_action(text, rows)
-        if match.winner is None or _takes_params(match.winner):
+        if match.winner is None or not match.winner.get("exact_match"):
+            return None
+        if _takes_params(match.winner):
             return None
         return match.winner

@@ -37,7 +37,8 @@ def build_middleware(
     if settings.enable_tool_subsetting:
         # First so it trims the menu before the model call is assembled.
         middleware.insert(0, ToolSubsetMiddleware())
-    # TelemetryMiddleware is inserted immediately before FastPath (outer to it).
+    # TelemetryMiddleware is outer to ActionMatch and FastPath, so their
+    # synthetic responses are recorded as model calls (the Metrics path count).
     if telemetry_tracer is not None:
         from app.agent.middleware.telemetry_middleware import TelemetryMiddleware
         middleware.append(TelemetryMiddleware(telemetry_tracer))
@@ -45,7 +46,7 @@ def build_middleware(
     # plainly names one action needs neither Needle nor the LLM.
     if action_rows is not None and settings.max_tier >= 2:
         middleware.append(ActionMatchMiddleware(action_rows))
-    # FastPath sits inside every middleware except WatchedEntities (and ActionMatch).
+    # FastPath sits just inside ActionMatch.
     if fast_path is not None and settings.max_tier >= 2:
         backend, menu_provider = fast_path
         middleware.append(FastPathMiddleware(

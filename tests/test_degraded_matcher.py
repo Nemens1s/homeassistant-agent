@@ -113,10 +113,11 @@ QUESTION_TABLE = [
     ("Can you turn the lights on?", False),
     ("could you turn the lights on", False),
     ("Could you turn the lights on?", False),
-    ("would you turn the lights on", False),
-    ("Would you turn the lights on?", False),
-    ("will you turn the lights on", False),
-    ("Will you turn the lights on?", False),
+    ("would you turn the lights on", True),
+    ("Would you turn the lights on?", True),
+    ("will you turn the lights on", True),
+    ("Will you turn the lights on?", True),
+    ("will you open the garage door?", True),
     ("can you please turn the lights on", False),
     ("Can you please turn the lights on?", False),
     ("please can you turn the lights on", False),
@@ -170,8 +171,8 @@ def test_can_you_turn_the_lights_on_fires_lights_on(text):
     "can you turn the living room lights on",
     "Can you turn the living room lights on?",
     "could you please turn on the living room lights",
-    "Would you turn on the living room lights?",
-    "will you turn the living room lights on",
+    "Could you turn on the living room lights?",
+    "please can you turn the living room lights on",
 ])
 def test_polite_command_fires_lights_on(text):
     match = match_action(text, ROWS)
@@ -181,6 +182,11 @@ def test_polite_command_fires_lights_on(text):
 def test_modal_question_about_the_lights_does_not_fire():
     assert match_action("can the lights be turned on?", LIGHT_ROWS).winner is None
     assert match_action("can the lights be turned on", LIGHT_ROWS).winner is None
+
+
+@pytest.mark.parametrize("text", ["Will you open the garage door?", "would you open the garage door"])
+def test_will_and_would_you_stay_questions_offline(text):
+    assert match_action(text, DOOR_ROWS).winner is None
 
 
 def test_polite_question_outside_the_action_name_does_not_fire():

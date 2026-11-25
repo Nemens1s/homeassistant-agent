@@ -228,6 +228,24 @@ async def test_exact_match_menu_keeps_flagged_actions_and_skips_off_automations(
     assert ids == ["script.ai_action_lights_on", "script.ai_action_stop_vacuum"]
 
 
+async def test_menu_items_carry_the_exact_match_flag():
+    states = [
+        {"entity_id": "script.ai_action_stop_vacuum", "state": "off",
+         "attributes": {"friendly_name": "AI Action: Stop Vacuum"}},
+        {"entity_id": "script.ai_action_garage_open", "state": "off",
+         "attributes": {"friendly_name": "AI Action: Garage Door Open"}},
+    ]
+    configs = {
+        "ai_action_stop_vacuum": {"description": "EXACT-MATCH. FAST-PATH: stop the vacuum"},
+        "ai_action_garage_open": {"description": "FAST-PATH: open the garage"},
+    }
+    menu = await MenuProvider(FakeRest(states, configs), prefixes=("script.ai_",)).get()
+    flags = {}
+    for item in menu.items:
+        flags[item.entity_id] = item.exact_match
+    assert flags == {"script.ai_action_garage_open": False, "script.ai_action_stop_vacuum": True}
+
+
 async def test_skip_disabled_drops_automations_that_are_off():
     states = [
         {"entity_id": "automation.ai_night", "state": "off", "attributes": {"friendly_name": "Night"}},
