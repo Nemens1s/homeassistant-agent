@@ -187,7 +187,8 @@
     entity_id: automation.ai_test_night_lights
 
 # Exact action-name prompts: answered by the strict action matcher (no
-# Needle, no LLM call) when the home has "AI Action: Stop Vacuum".
+# Needle, no LLM call) when the home has "AI Action: Stop Vacuum" with the
+# EXACT-MATCH flag in its description; without the flag the LLM must pick it.
 - id: action_name_exact
   min_tier: 2
   prompt: "Stop vacuum"

@@ -73,8 +73,10 @@ class in `app/config.py`; in the addon container it reads
   reset. The system prompt must stay byte-identical between calls — anything
   per-call goes at the END of the prompt, or llama.cpp's prefix cache misses.
   `ActionMatchMiddleware` (just outside FastPath) runs the strict degraded
-  matcher on every free-text turn: an exact action name becomes a synthetic
-  `trigger_action` call with no Needle/LLM call (`gosling.path=action_match`).
+  matcher on every free-text turn: an exact name of an action whose HA
+  description has the `EXACT-MATCH` flag (and no script fields) becomes a
+  synthetic `trigger_action` call with no Needle/LLM call
+  (`gosling.path=action_match`).
   `RequestContextMiddleware` (request area/speaker line) sits inside FastPath
   and just before CurrentTime, so the classifier never sees it.
 - `i18n/` — the language adapter at the HTTP edge (off by default,

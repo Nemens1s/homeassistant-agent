@@ -86,6 +86,27 @@ options. The probe never blocks startup indefinitely (3 s timeout per
 request) and never fails the add-on — an unreachable backend just falls back
 to the OpenAI-compatible client, same as before this behavior existed.
 
+## Exact-match actions
+
+A message that plainly names one action ("stop vacuum", "can you turn the
+lights on?") can run that action straight away, with no fast-path call and no
+LLM call. Only actions whose HA description carries the `EXACT-MATCH` flag
+(one uppercase word; nothing after it is read) are eligible, and only when
+`allow_actions: true`:
+
+```yaml
+alias: "AI Action: Stop Vacuum"
+description: "Stops the robot vacuum. EXACT-MATCH. FAST-PATH: stop the vacuum"
+```
+
+The match is strict: every meaningful word of the message must be part of
+the action's name, one action must clearly win, and the message must not be a
+question or about later ("when I leave …"). Actions that take script fields
+never qualify. Anything else goes on to the fast path and the LLM as usual.
+Leave the flag off any action whose name could also be read as a status
+question (voice input often has no "?"): "Garage Door Open" must not open the
+garage when someone asks whether it is.
+
 ## Fast path
 
 An optional low-latency path: an external inference service maps a user

@@ -11,7 +11,7 @@ from app.agent.middleware.action_match_middleware import (
     ActionRowsProvider,
 )
 from app.agent.middleware.telemetry_middleware import synthetic_path
-from app.tools.base import ToolResult
+from app.needle.menu import Menu, MenuItem
 
 ROWS = [
     {"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On"},
@@ -37,11 +37,6 @@ class _Rows:
     async def get(self):
         self.calls += 1
         return self.rows
-
-
-class _BrokenRows:
-    async def get(self):
-        raise RuntimeError("HA down")
 
 
 def _request(messages, context=None):
@@ -130,6 +125,29 @@ async def test_deferral_text_falls_through_without_listing_actions():
 
 
 @pytest.mark.asyncio
+async def test_question_falls_through_without_listing_actions():
+    rows = _Rows(ROWS)
+    handler = _Handler()
+    await ActionMatchMiddleware(rows).awrap_model_call(
+        _request([HumanMessage("is the vacuum stopped?")]), handler,
+    )
+    assert handler.called
+    assert rows.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_optional_params_fall_through():
+    # An optional room is the fast path's to fill from the request area.
+    rows = [{"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On",
+             "params": {"type": "object", "properties": {"room": {"type": "string"}}}}]
+    handler = _Handler()
+    await ActionMatchMiddleware(_Rows(rows)).awrap_model_call(
+        _request([HumanMessage("lights on")]), handler,
+    )
+    assert handler.called
+
+
+@pytest.mark.asyncio
 async def test_required_params_fall_through():
     handler = _Handler()
     await ActionMatchMiddleware(_Rows(ROWS)).awrap_model_call(
@@ -150,15 +168,6 @@ async def test_event_runs_skip_it():
 
 
 @pytest.mark.asyncio
-async def test_listing_failure_falls_through():
-    handler = _Handler()
-    await ActionMatchMiddleware(_BrokenRows()).awrap_model_call(
-        _request([HumanMessage("stop vacuum")]), handler,
-    )
-    assert handler.called
-
-
-@pytest.mark.asyncio
 async def test_fast_path_tool_results_are_left_alone():
     handler = _Handler()
     result = ToolMessage(content=json.dumps({"status": "ok"}), tool_call_id="fastpath-abc")
@@ -168,59 +177,49 @@ async def test_fast_path_tool_results_are_left_alone():
     assert handler.called
 
 
-@pytest.mark.asyncio
-async def test_rows_provider_caches_and_handles_errors():
-    calls = []
+class _MenuProvider:
+    def __init__(self, items=(), fail=False):
+        self.items = tuple(items)
+        self.fail = fail
+        self.calls = 0
 
-    async def fetch():
-        calls.append(1)
-        return ToolResult.ok({"rows": ROWS[:1], "total": 1})
-
-    provider = ActionRowsProvider(fetch, ttl_s=60)
-    assert await provider.get() == ROWS[:1]
-    assert await provider.get() == ROWS[:1]
-    assert len(calls) == 1
-
-    async def failing():
-        return ToolResult.error("ha_unreachable", "down")
-
-    assert await ActionRowsProvider(failing).get() == []
-
-
-class _Span:
-    def __init__(self):
-        self.attributes = {}
-
-    def set_attribute(self, key, value):
-        self.attributes[key] = value
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-
-class _Tracer:
-    def __init__(self):
-        self.spans = []
-
-    def start_as_current_span(self, name):
-        span = _Span()
-        self.spans.append((name, span))
-        return span
+    async def get(self):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("HA down")
+        return Menu(items=self.items, signature="s")
 
 
 @pytest.mark.asyncio
-async def test_hit_records_a_classify_span():
-    tracer = _Tracer()
-    mw = ActionMatchMiddleware(_Rows(ROWS), tracer=tracer)
-    await mw.awrap_model_call(_request([HumanMessage("stop vacuum")]), _fail_handler)
-    name, span = tracer.spans[0]
-    assert name == "fast_path.classify"
-    assert span.attributes["gosling.fast_path.backend"] == "action_match"
-    assert span.attributes["gosling.fast_path.entity_id"] == "script.ai_action_stop_vacuum"
-    assert span.attributes["gosling.fast_path.accepted"] is True
+async def test_rows_provider_turns_menu_items_into_sorted_rows():
+    menu = _MenuProvider([
+        MenuItem("script.ai_action_stop_vacuum", "AI Action: Stop Vacuum"),
+        MenuItem("script.ai_action_lights_on", "AI Action: Lights On", parameters={"type": "object"}),
+    ])
+    rows = await ActionRowsProvider(menu).get()
+    assert rows == [
+        {"entity_id": "script.ai_action_lights_on", "name": "AI Action: Lights On",
+         "params": {"type": "object"}},
+        {"entity_id": "script.ai_action_stop_vacuum", "name": "AI Action: Stop Vacuum",
+         "params": {}},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rows_provider_backs_off_after_a_failure():
+    menu = _MenuProvider(fail=True)
+    provider = ActionRowsProvider(menu, backoff_s=60)
+    assert await provider.get() == []
+    assert await provider.get() == []
+    assert menu.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_listing_failure_falls_through():
+    handler = _Handler()
+    mw = ActionMatchMiddleware(ActionRowsProvider(_MenuProvider(fail=True)))
+    await mw.awrap_model_call(_request([HumanMessage("stop vacuum")]), handler)
+    assert handler.called
 
 
 def test_synthetic_path_names_the_tier():

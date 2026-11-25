@@ -3,15 +3,16 @@
 A message that plainly names one action ("lights on", "stop vacuum") is
 answered with no Needle call and no LLM call: a synthetic trigger_action
 tool call that the agent's tool node runs (gate + audit + loop guard apply),
-then the templated reply. Stricter than offline mode: no did-you-mean list,
-no deferral text, no action with required params. Anything else falls
+then the templated reply. Only actions whose HA description carries the
+EXACT-MATCH flag are eligible. Stricter than offline mode: no did-you-mean
+list, no deferral text, no action that takes params. Anything else falls
 through silently. Never fails a request: any error falls through too."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from contextlib import nullcontext
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage
@@ -24,8 +25,8 @@ from app.agent.middleware.fast_path_middleware import (
     templated_reply,
 )
 from app.agent.middleware.tool_subset_middleware import latest_human_text
-from app.degraded.formatters import display_action_name
-from app.degraded.matcher import match_action
+from app.degraded.formatters import display_action_name, sorted_action_rows
+from app.degraded.matcher import is_question, match_action
 from app.telemetry import conventions
 
 log = logging.getLogger("action_match")
@@ -34,37 +35,54 @@ ACTION_MATCH_PREFIX = "actionmatch-"
 # The "model" of the synthetic response; telemetry counts the path by it.
 ACTION_MATCH_MODEL = conventions.ACTION_MATCH_MODEL
 
-_ROWS_TTL_S = 60
+# After a failed listing, skip the tier this long instead of retrying HA on
+# every turn.
+_FAILURE_BACKOFF_S = 15
 
 
 class ActionRowsProvider:
-    """list_actions rows, cached for a short TTL. `fetch` is an async
-    callable returning the list_actions ToolResult."""
+    """Matcher rows ({entity_id, name, params}) from a MenuProvider that keeps
+    only EXACT-MATCH actions. The menu provider owns the TTL cache; this adds
+    a lock (one fetch at a time) and a short backoff after a failure."""
 
-    def __init__(self, fetch, ttl_s: int = _ROWS_TTL_S):
-        self._fetch = fetch
-        self._ttl_s = ttl_s
-        self._rows: list[dict] | None = None
-        self._fetched_at = 0.0
+    def __init__(self, menu_provider, backoff_s: float = _FAILURE_BACKOFF_S):
+        self._menu_provider = menu_provider
+        self._backoff_s = backoff_s
+        self._failed_at: float | None = None
+        self._lock = asyncio.Lock()
 
     async def get(self) -> list[dict]:
-        now = time.monotonic()
-        if self._rows is not None and (now - self._fetched_at) < self._ttl_s:
-            return self._rows
-        result = await self._fetch()
+        if self._failed_at is not None and time.monotonic() - self._failed_at < self._backoff_s:
+            return []
+        async with self._lock:
+            try:
+                menu = await self._menu_provider.get()
+            except Exception as exc:
+                self._failed_at = time.monotonic()
+                log.warning("action match: could not list actions (%s); skipping for %ss",
+                            exc, self._backoff_s)
+                return []
+        self._failed_at = None
         rows = []
-        if result.status == "ok":
-            rows = (result.data or {}).get("rows") or []
-        self._rows = rows
-        self._fetched_at = now
-        return rows
+        for item in menu.items:
+            rows.append({"entity_id": item.entity_id, "name": item.name,
+                         "params": item.parameters})
+        return sorted_action_rows(rows)
+
+
+def _takes_params(row: dict) -> bool:
+    """Any script field, optional or not: the fast path or the LLM fills it
+    (an optional `room` comes from the request area there)."""
+    params = row.get("params") or {}
+    if params.get("properties"):
+        return True
+    return bool(params.get("required"))
 
 
 class ActionMatchMiddleware(AgentMiddleware):
-    def __init__(self, rows_provider, tracer=None):
+    def __init__(self, rows_provider):
         super().__init__()
         self._rows_provider = rows_provider
-        self._tracer = tracer
 
     async def awrap_model_call(self, request, handler):
         messages = request.messages
@@ -76,8 +94,9 @@ class ActionMatchMiddleware(AgentMiddleware):
 
         if not isinstance(last, HumanMessage) or opted_out(request):
             return await handler(request)
+        # Cheap checks first: neither of these can fire, so skip the listing.
         text = latest_human_text(messages)
-        if has_deferral_cue(text):
+        if has_deferral_cue(text) or is_question(text):
             return await handler(request)
 
         winner = await self._match(text)
@@ -89,37 +108,8 @@ class ActionMatchMiddleware(AgentMiddleware):
 
     async def _match(self, text: str) -> dict | None:
         """The one action *text* plainly names, or None to fall through."""
-        try:
-            rows = await self._rows_provider.get()
-        except Exception:
-            log.warning("action match: could not list actions; falling through", exc_info=True)
-            return None
+        rows = await self._rows_provider.get()
         match = match_action(text, rows)
-        if match.winner is None:
+        if match.winner is None or _takes_params(match.winner):
             return None
-        # The LLM must fill required script fields.
-        required = (match.winner.get("params") or {}).get("required") or []
-        if required:
-            return None
-        self._record_hit(match)
         return match.winner
-
-    def _record_hit(self, match) -> None:
-        """A classify span like the fast path's, so the Metrics tab can count
-        action-match hits. Telemetry never fails the request."""
-        if self._tracer is None:
-            return
-        try:
-            span_context = self._tracer.start_as_current_span(conventions.SPAN_CLASSIFY)
-        except Exception:
-            span_context = nullcontext(None)
-        try:
-            with span_context as span:
-                if span is None:
-                    return
-                span.set_attribute(conventions.GOSLING_FP_BACKEND, ACTION_MATCH_MODEL)
-                span.set_attribute(conventions.GOSLING_FP_ENTITY_ID, match.winner.get("entity_id", ""))
-                span.set_attribute(conventions.GOSLING_FP_CONFIDENCE, match.winner_score)
-                span.set_attribute(conventions.GOSLING_FP_ACCEPTED, True)
-        except Exception:
-            pass

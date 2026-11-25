@@ -129,7 +129,10 @@ class TelemetryMiddleware(AgentMiddleware):
             ai_msg = _extract_ai_message(result)
             if ai_msg is not None:
                 _safe_set(span, C.GEN_AI_RESPONSE_MODEL, lambda: ai_msg.response_metadata.get("model_name"))
-                _safe_set(span, C.GOSLING_FAST_PATH, lambda: bool(ai_msg.response_metadata.get("fast_path", False)))
+                is_fast_path = bool(ai_msg.response_metadata.get("fast_path", False))
+                _safe_set(span, C.GOSLING_FAST_PATH, lambda: is_fast_path)
+                if is_fast_path and current_step.get() == 1:
+                    first_step_path.set(synthetic_path(ai_msg.response_metadata.get("model_name")))
                 _safe_set_thinking_content(span, ai_msg)
                 _safe_set(span, C.GEN_AI_USAGE_INPUT_TOKENS, lambda: (
                     ai_msg.usage_metadata.get("input_tokens")

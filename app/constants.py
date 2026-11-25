@@ -23,6 +23,12 @@ AI_SCRIPT_PREFIX_ACTION = "script.ai_action"
 # Anything without a marker (e.g. the notify script) is agent-only.
 FAST_PATH_MARKERS: tuple[str, ...] = ("NEEDLE:", "FAST-PATH:")
 
+# An action may fire with no LLM call while the LLM is up (the strict action
+# matcher) only when its HA description carries this flag, as a whole
+# uppercase word. A flag, not a prefix: nothing after it is read. Leave it off
+# anything whose name could also be a status question ("Garage Door Open").
+EXACT_MATCH_MARKER = "EXACT-MATCH"
+
 # Domains the REST client may write to when allow_actions is on. Writes are
 # menu-only (automation.ai_* / script.ai_*, enforced elsewhere), so this is a
 # fixed pair, not a user-configurable list.

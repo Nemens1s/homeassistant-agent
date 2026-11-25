@@ -44,7 +44,7 @@ def build_middleware(
     # The strict action matcher runs just before the fast path: a message that
     # plainly names one action needs neither Needle nor the LLM.
     if action_rows is not None and settings.max_tier >= 2:
-        middleware.append(ActionMatchMiddleware(action_rows, tracer=telemetry_tracer))
+        middleware.append(ActionMatchMiddleware(action_rows))
     # FastPath sits inside every middleware except WatchedEntities (and ActionMatch).
     if fast_path is not None and settings.max_tier >= 2:
         backend, menu_provider = fast_path
