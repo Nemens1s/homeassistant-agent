@@ -52,6 +52,21 @@ def test_recent_requests_derives_fast_path_from_model_calls(tmp_path):
     assert result["rows"][0]["path"] == "fast_path"
 
 
+def test_action_match_hit_is_its_own_path(tmp_path):
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    conn.execute(
+        "INSERT INTO requests (request_id, ts_start, channel, input_text, path, outcome) "
+        "VALUES ('r1', '2026-09-17T00:00:00Z','ui','stop vacuum','agent','ok')",
+    )
+    conn.execute(
+        "INSERT INTO model_calls (span_id, request_id, ts_start, step, model, fast_path, tools_offered) "
+        "VALUES ('r1-s0', 'r1', '2026-09-17T00:00:00Z', 0, 'action_match', 1, '[]')",
+    )
+    conn.commit()
+    assert summary(conn, days=3650)["requests_by_path"] == {"action_match": 1}
+    assert recent_requests(conn, limit=10)["rows"][0]["path"] == "action_match"
+
+
 # ---------------------------------------------------------------------------
 # TDD anchor: summary counts requests by path
 # ---------------------------------------------------------------------------

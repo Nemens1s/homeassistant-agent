@@ -72,8 +72,12 @@ GOSLING_INPUT_TEXT = "gosling.input.text"
 # Final reply text
 GOSLING_OUTPUT_TEXT = "gosling.output.text"
 
-# fast_path | agent — fast_path if the first step was a hit
+# fast_path | action_match | agent — which tier answered the first step
 GOSLING_PATH = "gosling.path"
+
+# Model name of the strict action matcher's synthetic responses; how
+# model_calls rows tell an action-match hit from a fast-path hit
+ACTION_MATCH_MODEL = "action_match"
 
 # ok | recursion_limit | error | cancelled
 GOSLING_OUTCOME = "gosling.outcome"
@@ -118,7 +122,7 @@ GOSLING_TOOL_CALLS = "gosling.tool_calls"
 
 # --- fast_path.classify span ---
 
-# Backend name (e.g. "needle", "needle-remote")
+# Backend name (e.g. "needle", "needle-remote", or "action_match")
 GOSLING_FP_BACKEND = "gosling.fast_path.backend"
 
 # SHA-256 (16 hex chars) of the menu items as sent to the backend

@@ -22,13 +22,21 @@ current_step: contextvars.ContextVar[int] = contextvars.ContextVar(
     "gosling_step", default=0
 )
 
-# Set to True when the first chat step is a fast-path hit.  The invoke_agent
-# gosling root span in main.py reads this to set gosling.path = "fast_path".
-fast_path_seen: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "gosling_fast_path_seen", default=False
+# Set when the first chat step is a synthetic hit: "fast_path", or
+# "action_match" for the strict action matcher. The invoke_agent gosling root
+# span reads it for gosling.path ("agent" when unset).
+first_step_path: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "gosling_first_step_path", default="agent"
 )
 
 _MAX_RESULT_BYTES = 64 * 1024  # 64 KB cap for GOSLING_TOOL_RESULT
+
+
+def synthetic_path(model_name) -> str:
+    """gosling.path of a synthetic (fast_path=True) response."""
+    if model_name == C.ACTION_MATCH_MODEL:
+        return "action_match"
+    return "fast_path"
 
 
 def _safe_set(span, key: str, fn) -> None:
@@ -87,9 +95,9 @@ class TelemetryMiddleware(AgentMiddleware):
                 _safe_set(span, C.GEN_AI_RESPONSE_MODEL, lambda: ai_msg.response_metadata.get("model_name"))
                 is_fast_path = bool(ai_msg.response_metadata.get("fast_path", False))
                 _safe_set(span, C.GOSLING_FAST_PATH, lambda: is_fast_path)
-                # Propagate fast_path hit to the root span via contextvar (step 1 only).
+                # Propagate a synthetic hit to the root span via contextvar (step 1 only).
                 if is_fast_path and current_step.get() == 1:
-                    fast_path_seen.set(True)
+                    first_step_path.set(synthetic_path(ai_msg.response_metadata.get("model_name")))
                 _safe_set_thinking_content(span, ai_msg)
                 _safe_set(span, C.GEN_AI_USAGE_INPUT_TOKENS, lambda: (
                     ai_msg.usage_metadata.get("input_tokens")
@@ -121,7 +129,10 @@ class TelemetryMiddleware(AgentMiddleware):
             ai_msg = _extract_ai_message(result)
             if ai_msg is not None:
                 _safe_set(span, C.GEN_AI_RESPONSE_MODEL, lambda: ai_msg.response_metadata.get("model_name"))
-                _safe_set(span, C.GOSLING_FAST_PATH, lambda: bool(ai_msg.response_metadata.get("fast_path", False)))
+                is_fast_path = bool(ai_msg.response_metadata.get("fast_path", False))
+                _safe_set(span, C.GOSLING_FAST_PATH, lambda: is_fast_path)
+                if is_fast_path and current_step.get() == 1:
+                    first_step_path.set(synthetic_path(ai_msg.response_metadata.get("model_name")))
                 _safe_set_thinking_content(span, ai_msg)
                 _safe_set(span, C.GEN_AI_USAGE_INPUT_TOKENS, lambda: (
                     ai_msg.usage_metadata.get("input_tokens")

@@ -12,7 +12,10 @@ from app.agent.memory import BoundedMemorySaver
 
 from app.agent.llm import build_llm
 from app.agent.middleware import build_middleware
+from app.agent.middleware.action_match_middleware import ActionRowsProvider
 from app.config import Settings
+from app.constants import AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION
+from app.needle.menu import MenuProvider
 from app.skills import list_skills
 from app.telemetry.snapshots import register_prompt, register_toolset
 from app.tools import registry
@@ -23,6 +26,8 @@ log = logging.getLogger("agent.factory")
 
 # Reserve room for the model's own output and for tool schemas + prompt.
 _RESPONSE_AND_SCHEMA_MARGIN = 2048
+
+_ACTION_ROWS_TTL_S = 60  # how long the EXACT-MATCH action list is cached
 
 # Code-owned base prompt. Action/scheduling guidance is added conditionally
 # below (ACTIONS, DOING THINGS LATER) rather than stated here, so a read-only
@@ -131,6 +136,29 @@ def _register_snapshots(conn, base_prompt: str, tools) -> None:
         log.warning("telemetry: snapshot registration failed (non-fatal)", exc_info=True)
 
 
+def _every_action(description: str) -> bool:
+    # The matcher must see unflagged actions too: a flagged action may only
+    # win when no better unflagged one exists.
+    return True
+
+
+def _action_rows_provider(ctx: ToolContext, tools) -> ActionRowsProvider | None:
+    """Every action, each marked whether it carries EXACT-MATCH, for the
+    strict action matcher; or None when this agent cannot trigger actions."""
+    names = set()
+    for tool in tools:
+        names.add(tool.name)
+    if "trigger_action" not in names:
+        return None
+    menu_provider = MenuProvider(
+        ctx.rest, ttl_s=_ACTION_ROWS_TTL_S,
+        prefixes=(AI_AUTOMATION_PREFIX_ACTION, AI_SCRIPT_PREFIX_ACTION),
+        ws=ctx.ws, exclude=(ctx.settings.notify_action,), opt_in=_every_action,
+        skip_disabled=True,
+    )
+    return ActionRowsProvider(menu_provider)
+
+
 def build_agent(
     settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None,
     telemetry=None, enabled=None, fast_path_health=None,
@@ -176,6 +204,7 @@ def build_agent(
             rest=ctx.rest,
             fast_path_health=fast_path_health,
             ws=ctx.ws,
+            action_rows=_action_rows_provider(ctx, tools),
         ),
         checkpointer=checkpointer or BoundedMemorySaver(),
     )

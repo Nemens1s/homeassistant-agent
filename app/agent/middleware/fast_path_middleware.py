@@ -63,7 +63,47 @@ def _reply_from_envelope(raw: str, name: str, params: dict | None = None) -> str
     return "Sorry, I couldn't run that automation."
 
 
-def _opted_out(request) -> bool:
+def is_synthetic_result(message, prefix: str) -> bool:
+    """The tool result of a synthetic call whose id starts with *prefix*."""
+    return isinstance(message, ToolMessage) and str(message.tool_call_id).startswith(prefix)
+
+
+def templated_reply(messages: list) -> AIMessage:
+    """The step after a synthetic trigger_action call: the templated reply,
+    no model call."""
+    last = messages[-1]
+    # fastpath_entity_id does NOT survive onto the ToolMessage (LangGraph
+    # constructs it from the tool result only); read the entity_id from the
+    # preceding AIMessage's tool_calls args instead.
+    try:
+        prev = messages[-2]
+        prev_args = prev.tool_calls[0]["args"]
+        params = prev_args.get("params") or {}
+        name = prev.additional_kwargs.get("fastpath_name") or ""
+    except (IndexError, KeyError, AttributeError, TypeError):
+        params = {}
+        name = ""
+    return AIMessage(content=_reply_from_envelope(last.content, name, params))
+
+
+def synthetic_trigger_call(prefix: str, model_name: str, entity_id: str,
+                           arguments: dict | None = None, name: str = "") -> AIMessage:
+    """A trigger_action tool call standing in for a model response. The
+    agent's tool node runs it, so the gate, audit and loop guard all apply.
+    `fast_path: True` marks it as synthetic for telemetry; `model_name` tells
+    which tier produced it."""
+    call_id = prefix + uuid.uuid4().hex
+    return AIMessage(
+        content="",
+        tool_calls=[{"name": "trigger_action",
+                     "args": {"entity_id": entity_id, "params": arguments or {}},
+                     "id": call_id}],
+        response_metadata={"model_name": model_name, "fast_path": True},
+        additional_kwargs={"fastpath_entity_id": entity_id, "fastpath_name": name},
+    )
+
+
+def opted_out(request) -> bool:
     runtime = getattr(request, "runtime", None)
     context = getattr(runtime, "context", None)
     if context is None:
@@ -116,23 +156,12 @@ class FastPathMiddleware(AgentMiddleware):
         last = messages[-1] if messages else None
 
         # Step after a fast-path tool call → templated reply.
-        if isinstance(last, ToolMessage) and str(last.tool_call_id).startswith(FASTPATH_PREFIX):
-            # fastpath_entity_id does NOT survive onto the ToolMessage (LangGraph
-            # constructs it from the tool result only); read the entity_id from the
-            # preceding AIMessage's tool_calls args instead.
-            try:
-                prev = messages[-2]
-                prev_args = prev.tool_calls[0]["args"]
-                params = prev_args.get("params") or {}
-                name = prev.additional_kwargs.get("fastpath_name") or ""
-            except (IndexError, KeyError, AttributeError, TypeError):
-                params = {}
-                name = ""
-            return AIMessage(content=_reply_from_envelope(last.content, name, params))
+        if is_synthetic_result(last, FASTPATH_PREFIX):
+            return templated_reply(messages)
 
         # First step of a turn → classify.
         if isinstance(last, HumanMessage):
-            if _opted_out(request):
+            if opted_out(request):
                 self._record_skip("disabled")
                 return await handler(request)
             if self._health is not None and self._health.is_down:
@@ -260,12 +289,5 @@ class FastPathMiddleware(AgentMiddleware):
 
     def _synthetic_call(self, entity_id: str, arguments: dict | None = None,
                         name: str = "") -> AIMessage:
-        call_id = FASTPATH_PREFIX + uuid.uuid4().hex
-        return AIMessage(
-            content="",
-            tool_calls=[{"name": "trigger_action",
-                         "args": {"entity_id": entity_id, "params": arguments or {}},
-                         "id": call_id}],
-            response_metadata={"model_name": self._backend.name, "fast_path": True},
-            additional_kwargs={"fastpath_entity_id": entity_id, "fastpath_name": name},
-        )
+        return synthetic_trigger_call(FASTPATH_PREFIX, self._backend.name, entity_id,
+                                      arguments, name)

@@ -9,6 +9,8 @@ Usage:
 
 import sqlite3
 
+from app.telemetry.conventions import ACTION_MATCH_MODEL
+
 SCHEMA_VERSION = 2
 
 # Each entry is a SQL script to apply when upgrading to that schema version.
@@ -264,14 +266,19 @@ LEFT JOIN tool_stats tl ON tl.request_id = r.request_id;
 def _derived_path(alias: str) -> str:
     """SQL expression for a request's path, derived from model_calls.
 
-    requests.path is written from the fast_path_seen contextvar, which is set
+    requests.path is written from the first_step_path contextvar, which is set
     inside the LangGraph execution and cannot propagate back to the request
     handler, so the stored value is unreliable (always 'agent'). model_calls
     .fast_path, by contrast, is set directly from the model response and is
-    authoritative: a request is a fast-path hit iff any of its model steps was.
+    authoritative: a request is a synthetic hit iff any of its model steps was.
+    The strict action matcher's synthetic steps carry model 'action_match'.
     """
     return (
         "CASE WHEN EXISTS ("
+        f"SELECT 1 FROM model_calls mc "
+        f"WHERE mc.request_id = {alias}.request_id AND mc.fast_path = 1 "
+        f"AND mc.model = '{ACTION_MATCH_MODEL}'"
+        ") THEN 'action_match' WHEN EXISTS ("
         f"SELECT 1 FROM model_calls mc "
         f"WHERE mc.request_id = {alias}.request_id AND mc.fast_path = 1"
         ") THEN 'fast_path' ELSE 'agent' END"

@@ -7,10 +7,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import time
 from dataclasses import dataclass, field
 
-from app.constants import AI_AUTOMATION_PREFIX, FAST_PATH_MARKERS
+from app.constants import AI_AUTOMATION_PREFIX, EXACT_MATCH_MARKER, FAST_PATH_MARKERS
 from app.ha.websocket import ws_is_ready
 
 
@@ -20,6 +21,7 @@ class MenuItem:
     name: str
     description: str = ""  # optional; Needle matches on name + description
     parameters: dict = field(default_factory=dict)
+    exact_match: bool = False  # description carries the EXACT-MATCH flag
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,14 @@ def _by_id(item: MenuItem) -> str:
 
 
 
+# Whole word, uppercase only: prose that mentions "an exact match" never opts in.
+_EXACT_MATCH = re.compile(r"(?<![\w-])" + re.escape(EXACT_MATCH_MARKER) + r"(?![\w-])")
+
+
+def exact_match_opt_in(ha_description: str) -> bool:
+    return bool(_EXACT_MATCH.search(ha_description))
+
+
 def fast_path_opt_in(ha_description: str) -> bool:
     for marker in FAST_PATH_MARKERS:
         if marker in ha_description:
@@ -48,10 +58,12 @@ def fast_path_opt_in(ha_description: str) -> bool:
 
 
 def needle_description(ha_description: str) -> str:
+    # The EXACT-MATCH flag is for the agent, never part of Needle's phrases.
+    text = _EXACT_MATCH.sub("", ha_description)
     for marker in FAST_PATH_MARKERS:
-        if marker in ha_description:
-            return ha_description.split(marker)[-1].strip()
-    return ha_description
+        if marker in text:
+            return text.split(marker)[-1].strip()
+    return text.strip()
 
 
 def fields_to_parameters(fields: dict) -> dict:
@@ -125,8 +137,11 @@ async def _entity_unique_ids(ws) -> dict[str, str]:
 
 class MenuProvider:
     def __init__(self, rest, ttl_s: int = 60, prefixes=(AI_AUTOMATION_PREFIX,), ws=None,
-                 exclude: tuple[str, ...] = ()):
+                 exclude: tuple[str, ...] = (), opt_in=fast_path_opt_in,
+                 skip_disabled: bool = False):
         self._rest = rest
+        self._opt_in = opt_in  # description -> bool: which actions make the menu
+        self._skip_disabled = skip_disabled  # drop automations that are off
         self._ws = ws
         self._ttl_s = ttl_s
         self._prefixes = tuple(prefixes)
@@ -150,6 +165,8 @@ class MenuProvider:
             if not entity_id.startswith(self._prefixes):
                 continue
             if entity_id in self._exclude:
+                continue
+            if self._skip_disabled and entity_id.startswith("automation.") and state.get("state") == "off":
                 continue
             attrs = state.get("attributes") or {}
             name = attrs.get("friendly_name") or entity_id
@@ -177,13 +194,14 @@ class MenuProvider:
         items = []
         for entity_id, name in candidates:
             description = self._desc_cache.get(entity_id, "")
-            if not fast_path_opt_in(description):
+            if not self._opt_in(description):
                 continue
             items.append(MenuItem(
                 entity_id=entity_id,
                 name=name,
                 description=needle_description(description),
                 parameters=self._params_cache.get(entity_id, {}),
+                exact_match=exact_match_opt_in(description),
             ))
         items.sort(key=_by_id)
         menu = Menu(items=tuple(items), signature=_signature(items))

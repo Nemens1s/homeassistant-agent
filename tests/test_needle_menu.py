@@ -1,5 +1,7 @@
 from app.constants import AI_AUTOMATION_PREFIX, AI_SCRIPT_PREFIX_ACTION
-from app.needle.menu import MenuProvider, fields_to_parameters
+import pytest
+
+from app.needle.menu import MenuProvider, exact_match_opt_in, fields_to_parameters, needle_description
 
 
 class FakeRest:
@@ -183,3 +185,73 @@ async def test_menu_keeps_last_known_config_when_a_read_fails():
     rest.fail = True
     second = await provider.get()
     assert second.items == first.items
+
+
+@pytest.mark.parametrize("description, expected", [
+    ("Stops the vacuum. EXACT-MATCH. FAST-PATH: stop the vacuum", True),
+    ("EXACT-MATCH", True),
+    ("FAST-PATH: stop the vacuum", False),
+    ("needs an exact-match to fire", False),
+    ("NOT-EXACT-MATCH", False),
+    ("EXACT-MATCHING", False),
+])
+def test_exact_match_opt_in(description, expected):
+    assert exact_match_opt_in(description) is expected
+
+
+def test_needle_description_drops_the_exact_match_flag():
+    assert needle_description("FAST-PATH: stop the vacuum EXACT-MATCH") == "stop the vacuum"
+    assert needle_description("Stops it. EXACT-MATCH. FAST-PATH: stop the vacuum") == "stop the vacuum"
+
+
+async def test_exact_match_menu_keeps_flagged_actions_and_skips_off_automations():
+    states = [
+        {"entity_id": "script.ai_action_stop_vacuum", "state": "off",
+         "attributes": {"friendly_name": "AI Action: Stop Vacuum"}},
+        {"entity_id": "script.ai_action_garage_open", "state": "off",
+         "attributes": {"friendly_name": "AI Action: Garage Door Open"}},
+        {"entity_id": "script.ai_action_lights_on", "state": "off",
+         "attributes": {"friendly_name": "AI Action: Lights On"}},
+    ]
+    configs = {
+        "ai_action_stop_vacuum": {"description": "Stops it. EXACT-MATCH. FAST-PATH: stop the vacuum"},
+        "ai_action_garage_open": {"description": "FAST-PATH: open the garage"},
+        "ai_action_lights_on": {"description": "EXACT-MATCH"},
+    }
+    provider = MenuProvider(FakeRest(states, configs), prefixes=("script.ai_",),
+                            opt_in=exact_match_opt_in, skip_disabled=True)
+    menu = await provider.get()
+    ids = []
+    for item in menu.items:
+        ids.append(item.entity_id)
+    # Scripts are "off" while idle: skip_disabled only drops automations.
+    assert ids == ["script.ai_action_lights_on", "script.ai_action_stop_vacuum"]
+
+
+async def test_menu_items_carry_the_exact_match_flag():
+    states = [
+        {"entity_id": "script.ai_action_stop_vacuum", "state": "off",
+         "attributes": {"friendly_name": "AI Action: Stop Vacuum"}},
+        {"entity_id": "script.ai_action_garage_open", "state": "off",
+         "attributes": {"friendly_name": "AI Action: Garage Door Open"}},
+    ]
+    configs = {
+        "ai_action_stop_vacuum": {"description": "EXACT-MATCH. FAST-PATH: stop the vacuum"},
+        "ai_action_garage_open": {"description": "FAST-PATH: open the garage"},
+    }
+    menu = await MenuProvider(FakeRest(states, configs), prefixes=("script.ai_",)).get()
+    flags = {}
+    for item in menu.items:
+        flags[item.entity_id] = item.exact_match
+    assert flags == {"script.ai_action_garage_open": False, "script.ai_action_stop_vacuum": True}
+
+
+async def test_skip_disabled_drops_automations_that_are_off():
+    states = [
+        {"entity_id": "automation.ai_night", "state": "off", "attributes": {"friendly_name": "Night"}},
+        {"entity_id": "automation.ai_movie", "state": "on", "attributes": {"friendly_name": "Movie"}},
+    ]
+    provider = MenuProvider(FakeRest(states), ws=FakeRegistryWS(), opt_in=lambda d: True,
+                            skip_disabled=True)
+    menu = await provider.get()
+    assert [item.entity_id for item in menu.items] == ["automation.ai_movie"]

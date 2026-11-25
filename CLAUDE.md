@@ -72,6 +72,11 @@ class in `app/config.py`; in the addon container it reads
   latest user turn; never mutate checkpointed state) + per-run loop-guard
   reset. The system prompt must stay byte-identical between calls — anything
   per-call goes at the END of the prompt, or llama.cpp's prefix cache misses.
+  `ActionMatchMiddleware` (just outside FastPath) runs the strict degraded
+  matcher over every action on each free-text turn; when the clear winner's
+  HA description has the `EXACT-MATCH` flag (and it takes no script fields),
+  it becomes a synthetic `trigger_action` call with no Needle/LLM call
+  (`gosling.path=action_match`).
   `RequestContextMiddleware` (request area/speaker line) sits inside FastPath
   and just before CurrentTime, so the classifier never sees it.
 - `i18n/` — the language adapter at the HTTP edge (off by default,
