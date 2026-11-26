@@ -17,10 +17,25 @@ jobs:
         with:
           ref: main
           token: ${{ secrets.BUMP_VERSION_PAT }}
+          fetch-depth: 2
+
+      # A PR that sets the version itself (a minor or major release) keeps
+      # it: compare pyproject.toml's version line before and after the merge.
+      - name: Check for a hand-set version
+        id: manual
+        run: |
+          before=$(git show HEAD~1:pyproject.toml | grep -m1 '^version = ')
+          after=$(grep -m1 '^version = ' pyproject.toml)
+          if [ "$before" != "$after" ]; then
+            echo "Version set by the PR ($after); skipping the bump."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: astral-sh/setup-uv@v5
+        if: steps.manual.outputs.skip != 'true'
 
       - name: Bump patch version
+        if: steps.manual.outputs.skip != 'true'
         id: bump
         run: |
           NEW=$(python3 - <<'EOF'
@@ -47,8 +62,10 @@ jobs:
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
 
       - run: uv lock
+        if: steps.manual.outputs.skip != 'true'
 
       - name: Commit and push
+        if: steps.manual.outputs.skip != 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

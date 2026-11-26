@@ -1,9 +1,12 @@
 # Changelog
 
 Notable changes to Agent Gosling. The add-on store shows this file.
-New entries go under **Unreleased**; the version is bumped after merge.
+Every merge to `main` is a release. A PR names the version its merge
+produces: the next patch by default (the bump workflow sets it), or a
+minor/major version set by hand in `pyproject.toml` + `config.yaml`
+(the workflow then leaves it alone).
 
-## Unreleased
+## 0.5.0
 
 ### Added
 
