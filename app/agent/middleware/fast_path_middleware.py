@@ -42,14 +42,25 @@ def has_deferral_cue(text: str) -> bool:
     return bool(_DEFERRAL_CUE.search(text or ""))
 
 
-def _reply_from_envelope(raw: str, name: str, params: dict | None = None) -> str:
-    """Build the templated confirmation. `name` must be a human-readable label
-    (the menu item's friendly name), never a raw HA entity/service id — raw ids
-    in this text get shown to the user, sent to TTS and fed through translation,
-    where a Latin-script id can also skew language detection of the whole reply."""
+def _parse_envelope(raw) -> dict | None:
+    """A tool result's envelope as a dict, or None when it isn't one."""
     try:
         env = json.loads(raw)
     except (ValueError, TypeError):
+        return None
+    if not isinstance(env, dict):
+        return None
+    return env
+
+
+def _reply_from_envelope(raw, name: str, params: dict | None = None) -> str:
+    """Build the templated confirmation. `name` must be a human-readable label
+    (the menu item's friendly name), never a raw HA entity/service id — raw ids
+    in this text get shown to the user, sent to TTS and fed through translation,
+    where a Latin-script id can also skew language detection of the whole reply.
+    `raw` is the tool result's content, or an envelope already parsed."""
+    env = raw if isinstance(raw, dict) else _parse_envelope(raw)
+    if env is None:
         return "Sorry, I couldn't run that automation."
     if env.get("status") == "ok":
         label = name or "that"
@@ -84,7 +95,8 @@ def templated_reply(messages: list) -> AIMessage:
     except (IndexError, KeyError, AttributeError, TypeError):
         params = {}
         name = ""
-    return AIMessage(content=_reply_from_envelope(last.content, name, params))
+    return AIMessage(content=_reply_from_envelope(last.content, name, params),
+                     response_metadata={"templated_reply": True})
 
 
 def synthetic_trigger_call(prefix: str, model_name: str, entity_id: str,
@@ -298,13 +310,16 @@ class FastPathMiddleware(AgentMiddleware):
 # door locked?") may need a second action or an answer, so the model must see
 # the first result. Errs toward the model.
 _COORDINATION_CUE = re.compile(
-    r"\band\b|\bthen\b|\balso\b|\bafter that\b|[,.;?!&+\n]",
+    r"\band\b|\bthen\b|\balso\b|\bafter that\b|[,.;?!&+/\n]",
     re.IGNORECASE,
 )
 
 # "close all the blinds" may take one call per room. Templated only when the
 # call itself covers everything (a param value of "all").
-_SCOPE_CUE = re.compile(r"\b(all|every|everything|everywhere)\b", re.IGNORECASE)
+_SCOPE_CUE = re.compile(
+    r"\b(all|both|every|everything|everywhere|upstairs|downstairs|whole house)\b",
+    re.IGNORECASE,
+)
 
 
 def has_coordination_cue(text: str) -> bool:
@@ -318,65 +333,36 @@ def _covers_everything(params: dict) -> bool:
     return False
 
 
-def _envelope_status(raw) -> str:
-    try:
-        env = json.loads(raw)
-    except (ValueError, TypeError):
-        return ""
-    if not isinstance(env, dict):
-        return ""
-    return env.get("status") or ""
-
-
-def _name_from_list_actions(messages: list, entity_id: str) -> str:
-    """The friendly name from a list_actions result already in the thread."""
-    for message in reversed(messages):
-        if not isinstance(message, ToolMessage) or message.name != "list_actions":
-            continue
-        try:
-            rows = json.loads(message.content)["data"]["rows"]
-        except (ValueError, TypeError, KeyError):
-            continue
-        for row in rows:
-            if isinstance(row, dict) and row.get("entity_id") == entity_id:
-                return row.get("name") or ""
-    return ""
-
-
 class ActionReplyMiddleware(AgentMiddleware):
     """The step after the model's own single trigger_action call that came back
     ok: the templated confirmation instead of a second model call. Sits just
     inside the fast path (which templates its own synthetic calls) and reuses
     its wording; installed with or without the fast path. Errors, multi-call
-    steps, compound or "all" requests, possibly non-English text and event
-    runs (`fast_path: False`) still go to the model.
+    steps, compound, "all" or deferred requests and event runs
+    (`fast_path: False`) still go to the model.
+
+    Only with the language layer on: then the agent only ever sees English,
+    so the English cues are sound. Off, a request in any language reaches the
+    agent and its joining words ("ja", "und") would go unseen.
 
     The model's params are NOT echoed: unlike the fast path's menu-constrained
     arguments they are open-ended and may hold raw ids, which must not reach
-    TTS or translation."""
-
-    def __init__(self, action_rows=None, rest=None, language_layer: bool = False):
-        super().__init__()
-        self._action_rows = action_rows  # cached menu rows, for the friendly name
-        self._rest = rest  # last resort for the name
-        # With the language layer on the agent only ever sees English; off, a
-        # non-English request would get an English template and its cue words
-        # ("ja", "und") would go unseen.
-        self._language_layer = language_layer
+    TTS or translation. The name comes from trigger_action's ok envelope."""
 
     async def awrap_model_call(self, request, handler):
         messages = request.messages
-        entity_id = self._templatable_entity(request, messages)
-        if entity_id is None:
+        envelope = self._templatable_envelope(request, messages)
+        if envelope is None:
             return await handler(request)
-        name = await self._action_name(messages, entity_id)
+        data = envelope.get("data") or {}
+        name = display_action_name(data.get("name") or "", data.get("entity_id") or "")
         return AIMessage(
-            content=_reply_from_envelope(messages[-1].content, name),
+            content=_reply_from_envelope(envelope, name),
             response_metadata={"templated_reply": True},
         )
 
-    def _templatable_entity(self, request, messages: list) -> str | None:
-        """The triggered entity_id when this step can be templated, else None."""
+    def _templatable_envelope(self, request, messages: list) -> dict | None:
+        """The trigger_action ok envelope when this step can be templated, else None."""
         if len(messages) < 2:
             return None
         last = messages[-1]
@@ -388,44 +374,15 @@ class ActionReplyMiddleware(AgentMiddleware):
         call = prev.tool_calls[0]
         if call.get("name") != "trigger_action" or call.get("id") != last.tool_call_id:
             return None
-        if _envelope_status(last.content) != "ok":
+        envelope = _parse_envelope(last.content)
+        if envelope is None or envelope.get("status") != "ok":
             return None
         if opted_out(request):
             return None
         text = latest_human_text(messages)
-        if not self._language_layer and not text.isascii():
+        if has_coordination_cue(text) or has_deferral_cue(text):
             return None
-        if has_coordination_cue(text):
-            return None
-        args = call.get("args") or {}
-        params = args.get("params") or {}
+        params = (call.get("args") or {}).get("params") or {}
         if _SCOPE_CUE.search(text) and not _covers_everything(params):
             return None
-        entity_id = args.get("entity_id")
-        if not isinstance(entity_id, str) or not entity_id:
-            return None
-        return entity_id
-
-    async def _action_name(self, messages: list, entity_id: str) -> str:
-        name = _name_from_list_actions(messages, entity_id)
-        if not name:
-            name = await self._name_from_menu(entity_id)
-        if not name and self._rest is not None:
-            try:
-                state = await self._rest.get_state(entity_id)
-                name = (state.get("attributes") or {}).get("friendly_name") or ""
-            except Exception:
-                log.debug("action reply: friendly name lookup failed for %s", entity_id)
-        return display_action_name(name, entity_id)
-
-    async def _name_from_menu(self, entity_id: str) -> str:
-        if self._action_rows is None:
-            return ""
-        try:
-            rows = await self._action_rows.get()
-        except Exception:
-            return ""
-        for row in rows:
-            if row.get("entity_id") == entity_id:
-                return row.get("name") or ""
-        return ""
+        return envelope

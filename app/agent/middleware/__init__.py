@@ -59,10 +59,10 @@ def build_middleware(
             ws=ws,
         ))
     # The fast path's depth: templates the reply after the model's own single
-    # successful trigger_action, skipping the second model call.
-    if settings.max_tier >= 2:
-        middleware.append(ActionReplyMiddleware(
-            action_rows, rest, language_layer=settings.language_layer_enabled))
+    # successful trigger_action, skipping the second model call. English-only
+    # cues, so only when the language layer guarantees English text.
+    if settings.max_tier >= 2 and settings.language_layer_enabled:
+        middleware.append(ActionReplyMiddleware())
     if settings.watched_entities and rest is not None:
         # Innermost: it appends the home_context block to the user's text for
         # the LLM only. ToolSubset routing and the fast-path classifier, both

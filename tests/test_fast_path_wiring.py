@@ -28,10 +28,18 @@ def test_fastpath_added_when_provided_and_tier2():
     assert "FastPathMiddleware" in _types(mws)
     # outermost-first: with no watched entities FastPath sits just outside
     # RequestContext, then CurrentTime, which is always innermost
-    assert isinstance(mws[-4], FastPathMiddleware)
-    assert type(mws[-3]).__name__ == "ActionReplyMiddleware"
+    assert isinstance(mws[-3], FastPathMiddleware)
     assert type(mws[-2]).__name__ == "RequestContextMiddleware"
     assert isinstance(mws[-1], CurrentTimeMiddleware)
+    assert "ActionReplyMiddleware" not in _types(mws)  # language layer off
+
+
+def test_action_reply_sits_just_inside_fastpath_with_language_layer():
+    s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False,
+                 language_layer_enabled=True)
+    mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()))
+    names = _types(mws)
+    assert names.index("ActionReplyMiddleware") == names.index("FastPathMiddleware") + 1
 
 
 def test_action_match_sits_just_outside_fastpath():
