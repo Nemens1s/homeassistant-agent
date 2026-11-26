@@ -197,7 +197,9 @@ async def test_ran_action_this_turn_true_after_trigger_then_outage(monkeypatch):
 
     call = {"name": "trigger_action", "args": {"entity_id": "script.ai_open_garage_door"}, "id": "c1"}
     agent, rest = _dying_agent(monkeypatch, AIMessage(content="", tool_calls=[call]))
-    await _run_until_outage(agent, "t-act", "open the garage door")
+    # A compound request, so the step after the action still calls the model
+    # (a lone successful trigger gets the templated reply instead).
+    await _run_until_outage(agent, "t-act", "open the garage door and then wait")
     assert rest.calls == [("script", "ai_open_garage_door")]
     assert await ran_action_this_turn(agent, "t-act") is True
     registry._reset_for_tests()

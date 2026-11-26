@@ -11,7 +11,7 @@ import sqlite3
 
 from app.telemetry.conventions import ACTION_MATCH_MODEL
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Each entry is a SQL script to apply when upgrading to that schema version.
 # Index 0 = migration to version 1, index 1 = migration to version 2, etc.
@@ -259,6 +259,10 @@ SELECT
 FROM requests r
 LEFT JOIN thinking_stats ts ON ts.request_id = r.request_id
 LEFT JOIN tool_stats tl ON tl.request_id = r.request_id;
+""",
+    # Migration 3: model calls answered by the action-reply template (no LLM)
+    """
+ALTER TABLE model_calls ADD COLUMN templated_reply INTEGER NOT NULL DEFAULT 0;
 """,
 ]
 

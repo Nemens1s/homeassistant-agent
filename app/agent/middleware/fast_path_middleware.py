@@ -17,6 +17,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.llm_health import is_fast_path_outage
 from app.agent.run_scope import scope_from_running_graph
+from app.degraded.formatters import display_action_name
 from app.ha.websocket import ws_is_ready
 from app.agent.middleware.tool_subset_middleware import latest_human_text
 from app.telemetry import conventions
@@ -291,3 +292,97 @@ class FastPathMiddleware(AgentMiddleware):
                         name: str = "") -> AIMessage:
         return synthetic_trigger_call(FASTPATH_PREFIX, self._backend.name, entity_id,
                                       arguments, name)
+
+
+# A compound request ("lights on and close the blinds") may need a second
+# action, so the model must see the first result. Errs toward the model.
+_COORDINATION_CUE = re.compile(r"\band\b|\bthen\b|,|\balso\b|\bafter that\b", re.IGNORECASE)
+
+
+def has_coordination_cue(text: str) -> bool:
+    return bool(_COORDINATION_CUE.search(text or ""))
+
+
+def _envelope_status(raw) -> str:
+    try:
+        env = json.loads(raw)
+    except (ValueError, TypeError):
+        return ""
+    if not isinstance(env, dict):
+        return ""
+    return env.get("status") or ""
+
+
+def _name_from_list_actions(messages: list, entity_id: str) -> str:
+    """The friendly name from a list_actions result already in the thread."""
+    for message in reversed(messages):
+        if not isinstance(message, ToolMessage) or message.name != "list_actions":
+            continue
+        try:
+            rows = json.loads(message.content)["data"]["rows"]
+        except (ValueError, TypeError, KeyError):
+            continue
+        for row in rows:
+            if isinstance(row, dict) and row.get("entity_id") == entity_id:
+                return row.get("name") or ""
+    return ""
+
+
+class ActionReplyMiddleware(AgentMiddleware):
+    """The step after the model's own single trigger_action call that came back
+    ok: the templated confirmation instead of a second model call. Sits at the
+    fast path's depth and reuses its wording; installed with or without the
+    fast path. Errors, multi-call steps, compound requests and event runs
+    (`fast_path: False`) still go to the model."""
+
+    def __init__(self, rest=None):
+        super().__init__()
+        self._rest = rest  # for a friendly name when list_actions isn't in the thread
+
+    async def awrap_model_call(self, request, handler):
+        messages = request.messages
+        entity_id = self._templatable_entity(request, messages)
+        if entity_id is None:
+            return await handler(request)
+        prev = messages[-2]
+        params = prev.tool_calls[0]["args"].get("params") or {}
+        name = await self._action_name(messages, entity_id)
+        return AIMessage(
+            content=_reply_from_envelope(messages[-1].content, name, params),
+            response_metadata={"templated_reply": True},
+        )
+
+    def _templatable_entity(self, request, messages: list) -> str | None:
+        """The triggered entity_id when this step can be templated, else None."""
+        if len(messages) < 2:
+            return None
+        last = messages[-1]
+        prev = messages[-2]
+        if not isinstance(last, ToolMessage) or is_synthetic_result(last, FASTPATH_PREFIX):
+            return None
+        if not isinstance(prev, AIMessage) or len(prev.tool_calls or []) != 1:
+            return None
+        call = prev.tool_calls[0]
+        if call.get("name") != "trigger_action" or call.get("id") != last.tool_call_id:
+            return None
+        if _envelope_status(last.content) != "ok":
+            return None
+        if opted_out(request):
+            return None
+        if has_coordination_cue(latest_human_text(messages)):
+            return None
+        args = call.get("args") or {}
+        entity_id = args.get("entity_id")
+        if not isinstance(entity_id, str) or not entity_id:
+            return None
+        return entity_id
+
+    async def _action_name(self, messages: list, entity_id: str) -> str:
+        name = _name_from_list_actions(messages, entity_id)
+        if not name and self._rest is not None:
+            try:
+                state = await self._rest.get_state(entity_id)
+                name = (state.get("attributes") or {}).get("friendly_name") or ""
+            except Exception:
+                log.debug("action reply: friendly name lookup failed for %s", entity_id)
+        return display_action_name(name, entity_id)

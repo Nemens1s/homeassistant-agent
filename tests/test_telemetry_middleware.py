@@ -137,3 +137,20 @@ def test_middleware_ordering_with_telemetry():
         f"TelemetryMiddleware (idx {telemetry_idx}) must be immediately before "
         f"FastPathMiddleware (idx {fast_path_idx})"
     )
+
+
+@pytest.mark.asyncio
+async def test_templated_reply_marked_on_chat_span():
+    tracer, exp = _tracer_and_spans()
+    mw = TelemetryMiddleware(tracer)
+    current_step.set(2)
+    req = SimpleNamespace(messages=[], tools=[])
+
+    async def handler(request):
+        return AIMessage(content="Done — triggered Lights On.",
+                         response_metadata={"templated_reply": True})
+
+    await mw.awrap_model_call(req, handler)
+    span = exp.get_finished_spans()[0]
+    assert span.attributes["gosling.templated_reply"] is True
+    assert span.attributes["gosling.fast_path"] is False

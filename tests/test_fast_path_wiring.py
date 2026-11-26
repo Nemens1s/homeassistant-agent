@@ -28,7 +28,8 @@ def test_fastpath_added_when_provided_and_tier2():
     assert "FastPathMiddleware" in _types(mws)
     # outermost-first: with no watched entities FastPath sits just outside
     # RequestContext, then CurrentTime, which is always innermost
-    assert isinstance(mws[-3], FastPathMiddleware)
+    assert isinstance(mws[-4], FastPathMiddleware)
+    assert type(mws[-3]).__name__ == "ActionReplyMiddleware"
     assert type(mws[-2]).__name__ == "RequestContextMiddleware"
     assert isinstance(mws[-1], CurrentTimeMiddleware)
 

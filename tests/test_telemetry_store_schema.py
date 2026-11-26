@@ -19,3 +19,10 @@ def test_migrations_are_idempotent(tmp_path):
 def test_wal_mode(tmp_path):
     conn = open_store(str(tmp_path / "t.sqlite"))
     assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+
+
+def test_model_calls_has_templated_reply_column(tmp_path):
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(model_calls)")]
+    conn.close()
+    assert "templated_reply" in columns
