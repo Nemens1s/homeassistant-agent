@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -370,26 +371,65 @@ def test_request_context_is_just_before_current_time():
     assert names[-3:] == ["WatchedEntitiesMiddleware", "RequestContextMiddleware", "CurrentTimeMiddleware"]
 
 
-_FIXTURE = __import__("pathlib").Path(__file__).parent / "fixtures" / "system_prompt_all_tools.txt"
+_FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _every_tool() -> set[str]:
+    from app.agent.factory import _TOOL_ROUTING
+    every = {"list_actions", "trigger_action", "schedule_on_state_change", "schedule_at_time"}
+    for names, _fragment in _TOOL_ROUTING:
+        every |= names
+    return every
+
+
+def _all_blocks_settings() -> Settings:
+    return Settings(
+        _env_file=None, allow_actions=True,
+        watched_entities=["light.kitchen"], clock_entity="sensor.world_clock",
+    )
 
 
 def test_prompt_with_every_tool_is_byte_identical_to_fixture(tmp_path):
-    expected = _FIXTURE.read_text()
+    expected = (_FIXTURES / "system_prompt_all_tools.txt").read_text()
     assert build_system_prompt(Settings(_env_file=None), tmp_path) == expected
-    from app.agent.factory import _TOOL_ROUTING
-    every = set()
-    for names, _line in _TOOL_ROUTING:
-        every |= names
-    assert build_system_prompt(Settings(_env_file=None), tmp_path, every) == expected
+    assert build_system_prompt(Settings(_env_file=None), tmp_path, _every_tool()) == expected
+
+
+def test_prompt_with_every_block_is_byte_identical_to_fixture(tmp_path):
+    expected = (_FIXTURES / "system_prompt_all_blocks.txt").read_text()
+    assert build_system_prompt(_all_blocks_settings(), tmp_path) == expected
+    assert build_system_prompt(_all_blocks_settings(), tmp_path, _every_tool()) == expected
 
 
 def test_prompt_drops_routing_line_for_missing_tool(tmp_path):
-    from app.agent.factory import _TOOL_ROUTING
-    enabled = set()
-    for names, _line in _TOOL_ROUTING:
-        enabled |= names
+    enabled = _every_tool()
     enabled.discard("get_battery_status")
     prompt = build_system_prompt(Settings(_env_file=None), tmp_path, enabled)
     assert "Battery questions" not in prompt
     assert "get_battery_status" not in prompt
     assert "→ get_automations." in prompt
+
+
+def test_prompt_keeps_partner_guidance_when_one_tool_missing(tmp_path):
+    enabled = _every_tool()
+    enabled.discard("get_areas")
+    prompt = build_system_prompt(Settings(_env_file=None), tmp_path, enabled)
+    assert "get_areas" not in prompt
+    assert "→ list_devices (device-level; pass area= for one room). Never enumerate" in prompt
+
+
+def test_prompt_partner_fragment_starts_its_own_line(tmp_path):
+    enabled = _every_tool()
+    enabled.discard("get_activity")
+    prompt = build_system_prompt(Settings(_env_file=None), tmp_path, enabled)
+    assert "get_activity" not in prompt
+    assert "\n- 'did device X run?' / state timeline" in prompt
+
+
+def test_action_and_note_blocks_follow_enabled_tools(tmp_path):
+    enabled = _every_tool()
+    enabled.discard("trigger_action")
+    enabled.discard("schedule_at_time")
+    prompt = build_system_prompt(_all_blocks_settings(), tmp_path, enabled)
+    assert "ACTIONS (to do NOW)" not in prompt
+    assert "DOING THINGS LATER" not in prompt

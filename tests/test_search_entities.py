@@ -141,11 +141,12 @@ async def test_search_drops_stop_words_and_prefers_all_word_matches():
     result = await _defn().handler(_defn().params_model(query="the kitchen light"), _ranking_ctx())
     assert result.status == "ok"
     ids = [r["entity_id"] for r in result.data["rows"]]
-    assert ids == ["light.kitchen_ceiling", "light.kitchen"]
+    assert ids[:2] == ["light.kitchen_ceiling", "light.kitchen"]
     assert "weather.home" not in ids
+    assert "climate.thermostat" not in ids
 
 
-async def test_search_falls_back_to_any_word_ranked_by_score():
+async def test_search_ranks_partial_matches_below_full_ones():
     result = await _defn().handler(_defn().params_model(query="kitchen lamp"), _ranking_ctx())
     ids = [r["entity_id"] for r in result.data["rows"]]
     assert ids == ["light.kitchen_ceiling", "light.kitchen", "sensor.kitchen_temperature"]
@@ -154,7 +155,7 @@ async def test_search_falls_back_to_any_word_ranked_by_score():
 async def test_search_strips_punctuation():
     result = await _defn().handler(_defn().params_model(query="hall light?"), _ranking_ctx())
     ids = [r["entity_id"] for r in result.data["rows"]]
-    assert ids == ["light.hall"]
+    assert ids[0] == "light.hall"
 
 
 async def test_search_exact_entity_id_returns_one_row():
@@ -183,8 +184,64 @@ async def test_search_caps_rows_at_twenty_by_default():
     assert len(result.data["rows"]) == 20
     assert result.data["total"] == 30
     assert result.data["truncated"] is True
+    assert result.data["hint"] == "Use more specific words to see the rest."
 
 
 async def test_search_max_rows_stays_the_upper_bound():
     result = await _defn().handler(_defn().params_model(query="light"), _ranking_ctx(max_rows=1))
     assert len(result.data["rows"]) == 1
+
+
+async def test_search_plural_still_finds_singular_names():
+    # A "Kitchen Lights" group must not hide the individual kitchen lights.
+    states = RANKING_STATES + [
+        {"entity_id": "light.kitchen_lights", "state": "on", "attributes": {"friendly_name": "Kitchen Lights"}},
+    ]
+
+    class Rest:
+        async def list_states(self):
+            return states
+
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=Rest(), ws=None)
+    result = await _defn().handler(_defn().params_model(query="kitchen lights"), ctx)
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert ids[:3] == ["light.kitchen_ceiling", "light.kitchen", "light.kitchen_lights"]
+
+
+async def test_search_filler_words_are_not_required():
+    result = await _defn().handler(_defn().params_model(query="all lights"), _ranking_ctx())
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert set(ids) == {"light.kitchen_ceiling", "light.kitchen", "light.hall"}
+
+
+async def test_search_possessive_drops_one_letter_leftover():
+    states = [
+        {"entity_id": "light.mari_lamp", "state": "on", "attributes": {"friendly_name": "Mari Lamp"}},
+        {"entity_id": "switch.mari_lamp_plug", "state": "on", "attributes": {"friendly_name": "Mari Lamp Plug"}},
+        {"entity_id": "sensor.solar", "state": "1", "attributes": {"friendly_name": "Solar"}},
+    ]
+
+    class Rest:
+        async def list_states(self):
+            return states
+
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=Rest(), ws=None)
+    result = await _defn().handler(_defn().params_model(query="Mari's lamp"), ctx)
+    ids = [r["entity_id"] for r in result.data["rows"]]
+    assert ids == ["light.mari_lamp", "switch.mari_lamp_plug"]
+
+
+async def test_search_tolerates_null_friendly_name():
+    states = [
+        {"entity_id": "sensor.nameless", "state": "1", "attributes": {"friendly_name": None}},
+        {"entity_id": "light.hall", "state": "off", "attributes": {"friendly_name": "Hall Light"}},
+    ]
+
+    class Rest:
+        async def list_states(self):
+            return states
+
+    ctx = ToolContext(settings=Settings(_env_file=None), rest=Rest(), ws=None)
+    result = await _defn().handler(_defn().params_model(query="nameless"), ctx)
+    assert result.status == "ok"
+    assert result.data["rows"][0]["friendly_name"] == ""
