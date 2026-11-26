@@ -19,7 +19,7 @@ import yaml
 from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.utils.json import parse_partial_json
 
-from app.agent.factory import build_agent, build_system_prompt
+from app.agent.factory import build_agent, build_system_prompt, tool_names
 from app.agent.middleware.current_time_middleware import current_time_line
 from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
 from app.agent.llm import build_llm
@@ -373,7 +373,7 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     enabled = await registry.resolve_enabled(ctx)
     tools = build_tools(ctx, max_tier=max_tier, enabled=enabled)
     llm = build_llm(settings)
-    system = SystemMessage(build_system_prompt(settings, ctx.skills_dir))
+    system = SystemMessage(build_system_prompt(settings, ctx.skills_dir, tool_names(tools)))
     output: dict = {
         "model": settings.llm_model,
         "provider": settings.llm_provider,
