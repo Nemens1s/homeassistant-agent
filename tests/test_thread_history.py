@@ -205,6 +205,23 @@ async def test_ran_action_this_turn_true_after_trigger_then_outage(monkeypatch):
     registry._reset_for_tests()
 
 
+async def test_ran_action_this_turn_true_after_templated_reply(monkeypatch):
+    """A lone successful trigger is answered by the template: the turn ends
+    without a second model call and still counts as having run an action."""
+    from app.agent.history import ran_action_this_turn
+    from app.tools import registry
+
+    call = {"name": "trigger_action", "args": {"entity_id": "script.ai_open_garage_door"}, "id": "c1"}
+    agent, rest = _dying_agent(monkeypatch, AIMessage(content="", tool_calls=[call]))
+    config = {"configurable": {"thread_id": "t-tpl"}, "recursion_limit": 15}
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "open the garage door"}]}, config=config)
+    assert result["messages"][-1].content.startswith("Done — triggered")
+    assert rest.calls == [("script", "ai_open_garage_door")]
+    assert await ran_action_this_turn(agent, "t-tpl") is True
+    registry._reset_for_tests()
+
+
 async def test_ran_action_this_turn_false_without_tool(monkeypatch):
     import httpx
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel

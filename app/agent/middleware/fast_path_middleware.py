@@ -294,13 +294,28 @@ class FastPathMiddleware(AgentMiddleware):
                                       arguments, name)
 
 
-# A compound request ("lights on and close the blinds") may need a second
-# action, so the model must see the first result. Errs toward the model.
-_COORDINATION_CUE = re.compile(r"\band\b|\bthen\b|,|\balso\b|\bafter that\b", re.IGNORECASE)
+# A compound request ("lights on and close the blinds", "lights on. Is the
+# door locked?") may need a second action or an answer, so the model must see
+# the first result. Errs toward the model.
+_COORDINATION_CUE = re.compile(
+    r"\band\b|\bthen\b|\balso\b|\bafter that\b|[,.;?!&+\n]",
+    re.IGNORECASE,
+)
+
+# "close all the blinds" may take one call per room. Templated only when the
+# call itself covers everything (a param value of "all").
+_SCOPE_CUE = re.compile(r"\b(all|every|everything|everywhere)\b", re.IGNORECASE)
 
 
 def has_coordination_cue(text: str) -> bool:
-    return bool(_COORDINATION_CUE.search(text or ""))
+    return bool(_COORDINATION_CUE.search((text or "").strip().rstrip(".!")))
+
+
+def _covers_everything(params: dict) -> bool:
+    for value in params.values():
+        if isinstance(value, str) and value.lower() == "all":
+            return True
+    return False
 
 
 def _envelope_status(raw) -> str:
@@ -330,25 +345,33 @@ def _name_from_list_actions(messages: list, entity_id: str) -> str:
 
 class ActionReplyMiddleware(AgentMiddleware):
     """The step after the model's own single trigger_action call that came back
-    ok: the templated confirmation instead of a second model call. Sits at the
-    fast path's depth and reuses its wording; installed with or without the
-    fast path. Errors, multi-call steps, compound requests and event runs
-    (`fast_path: False`) still go to the model."""
+    ok: the templated confirmation instead of a second model call. Sits just
+    inside the fast path (which templates its own synthetic calls) and reuses
+    its wording; installed with or without the fast path. Errors, multi-call
+    steps, compound or "all" requests, possibly non-English text and event
+    runs (`fast_path: False`) still go to the model.
 
-    def __init__(self, rest=None):
+    The model's params are NOT echoed: unlike the fast path's menu-constrained
+    arguments they are open-ended and may hold raw ids, which must not reach
+    TTS or translation."""
+
+    def __init__(self, action_rows=None, rest=None, language_layer: bool = False):
         super().__init__()
-        self._rest = rest  # for a friendly name when list_actions isn't in the thread
+        self._action_rows = action_rows  # cached menu rows, for the friendly name
+        self._rest = rest  # last resort for the name
+        # With the language layer on the agent only ever sees English; off, a
+        # non-English request would get an English template and its cue words
+        # ("ja", "und") would go unseen.
+        self._language_layer = language_layer
 
     async def awrap_model_call(self, request, handler):
         messages = request.messages
         entity_id = self._templatable_entity(request, messages)
         if entity_id is None:
             return await handler(request)
-        prev = messages[-2]
-        params = prev.tool_calls[0]["args"].get("params") or {}
         name = await self._action_name(messages, entity_id)
         return AIMessage(
-            content=_reply_from_envelope(messages[-1].content, name, params),
+            content=_reply_from_envelope(messages[-1].content, name),
             response_metadata={"templated_reply": True},
         )
 
@@ -358,7 +381,7 @@ class ActionReplyMiddleware(AgentMiddleware):
             return None
         last = messages[-1]
         prev = messages[-2]
-        if not isinstance(last, ToolMessage) or is_synthetic_result(last, FASTPATH_PREFIX):
+        if not isinstance(last, ToolMessage):
             return None
         if not isinstance(prev, AIMessage) or len(prev.tool_calls or []) != 1:
             return None
@@ -369,9 +392,15 @@ class ActionReplyMiddleware(AgentMiddleware):
             return None
         if opted_out(request):
             return None
-        if has_coordination_cue(latest_human_text(messages)):
+        text = latest_human_text(messages)
+        if not self._language_layer and not text.isascii():
+            return None
+        if has_coordination_cue(text):
             return None
         args = call.get("args") or {}
+        params = args.get("params") or {}
+        if _SCOPE_CUE.search(text) and not _covers_everything(params):
+            return None
         entity_id = args.get("entity_id")
         if not isinstance(entity_id, str) or not entity_id:
             return None
@@ -379,6 +408,8 @@ class ActionReplyMiddleware(AgentMiddleware):
 
     async def _action_name(self, messages: list, entity_id: str) -> str:
         name = _name_from_list_actions(messages, entity_id)
+        if not name:
+            name = await self._name_from_menu(entity_id)
         if not name and self._rest is not None:
             try:
                 state = await self._rest.get_state(entity_id)
@@ -386,3 +417,15 @@ class ActionReplyMiddleware(AgentMiddleware):
             except Exception:
                 log.debug("action reply: friendly name lookup failed for %s", entity_id)
         return display_action_name(name, entity_id)
+
+    async def _name_from_menu(self, entity_id: str) -> str:
+        if self._action_rows is None:
+            return ""
+        try:
+            rows = await self._action_rows.get()
+        except Exception:
+            return ""
+        for row in rows:
+            if row.get("entity_id") == entity_id:
+                return row.get("name") or ""
+        return ""
