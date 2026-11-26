@@ -41,6 +41,7 @@ _ROOM_OVERVIEW: tuple[str, ...] = (
     "rooms", "areas", "which room", "what room", "list rooms", "in the",
     "what devices", "devices in", "home map", "topology", "layout", "overview",
     "all rooms", "every room", "what do i have", "what's in", "whats in", "in my",
+    "which devices", "in here", "this room",
 )
 
 # "Do it later" phrasing → the note tools. Generous on purpose: a stray match
@@ -56,14 +57,15 @@ _NOTE_ADMIN: tuple[str, ...] = (
 # tool -> trigger substrings (matched against the lowercased message). Generous by
 # design: false positives just add a schema; false negatives hide a shortcut.
 _KEYWORDS: dict[str, tuple[str, ...]] = {
-    "get_battery_status": ("batter", "charge", "charging", "power level", "low power"),
-    "get_vacuum_state": ("vacuum", "roomba", "hoover", "robot", "cleaning", "clean the"),
+    "get_battery_status": ("batter", "charge", "charging", "power level", "low power", "low on"),
+    "get_vacuum_state": ("vacuum", "roomba", "roborock", "hoover", "robot", "cleaning", "clean the"),
     "get_weather": ("weather", "forecast", "rain", "sunny", "snow", "wind", "outside", "humidity outside"),
     "get_person_locations": (
         # bare "home" catches "Is <name> home?"; over-exposing the person tool is
         # harmless (it's a candidate, not a forced choice).
         "home", "person", "people", "location", "where is", "presence", "away",
-        "everyone", "nobody", "anyone",
+        "everyone", "nobody", "anyone", "anybody", "everybody", "someone",
+        "somebody", "here",
     ),
     "get_history": (
         "history", "trend", "over time", "time series", "timeseries", "graph", "chart",

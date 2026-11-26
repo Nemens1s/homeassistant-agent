@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from app.agent.middleware.prefetch_middleware import decide_prefetch
-from app.agent.tool_router import _KEYWORDS, CORE_TOOLS
+from app.agent.tool_router import _KEYWORDS, CORE_TOOLS, select_tool_names
 
 _ROWS = yaml.safe_load((Path(__file__).parent / "evals" / "deterministic.yaml").read_text())
 _IDS = []
@@ -16,6 +16,7 @@ for _row in _ROWS:
 AREAS = [
     {"area_id": "bedroom", "name": "Bedroom", "aliases": []},
     {"area_id": "master_bedroom", "name": "Master Bedroom", "aliases": []},
+    {"area_id": "hall", "name": "Hall", "aliases": []},
     {"area_id": "kitchen", "name": "Kitchen", "aliases": []},
     {"area_id": "living_room", "name": "Living Room", "aliases": []},
 ]
@@ -26,8 +27,12 @@ ALL_TOOLS = set(CORE_TOOLS) | set(_KEYWORDS)
 
 @pytest.mark.parametrize("row", _ROWS, ids=_IDS)
 def test_deterministic_row(row):
-    available = ALL_TOOLS - set(row.get("disabled") or [])
-    got = decide_prefetch(row["prompt"], available, AREAS, KNOWN)
+    enabled = ALL_TOOLS - set(row.get("disabled") or [])
+    # The menu production offers: tool subsetting (on by default) runs first,
+    # so a trigger whose tool the router does not offer can never fire.
+    available = select_tool_names(enabled, row["prompt"])
+    got = decide_prefetch(row["prompt"], available, AREAS, KNOWN,
+                          request_area=row.get("request_area"))
     expected = row["prefetch"]
     if expected is None:
         assert got is None

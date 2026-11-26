@@ -455,10 +455,7 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
             start = time.monotonic()
             decision = None
             if prefetch is not None:
-                names = set()
-                for t in case_tools:
-                    names.add(t.name)
-                decision = await prefetch.decide(case["prompt"], names)
+                decision = await prefetch.decide(case["prompt"], tool_names(case_tools))
             if decision is not None:
                 msg = synthetic_read_call(decision)
             else:

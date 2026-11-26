@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
@@ -42,7 +43,9 @@ class _Rest:
     async def get_state(self, entity_id):
         self.calls += 1
         if entity_id != "light.lamp":
-            raise LookupError(entity_id)
+            request = httpx.Request("GET", "http://ha/api/states/" + entity_id)
+            raise httpx.HTTPStatusError("404", request=request,
+                                        response=httpx.Response(404, request=request))
         return {"entity_id": entity_id, "state": "on"}
 
 
@@ -140,3 +143,25 @@ def test_synthetic_call_id_fits_openai_limit():
     from app.agent.middleware.prefetch_middleware import PreFetch, synthetic_read_call
     call = synthetic_read_call(PreFetch("get_weather", {}, "keyword"))
     assert len(call.tool_calls[0]["id"]) <= 40
+
+
+def test_entity_id_with_a_deferral_word_still_prefetches():
+    got = decide_prefetch("What is sensor.reminders_count?", TOOLS, AREAS, {"sensor.reminders_count"})
+    assert got.tool == "get_entity_state"
+
+
+@pytest.mark.asyncio
+async def test_slow_ha_does_not_hold_the_request():
+    import asyncio
+
+    class _Slow:
+        async def get_state(self, entity_id):
+            await asyncio.sleep(10)
+
+    mw = PreFetchMiddleware(rest=_Slow(), lookup_timeout_s=0.05)
+    assert await mw.decide("What is light.lamp?", TOOLS) is None
+
+
+def test_sync_call_passes_through():
+    mw = PreFetchMiddleware()
+    assert mw.wrap_model_call(_request([HumanMessage("is anyone home?")]), lambda r: "model") == "model"

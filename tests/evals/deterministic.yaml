@@ -70,7 +70,7 @@
 - prompt: "Is the light on in the kitchen?"
   prefetch: null
 - prompt: "what's in the master bedroom"
-  prefetch: null
+  prefetch: {tool: list_devices, args: {area: Master Bedroom}, rule: room}
 - prompt: "what devices do I have?"
   prefetch: {tool: list_devices, args: {}, rule: room}
 - prompt: "What's scheduled?"
@@ -81,3 +81,38 @@
   prefetch: null
 - prompt: "Is it windy?"
   prefetch: {tool: get_weather, args: {}, rule: keyword}
+# From the second review: STT question marks on commands, non-rooms,
+# "here", prefix room names, subsetting, entity_ids with deferral words.
+- prompt: "Start the vacuum?"
+  prefetch: null
+- prompt: "Turn off the lights in all rooms?"
+  prefetch: null
+- prompt: "Turn off light.living_room_lamp?"
+  prefetch: null
+- prompt: "What's in the fridge?"
+  prefetch: null
+- prompt: "what's in my shopping list?"
+  prefetch: null
+- prompt: "what devices are in this room?"
+  request_area: Kitchen
+  prefetch: {tool: list_devices, args: {area: Kitchen}, rule: room}
+- prompt: "what devices are in this room?"
+  prefetch: null
+- prompt: "what's in the hallway"
+  prefetch: null
+- prompt: "what's in the hall?"
+  prefetch: {tool: list_devices, args: {area: Hall}, rule: room}
+- prompt: "Is the Roborock docked?"
+  prefetch: {tool: get_vacuum_state, args: {}, rule: keyword}
+- prompt: "Is the remote low on power?"
+  prefetch: {tool: get_battery_status, args: {}, rule: keyword}
+- prompt: "Who is here?"
+  prefetch: {tool: get_person_locations, args: {}, rule: keyword}
+- prompt: "Which devices do I have?"
+  prefetch: {tool: list_devices, args: {}, rule: room}
+- prompt: "What's the weather today?"
+  prefetch: {tool: get_weather, args: {}, rule: keyword}
+- prompt: "Any errors today?"
+  prefetch: {tool: get_error_log, args: {}, rule: keyword}
+- prompt: "What is sensor.reminders_count?"
+  prefetch: null  # not in the fixture home

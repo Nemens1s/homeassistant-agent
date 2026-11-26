@@ -9,9 +9,15 @@ Usage:
 
 import sqlite3
 
-from app.telemetry.conventions import ACTION_MATCH_MODEL, PREFETCH_MODEL
+from app.telemetry.conventions import (
+    ACTION_MATCH_MODEL,
+    ACTION_MATCH_PREFIX,
+    FASTPATH_PREFIX,
+    PREFETCH_MODEL,
+    PREFETCH_PREFIX,
+)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Each entry is a SQL script to apply when upgrading to that schema version.
 # Index 0 = migration to version 1, index 1 = migration to version 2, etc.
@@ -189,11 +195,6 @@ chosen_counts AS (
     FROM tool_calls tc
     JOIN requests r ON r.request_id = tc.request_id
     WHERE r.toolset_hash IS NOT NULL
-      -- synthetic calls (pre-fetch, fast path, action match) were not
-      -- chosen by the model, like the fast_path=1 offers excluded above
-      AND COALESCE(tc.call_id, '') NOT LIKE 'prefetch-%'
-      AND COALESCE(tc.call_id, '') NOT LIKE 'fastpath-%'
-      AND COALESCE(tc.call_id, '') NOT LIKE 'actionmatch-%'
     GROUP BY r.toolset_hash, tc.tool
 )
 SELECT
@@ -301,6 +302,67 @@ chosen_counts AS (
     FROM tool_calls tc
     JOIN requests r ON r.request_id = tc.request_id
     WHERE r.toolset_hash IS NOT NULL
+    GROUP BY r.toolset_hash, tc.tool
+)
+SELECT
+    oc.toolset_hash,
+    oc.tool,
+    oc.times_offered,
+    COALESCE(cc.times_chosen, 0)                    AS times_chosen,
+    CASE WHEN oc.times_offered > 0
+         THEN CAST(COALESCE(cc.times_chosen, 0) AS REAL) / oc.times_offered
+         ELSE NULL
+    END                                             AS chosen_ratio,
+    CASE WHEN COALESCE(cc.times_chosen, 0) > 0
+         THEN CAST(COALESCE(cc.times_error, 0) AS REAL) / cc.times_chosen
+         ELSE NULL
+    END                                             AS error_rate,
+    CASE WHEN COALESCE(cc.times_chosen, 0) > 0
+         THEN CAST(COALESCE(cc.times_repeated_call, 0) AS REAL) / cc.times_chosen
+         ELSE NULL
+    END                                             AS repeated_call_rate
+FROM offered_counts oc
+LEFT JOIN chosen_counts cc
+    ON cc.toolset_hash = oc.toolset_hash AND cc.tool = oc.tool;
+""",
+    # Migration 4: synthetic tool calls are not model choices either.
+    f"""
+DROP VIEW IF EXISTS tool_offer_stats;
+
+CREATE VIEW tool_offer_stats AS
+WITH offered_counts AS (
+    -- Count how many real (non-fast-path, non-templated) model_calls
+    -- offered each tool.
+    -- We join requests to get toolset_hash, then expand tools_offered JSON.
+    SELECT
+        r.toolset_hash,
+        tool_name.value                             AS tool,
+        COUNT(*)                                    AS times_offered
+    FROM model_calls mc
+    JOIN requests r ON r.request_id = mc.request_id
+    JOIN json_each(mc.tools_offered) AS tool_name
+    WHERE mc.fast_path = 0
+      AND mc.templated_reply = 0
+      AND r.toolset_hash IS NOT NULL
+    GROUP BY r.toolset_hash, tool_name.value
+),
+chosen_counts AS (
+    SELECT
+        r.toolset_hash,
+        tc.tool,
+        COUNT(*)                                    AS times_chosen,
+        SUM(CASE WHEN tc.status = 'error' THEN 1 ELSE 0 END)
+                                                    AS times_error,
+        SUM(CASE WHEN tc.error_code = 'repeated_call' THEN 1 ELSE 0 END)
+                                                    AS times_repeated_call
+    FROM tool_calls tc
+    JOIN requests r ON r.request_id = tc.request_id
+    WHERE r.toolset_hash IS NOT NULL
+      -- Synthetic calls (pre-fetch, fast path, action match) were not
+      -- chosen by the model, like the fast_path=1 offers excluded above.
+      AND COALESCE(tc.call_id, '') NOT LIKE '{PREFETCH_PREFIX}%'
+      AND COALESCE(tc.call_id, '') NOT LIKE '{FASTPATH_PREFIX}%'
+      AND COALESCE(tc.call_id, '') NOT LIKE '{ACTION_MATCH_PREFIX}%'
     GROUP BY r.toolset_hash, tc.tool
 )
 SELECT

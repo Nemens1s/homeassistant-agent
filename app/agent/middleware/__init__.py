@@ -67,7 +67,7 @@ def build_middleware(
     # Inside FastPath (Needle sees the raw message), outside WatchedEntities
     # (the decision sees the text before <home_context> is appended).
     if settings.prefetch_enabled:
-        middleware.append(PreFetchMiddleware(rest, ws, tracer=telemetry_tracer))
+        middleware.append(PreFetchMiddleware(rest, ws))
     if settings.watched_entities and rest is not None:
         # Innermost: it appends the home_context block to the user's text for
         # the LLM only. ToolSubset routing and the fast-path classifier, both

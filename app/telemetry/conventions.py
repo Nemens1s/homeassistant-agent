@@ -17,10 +17,6 @@ SPAN_CHAT = "chat"
 # Child of the first-step chat span; created by FastPathMiddleware
 SPAN_CLASSIFY = "fast_path.classify"
 
-# Child of the first-step chat span; created by PreFetchMiddleware when it
-# runs a read tool before the first model call
-SPAN_PREFETCH = "prefetch"
-
 # One per tool execution (created by TelemetryMiddleware)
 SPAN_EXECUTE_TOOL = "execute_tool"
 
@@ -85,6 +81,12 @@ ACTION_MATCH_MODEL = "action_match"
 
 # Model name of the pre-fetch tier's synthetic read calls (same role)
 PREFETCH_MODEL = "prefetch"
+
+# tool_call id prefixes of the synthetic tiers' calls; tool_offer_stats
+# excludes them from what the model "chose"
+FASTPATH_PREFIX = "fastpath-"
+ACTION_MATCH_PREFIX = "actionmatch-"
+PREFETCH_PREFIX = "prefetch-"
 
 # ok | recursion_limit | error | cancelled
 GOSLING_OUTCOME = "gosling.outcome"
@@ -157,7 +159,8 @@ GOSLING_FP_SKIP_REASON = "gosling.fast_path.skip_reason"
 # `room` argument; set only when the correction step ran
 GOSLING_FP_ROOM_OVERRIDE = "gosling.fast_path.room_override"
 
-# --- prefetch span ---
+# --- pre-fetch (set on the first-step chat span; OTLP export only, the
+# SQLite store keeps the path via model_calls.model = PREFETCH_MODEL) ---
 
 # The read tool run before the first model call
 GOSLING_PREFETCH_TOOL = "gosling.prefetch.tool"
