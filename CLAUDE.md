@@ -77,6 +77,11 @@ class in `app/config.py`; in the addon container it reads
   HA description has the `EXACT-MATCH` flag (and it takes no script fields),
   it becomes a synthetic `trigger_action` call with no Needle/LLM call
   (`gosling.path=action_match`).
+  `PreFetchMiddleware` (inside FastPath, outside WatchedEntities; setting
+  `prefetch_enabled`) runs the obvious read tool before the first model call —
+  one literal entity_id, a room question, or one zero-argument keyword tool —
+  as a synthetic `prefetch-` call (`gosling.path=prefetch`); the model then
+  only phrases the result. Its rules are pinned by `tests/evals/deterministic.yaml`.
   `RequestContextMiddleware` (request area/speaker line) sits inside FastPath
   and just before CurrentTime, so the classifier never sees it.
 - `i18n/` — the language adapter at the HTTP edge (off by default,

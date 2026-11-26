@@ -9,7 +9,7 @@ Usage:
 
 import sqlite3
 
-from app.telemetry.conventions import ACTION_MATCH_MODEL
+from app.telemetry.conventions import ACTION_MATCH_MODEL, PREFETCH_MODEL
 
 SCHEMA_VERSION = 3
 
@@ -330,7 +330,8 @@ def _derived_path(alias: str) -> str:
     handler, so the stored value is unreliable (always 'agent'). model_calls
     .fast_path, by contrast, is set directly from the model response and is
     authoritative: a request is a synthetic hit iff any of its model steps was.
-    The strict action matcher's synthetic steps carry model 'action_match'.
+    The strict action matcher's synthetic steps carry model 'action_match',
+    the pre-fetch tier's carry model 'prefetch'.
     """
     return (
         "CASE WHEN EXISTS ("
@@ -338,6 +339,10 @@ def _derived_path(alias: str) -> str:
         f"WHERE mc.request_id = {alias}.request_id AND mc.fast_path = 1 "
         f"AND mc.model = '{ACTION_MATCH_MODEL}'"
         ") THEN 'action_match' WHEN EXISTS ("
+        f"SELECT 1 FROM model_calls mc "
+        f"WHERE mc.request_id = {alias}.request_id AND mc.fast_path = 1 "
+        f"AND mc.model = '{PREFETCH_MODEL}'"
+        ") THEN 'prefetch' WHEN EXISTS ("
         f"SELECT 1 FROM model_calls mc "
         f"WHERE mc.request_id = {alias}.request_id AND mc.fast_path = 1"
         ") THEN 'fast_path' ELSE 'agent' END"

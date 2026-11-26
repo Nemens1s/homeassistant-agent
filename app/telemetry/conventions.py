@@ -17,6 +17,10 @@ SPAN_CHAT = "chat"
 # Child of the first-step chat span; created by FastPathMiddleware
 SPAN_CLASSIFY = "fast_path.classify"
 
+# Child of the first-step chat span; created by PreFetchMiddleware when it
+# runs a read tool before the first model call
+SPAN_PREFETCH = "prefetch"
+
 # One per tool execution (created by TelemetryMiddleware)
 SPAN_EXECUTE_TOOL = "execute_tool"
 
@@ -72,12 +76,15 @@ GOSLING_INPUT_TEXT = "gosling.input.text"
 # Final reply text
 GOSLING_OUTPUT_TEXT = "gosling.output.text"
 
-# fast_path | action_match | agent — which tier answered the first step
+# fast_path | action_match | prefetch | agent — which tier answered the first step
 GOSLING_PATH = "gosling.path"
 
 # Model name of the strict action matcher's synthetic responses; how
 # model_calls rows tell an action-match hit from a fast-path hit
 ACTION_MATCH_MODEL = "action_match"
+
+# Model name of the pre-fetch tier's synthetic read calls (same role)
+PREFETCH_MODEL = "prefetch"
 
 # ok | recursion_limit | error | cancelled
 GOSLING_OUTCOME = "gosling.outcome"
@@ -142,6 +149,14 @@ GOSLING_FP_THRESHOLD = "gosling.fast_path.threshold"
 
 # True when confidence >= threshold and entity_id is set
 GOSLING_FP_ACCEPTED = "gosling.fast_path.accepted"
+
+# --- prefetch span ---
+
+# The read tool run before the first model call
+GOSLING_PREFETCH_TOOL = "gosling.prefetch.tool"
+
+# Which rule chose it: entity_id | room | keyword
+GOSLING_PREFETCH_RULE = "gosling.prefetch.rule"
 
 # Reason not classified: disabled | empty_menu | error
 GOSLING_FP_SKIP_REASON = "gosling.fast_path.skip_reason"

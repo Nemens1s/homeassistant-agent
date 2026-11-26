@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # bounds unbounded per-thread growth, especially with a durable checkpointer.
     max_history_messages: int = 40
     enable_tool_subsetting: bool = True  # narrow the tool menu per query (small-model aid)
+    # Run the obvious read tool (literal entity_id, room question, one
+    # zero-argument keyword tool) before the first model call, so the model
+    # only phrases the result. Hidden option (not in config.yaml's options:).
+    prefetch_enabled: bool = True
     # Tool names to never offer the agent, regardless of tier or probe result.
     # Empty = nothing switched off beyond tier gating and availability probes.
     disabled_tools: list[str] = []

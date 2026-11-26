@@ -85,6 +85,13 @@ configuration:
     description: >-
       Narrow the tool menu per query. Helps small models pick the right tool;
       turn off to always expose the full tool set.
+  prefetch_enabled:
+    name: Pre-fetch reads
+    description: >-
+      Run the obvious read tool (a named entity_id, a room question, one
+      weather/battery/presence-style question) before the first model call,
+      so the model only phrases the answer. Turn off to let the model pick
+      every tool itself.
   fast_path_enabled:
     name: Fast path
     description: >-

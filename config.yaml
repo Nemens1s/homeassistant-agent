@@ -57,6 +57,7 @@ schema:
   max_rows: "int(5,500)?"
   max_history_messages: "int(0,10000)?"
   enable_tool_subsetting: "bool?"
+  prefetch_enabled: "bool?"
   fast_path_enabled: "bool?"
   fast_path_confidence_threshold: "float(0,1)?"
   fast_path_url: "str?"

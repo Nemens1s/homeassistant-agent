@@ -1,0 +1,37 @@
+# Model-free eval of the deterministic tiers, run by pytest
+# (tests/test_deterministic_evals.py), so a regex or keyword change is caught
+# without a live LLM. Each row: a prompt and the expected pre-fetch
+# (`prefetch: null` = none). The fixture home has the areas Bedroom, Kitchen
+# and Living Room, the entity_ids under `known`, and every tool enabled unless
+# `disabled` lists some.
+- prompt: "What is the state of light.living_room_lamp?"
+  prefetch: {tool: get_entity_state, args: {entity_id: light.living_room_lamp}, rule: entity_id}
+- prompt: "Is sensor.unknown_thing on?"
+  prefetch: null
+- prompt: "Compare light.living_room_lamp with sensor.kitchen_temperature"
+  prefetch: null
+- prompt: "what's in the bedroom"
+  prefetch: {tool: list_devices, args: {area: Bedroom}, rule: room}
+- prompt: "What devices are in the living room?"
+  prefetch: {tool: list_devices, args: {area: Living Room}, rule: room}
+- prompt: "what rooms do I have"
+  prefetch: {tool: get_areas, args: {}, rule: room}
+- prompt: "turn on the lights in the kitchen"
+  prefetch: null
+- prompt: "is anyone home?"
+  prefetch: {tool: get_person_locations, args: {}, rule: keyword}
+- prompt: "What's the weather like?"
+  prefetch: {tool: get_weather, args: {}, rule: keyword}
+- prompt: "Which batteries are low?"
+  prefetch: {tool: get_battery_status, args: {}, rule: keyword}
+- prompt: "is it raining and is anyone home?"
+  prefetch: null
+- prompt: "remind me when the vacuum finishes"
+  prefetch: null
+- prompt: "Is the vacuum running?"
+  prefetch: {tool: get_vacuum_state, args: {}, rule: keyword}
+- prompt: "Is the vacuum running?"
+  disabled: [get_vacuum_state]
+  prefetch: null
+- prompt: "goodnight"
+  prefetch: null

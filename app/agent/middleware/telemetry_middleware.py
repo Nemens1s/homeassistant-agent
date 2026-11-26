@@ -23,7 +23,8 @@ current_step: contextvars.ContextVar[int] = contextvars.ContextVar(
 )
 
 # Set when the first chat step is a synthetic hit: "fast_path", or
-# "action_match" for the strict action matcher. The invoke_agent gosling root
+# "action_match" for the strict action matcher, "prefetch" for a pre-fetched
+# read. The invoke_agent gosling root
 # span reads it for gosling.path ("agent" when unset).
 first_step_path: contextvars.ContextVar[str] = contextvars.ContextVar(
     "gosling_first_step_path", default="agent"
@@ -36,6 +37,8 @@ def synthetic_path(model_name) -> str:
     """gosling.path of a synthetic (fast_path=True) response."""
     if model_name == C.ACTION_MATCH_MODEL:
         return "action_match"
+    if model_name == C.PREFETCH_MODEL:
+        return "prefetch"
     return "fast_path"
 
 
