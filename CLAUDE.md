@@ -157,6 +157,8 @@ class in `app/config.py`; in the addon container it reads
   `settings.ai_actions_switch` (default `input_boolean.ai_triggered_actions`).
   Off/unreadable ⇒ refused (`ai_disabled` / `ai_gate_unavailable`). The memory
   note tools are READ tier on purpose: they write agent-local state, never HA.
+- Every user-visible change adds a line under **Unreleased** in
+  `CHANGELOG.md`, in the same PR.
 - HA scripts live in the SmartHome repo (`Suur-Ameerika/ai_actions/`); this
   repo only defines their contract.
 
