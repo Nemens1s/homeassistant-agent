@@ -150,6 +150,13 @@ GOSLING_FP_THRESHOLD = "gosling.fast_path.threshold"
 # True when confidence >= threshold and entity_id is set
 GOSLING_FP_ACCEPTED = "gosling.fast_path.accepted"
 
+# Reason not classified: disabled | empty_menu | error
+GOSLING_FP_SKIP_REASON = "gosling.fast_path.skip_reason"
+
+# overridden | kept | unsupported — the request's area vs the classifier's
+# `room` argument; set only when the correction step ran
+GOSLING_FP_ROOM_OVERRIDE = "gosling.fast_path.room_override"
+
 # --- prefetch span ---
 
 # The read tool run before the first model call
@@ -157,13 +164,6 @@ GOSLING_PREFETCH_TOOL = "gosling.prefetch.tool"
 
 # Which rule chose it: entity_id | room | keyword
 GOSLING_PREFETCH_RULE = "gosling.prefetch.rule"
-
-# Reason not classified: disabled | empty_menu | error
-GOSLING_FP_SKIP_REASON = "gosling.fast_path.skip_reason"
-
-# overridden | kept | unsupported — the request's area vs the classifier's
-# `room` argument; set only when the correction step ran
-GOSLING_FP_ROOM_OVERRIDE = "gosling.fast_path.room_override"
 
 # --- execute_tool span ---
 

@@ -35,3 +35,49 @@
   prefetch: null
 - prompt: "goodnight"
   prefetch: null
+# From the 2026-11-26 eval: a specialised tool's keyword or a command
+# beats the plain state/room read.
+- prompt: "Show me the temperature history of light.living_room_lamp today."
+  prefetch: null
+- prompt: "Run light.living_room_lamp"
+  prefetch: null
+- prompt: "What happened in the house in the last hour?"
+  prefetch: null
+- prompt: "What room is the Roborock currently cleaning?"
+  prefetch: {tool: get_vacuum_state, args: {}, rule: keyword}
+# From the 2026-11-26 code review: keywords inside entity_ids or words,
+# polite requests, state questions about a room, ambiguous rooms.
+- prompt: "What is sensor.outside_temperature?"
+  prefetch: {tool: get_entity_state, args: {entity_id: sensor.outside_temperature}, rule: entity_id}
+- prompt: "Is binary_sensor.bedroom_window open?"
+  prefetch: {tool: get_entity_state, args: {entity_id: binary_sensor.bedroom_window}, rule: entity_id}
+- prompt: "Is sensor.unknown_battery on?"
+  prefetch: null
+- prompt: "Are the windows open?"
+  prefetch: null
+- prompt: "Is the outside light on?"
+  prefetch: null
+- prompt: "Is the drain sensor wet?"
+  prefetch: null
+- prompt: "Is the home alarm armed?"
+  prefetch: null
+- prompt: "Can you stop the vacuum?"
+  prefetch: null
+- prompt: "Could you clean the kitchen?"
+  prefetch: null
+- prompt: "What's the temperature in the kitchen?"
+  prefetch: null
+- prompt: "Is the light on in the kitchen?"
+  prefetch: null
+- prompt: "what's in the master bedroom"
+  prefetch: null
+- prompt: "what devices do I have?"
+  prefetch: {tool: list_devices, args: {}, rule: room}
+- prompt: "What's scheduled?"
+  prefetch: {tool: list_scheduled, args: {}, rule: keyword}
+- prompt: "What actions can you run?"
+  prefetch: {tool: list_actions, args: {}, rule: keyword}
+- prompt: "Which reminders are pending?"
+  prefetch: null
+- prompt: "Is it windy?"
+  prefetch: {tool: get_weather, args: {}, rule: keyword}

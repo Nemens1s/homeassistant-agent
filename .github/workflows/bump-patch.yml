@@ -17,15 +17,19 @@ jobs:
         with:
           ref: main
           token: ${{ secrets.BUMP_VERSION_PAT }}
-          fetch-depth: 2
+          fetch-depth: 0
 
       # A PR that sets the version itself (a minor or major release) keeps
-      # it: compare pyproject.toml's version line before and after the merge.
+      # it: compare pyproject.toml's version line in THIS PR's merge commit
+      # with its first parent (main just before the merge). Uses the event's
+      # merge commit, not main's tip, so a later merge can't hide it.
       - name: Check for a hand-set version
         id: manual
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          before=$(git show HEAD~1:pyproject.toml | grep -m1 '^version = ')
-          after=$(grep -m1 '^version = ' pyproject.toml)
+          before=$(git show "$MERGE_SHA^1:pyproject.toml" | grep -m1 '^version = ')
+          after=$(git show "$MERGE_SHA:pyproject.toml" | grep -m1 '^version = ')
           if [ "$before" != "$after" ]; then
             echo "Version set by the PR ($after); skipping the bump."
             echo "skip=true" >> "$GITHUB_OUTPUT"

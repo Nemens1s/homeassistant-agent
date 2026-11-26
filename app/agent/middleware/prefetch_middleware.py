@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 import uuid
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -32,7 +31,7 @@ from app.agent.middleware.fast_path_middleware import (
     opted_out,
 )
 from app.agent.middleware.tool_subset_middleware import latest_human_text
-from app.agent.tool_router import _KEYWORDS, _ROOM_OVERVIEW, CORE_TOOLS
+from app.degraded.matcher import is_question
 from app.ha.websocket import ws_is_ready
 from app.telemetry import conventions
 from app.tools.helpers.request_context import names_a_room, room_terms
@@ -45,23 +44,46 @@ PREFETCH_MODEL = conventions.PREFETCH_MODEL
 
 _ENTITY_ID = re.compile(r"\b[a-z_]+\.[a-z0-9_]+\b")
 
-# Tools that answer with no arguments, so a keyword hit is enough to run one.
-ZERO_ARG_TOOLS: frozenset[str] = frozenset({
-    "get_weather",
-    "get_battery_status",
-    "get_person_locations",
-    "get_vacuum_state",
-    "get_error_log",
-    "list_scheduled",
-    "list_actions",
-})
+# The pre-fetch's own triggers. NOT tool_router's keywords: those decide
+# availability and are generous on purpose ("wind" in "window" just adds a
+# schema). Here a hit is a choice, so every pattern is word-bounded and
+# narrow. Each tool takes no arguments, so a hit is enough to run it.
+_KEYWORD_TRIGGERS: dict[str, re.Pattern] = {
+    "get_weather": re.compile(
+        r"\b(weather|forecast|raining|rainy|rain|snowing|snow|sunny|windy|"
+        r"temperature outside|cold outside|warm outside|hot outside)\b"),
+    "get_battery_status": re.compile(r"\bbatter(y|ies)\b|\blow on (battery|power)\b"),
+    "get_person_locations": re.compile(
+        r"\b(anyone|anybody|everyone|everybody|nobody|someone|somebody) "
+        r"(is |at )?(home|here|in|out|away)\b"
+        r"|\bwho('s| is) (at )?(home|here|in|out|away)\b"
+        r"|\bwhere('s| is) everyone\b"
+        r"|^is (?!the\b|it\b|there\b)\w+ (at )?(home|away|out)\b"),
+    "get_vacuum_state": re.compile(r"\b(vacuum|roborock|roomba|robot vacuum)\b"),
+    "get_error_log": re.compile(r"\b(errors?|error log|warnings)\b"),
+    # Not "reminders": the deferral guard ("remind\w*") stops it first.
+    "list_scheduled": re.compile(r"\b(my notes|scheduled|pending (tasks|notes))\b"),
+    "list_actions": re.compile(
+        r"\bwhat (actions|can you (do|run|trigger))\b|\b(list|which) actions\b"),
+}
 
-_QUESTION_START = re.compile(
-    r"^(what|what's|whats|where|where's|who|who's|which|how|why|is|are|do|does|did)\b",
-    re.IGNORECASE,
-)
+# A question that needs arguments the pre-fetch does not fill (a time range,
+# the logbook, automations): no pre-fetch at all, the model picks.
+_NEEDS_ARGS = re.compile(
+    r"\b(history|trend|yesterday|today|tonight|last (hour|night|week|month|\d+)|"
+    r"past|since|ago|happened|logbook|graph|chart|automations?|routines?)\b")
 
-_STATES_TTL_S = 10.0
+# Room questions. Only explicit inventory phrasing: "what's the temperature
+# in the kitchen" is a state question, list_devices cannot answer it.
+_DEVICES_IN = re.compile(
+    r"\bwhat('s| is| do i have) in\b|\b(what|which) devices\b|\bdevices (are )?in\b")
+_ROOM_LIST = re.compile(
+    r"\b(what|which) (rooms|areas)\b|\blist (the |my |all )?(rooms|areas)\b"
+    r"|\bhow many (rooms|areas)\b|\ball (rooms|areas)\b")
+
+# The synthetic call id is replayed to the model on the phrasing call;
+# 24 hex chars keep it at 33, under OpenAI's 40-char tool_call id limit.
+_ID_HEX_CHARS = 24
 
 
 @dataclass(frozen=True)
@@ -76,98 +98,102 @@ def entity_id_candidates(text: str) -> set[str]:
     return set(_ENTITY_ID.findall((text or "").lower()))
 
 
+def _masked(text: str) -> str:
+    """Lower-cased, with entity_ids replaced: "sensor.outside_temperature"
+    must not read as "outside", nor its dot as a sentence break."""
+    lowered = (text or "").lower().replace("\u2019", "'")
+    return _ENTITY_ID.sub("entity", lowered).strip()
+
+
 def reads_as_question(text: str) -> bool:
+    """A question, not a polite request: "can you stop the vacuum?" is a
+    command (voice STT adds the "?"); see degraded.matcher.is_question."""
     text = (text or "").strip()
-    if text.endswith("?"):
+    if is_question(text):
         return True
-    return bool(_QUESTION_START.match(text.replace("’", "'")))
+    return bool(re.match(r"(where|who)\b", text.lower()))
 
 
-def _is_compound(text: str) -> bool:
-    """A coordination cue, ignoring the question mark that ends a question
-    and the dot inside an entity_id."""
-    masked = _ENTITY_ID.sub("entity", (text or "").lower())
-    return has_coordination_cue(masked.strip().rstrip("?"))
+def passes_gates(text: str) -> bool:
+    """The cheap checks every rule needs: a single, present-tense question
+    that needs no arguments the pre-fetch cannot fill."""
+    if not text or has_deferral_cue(text):
+        return False
+    masked = _masked(text)
+    if has_coordination_cue(masked.rstrip("?")):
+        return False
+    if not reads_as_question(text):
+        return False
+    return not _NEEDS_ARGS.search(masked)
 
 
-def _room_overview_hit(lowered: str) -> bool:
-    for phrase in _ROOM_OVERVIEW:
-        if phrase in lowered:
-            return True
-    return False
+def _keyword_tools(masked: str) -> set[str]:
+    hits = set()
+    for name, pattern in _KEYWORD_TRIGGERS.items():
+        if pattern.search(masked):
+            hits.add(name)
+    return hits
 
 
-def _named_area(text: str, areas: list[dict]) -> str | None:
-    """The one area the message names, or None (none, or more than one)."""
+def _named_areas(text: str, areas: list[dict]) -> list[str]:
     found = []
     for area in areas:
         if names_a_room(text, room_terms([area], [])):
             found.append(area.get("name") or area.get("area_id") or "")
-    if len(found) == 1 and found[0]:
-        return found[0]
-    return None
+    return found
 
 
-def _keyword_tools(lowered: str) -> set[str]:
-    """Non-core tools whose keywords hit."""
-    hits = set()
-    for name, keywords in _KEYWORDS.items():
-        if name in CORE_TOOLS:
-            continue
-        for kw in keywords:
-            if kw in lowered:
-                hits.add(name)
-                break
-    return hits
+def needs_areas(text: str) -> bool:
+    return bool(_DEVICES_IN.search(_masked(text)))
 
 
 def decide_prefetch(text: str, available: set[str] | frozenset[str],
                     areas: list[dict] | None = None,
                     known_entity_ids: set[str] | None = None) -> PreFetch | None:
     """The tool to run before the first model call, or None. Pure: the text,
-    the enabled tool names, the area registry and the live entity_ids.
-    First hit wins: literal entity_id, room question, zero-argument keyword."""
-    if not text or has_deferral_cue(text) or _is_compound(text):
+    the enabled tool names, the area registry (None = could not be read) and
+    the entity_ids known to exist. First hit wins: literal entity_id, room
+    question, zero-argument keyword tool."""
+    if not passes_gates(text):
         return None
-    lowered = text.lower().replace("’", "'")
+    masked = _masked(text)
+    hits = _keyword_tools(masked)
 
-    # D1: exactly one entity_id that really exists.
+    # D1: exactly one entity_id, and it exists.
     candidates = entity_id_candidates(text)
-    if known_entity_ids is not None:
-        real = []
-        for eid in candidates:
-            if eid in known_entity_ids:
-                real.append(eid)
-        if len(real) == 1 and "get_entity_state" in available:
-            return PreFetch("get_entity_state", {"entity_id": real[0]}, "entity_id")
     if len(candidates) > 1:
         return None
-
-    question = reads_as_question(text)
-
-    # D10: a room question. Gated on a question so "turn on the lights in
-    # the kitchen" is not pre-fetched a device list.
-    if question and _room_overview_hit(lowered):
-        area = _named_area(text, areas or [])
-        if area is not None:
-            if "list_devices" in available:
-                return PreFetch("list_devices", {"area": area}, "room")
+    if len(candidates) == 1:
+        eid = next(iter(candidates))
+        if known_entity_ids is not None and eid in known_entity_ids:
+            if "get_entity_state" in available:
+                return PreFetch("get_entity_state", {"entity_id": eid}, "entity_id")
             return None
-        if "get_areas" in available:
-            return PreFetch("get_areas", {}, "room")
-        return None
 
-    # D2: one zero-argument tool by keyword. The room tools share their
-    # triggers, so they are not candidates here (D10 owns them).
-    if not question:
-        return None
-    hits = _keyword_tools(lowered)
-    hits.discard("get_areas")
-    hits.discard("list_devices")
+    # D10: a room question.
+    if _DEVICES_IN.search(masked):
+        if areas is None:
+            return None  # registry unreadable: no guessing
+        named = _named_areas(text, areas)
+        if len(named) > 1 or (len(named) == 1 and not named[0]):
+            return None  # ambiguous ("bedroom" vs "master bedroom")
+        if hits:
+            return None  # "what's in the vacuum's bin" — not an inventory
+        if "list_devices" not in available:
+            return None
+        if named:
+            return PreFetch("list_devices", {"area": named[0]}, "room")
+        return PreFetch("list_devices", {}, "room")
+    if _ROOM_LIST.search(masked):
+        if hits or "get_areas" not in available:
+            return None
+        return PreFetch("get_areas", {}, "room")
+
+    # D2: one zero-argument tool by keyword.
     if len(hits) != 1:
         return None
     tool = next(iter(hits))
-    if tool in ZERO_ARG_TOOLS and tool in available:
+    if tool in available:
         return PreFetch(tool, {}, "keyword")
     return None
 
@@ -177,59 +203,53 @@ def synthetic_read_call(prefetch: PreFetch) -> AIMessage:
     return AIMessage(
         content="",
         tool_calls=[{"name": prefetch.tool, "args": dict(prefetch.args),
-                     "id": PREFETCH_PREFIX + uuid.uuid4().hex}],
+                     "id": PREFETCH_PREFIX + uuid.uuid4().hex[:_ID_HEX_CHARS]}],
         response_metadata={"model_name": PREFETCH_MODEL, "fast_path": True},
         additional_kwargs={"prefetch_rule": prefetch.rule},
     )
 
 
 class PreFetchMiddleware(AgentMiddleware):
-    def __init__(self, rest=None, ws=None, tracer=None, states_ttl_s: float = _STATES_TTL_S):
+    def __init__(self, rest=None, ws=None, tracer=None):
         super().__init__()
         self._rest = rest
         self._ws = ws
         self._tracer = tracer
-        self._ttl_s = states_ttl_s
-        self._entity_ids: set[str] | None = None
-        self._entity_ids_at = 0.0
 
-    async def _known_entity_ids(self) -> set[str] | None:
+    async def _known(self, entity_id: str) -> set[str] | None:
+        """{entity_id} when HA has it, an empty set when it does not, None
+        when HA could not be asked. One point read, not the state dump."""
         if self._rest is None:
             return None
-        now = time.monotonic()
-        if self._entity_ids is not None and now - self._entity_ids_at < self._ttl_s:
-            return self._entity_ids
         try:
-            states = await self._rest.list_states()
+            await self._rest.get_state(entity_id)
         except Exception:
-            log.debug("prefetch: state list unavailable")
-            return None
-        ids = set()
-        for state in states:
-            entity_id = state.get("entity_id")
-            if entity_id:
-                ids.add(entity_id)
-        self._entity_ids = ids
-        self._entity_ids_at = now
-        return ids
+            return set()
+        return {entity_id}
 
-    async def _areas(self) -> list[dict]:
+    async def _areas(self) -> list[dict] | None:
         # A (re)connecting socket would make the lookup wait out its timeout.
         if not ws_is_ready(self._ws):
-            return []
+            return None
         try:
             return await self._ws.request_cached("config/area_registry/list")
         except Exception:
             log.debug("prefetch: area registry unavailable")
-            return []
+            return None
 
     async def decide(self, text: str, available: set[str]) -> PreFetch | None:
-        """decide_prefetch with the live lookups done only when needed."""
+        """decide_prefetch, with the HA lookups done only after the cheap
+        gates passed and only when a rule needs them."""
+        if not passes_gates(text):
+            return None
         known = None
-        if entity_id_candidates(text):
-            known = await self._known_entity_ids()
-        areas: list[dict] = []
-        if _room_overview_hit(text.lower().replace("’", "'")):
+        candidates = entity_id_candidates(text)
+        if len(candidates) > 1:
+            return None
+        if len(candidates) == 1:
+            known = await self._known(next(iter(candidates)))
+        areas = None
+        if needs_areas(text):
             areas = await self._areas()
         return decide_prefetch(text, available, areas, known)
 

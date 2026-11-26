@@ -189,6 +189,11 @@ chosen_counts AS (
     FROM tool_calls tc
     JOIN requests r ON r.request_id = tc.request_id
     WHERE r.toolset_hash IS NOT NULL
+      -- synthetic calls (pre-fetch, fast path, action match) were not
+      -- chosen by the model, like the fast_path=1 offers excluded above
+      AND COALESCE(tc.call_id, '') NOT LIKE 'prefetch-%'
+      AND COALESCE(tc.call_id, '') NOT LIKE 'fastpath-%'
+      AND COALESCE(tc.call_id, '') NOT LIKE 'actionmatch-%'
     GROUP BY r.toolset_hash, tc.tool
 )
 SELECT

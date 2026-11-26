@@ -9,17 +9,22 @@ from app.agent.middleware.prefetch_middleware import decide_prefetch
 from app.agent.tool_router import _KEYWORDS, CORE_TOOLS
 
 _ROWS = yaml.safe_load((Path(__file__).parent / "evals" / "deterministic.yaml").read_text())
+_IDS = []
+for _row in _ROWS:
+    _IDS.append(_row["prompt"])
 
 AREAS = [
     {"area_id": "bedroom", "name": "Bedroom", "aliases": []},
+    {"area_id": "master_bedroom", "name": "Master Bedroom", "aliases": []},
     {"area_id": "kitchen", "name": "Kitchen", "aliases": []},
     {"area_id": "living_room", "name": "Living Room", "aliases": []},
 ]
-KNOWN = {"light.living_room_lamp", "sensor.kitchen_temperature"}
+KNOWN = {"light.living_room_lamp", "sensor.kitchen_temperature",
+         "sensor.outside_temperature", "binary_sensor.bedroom_window"}
 ALL_TOOLS = set(CORE_TOOLS) | set(_KEYWORDS)
 
 
-@pytest.mark.parametrize("row", _ROWS, ids=[r["prompt"] for r in _ROWS])
+@pytest.mark.parametrize("row", _ROWS, ids=_IDS)
 def test_deterministic_row(row):
     available = ALL_TOOLS - set(row.get("disabled") or [])
     got = decide_prefetch(row["prompt"], available, AREAS, KNOWN)

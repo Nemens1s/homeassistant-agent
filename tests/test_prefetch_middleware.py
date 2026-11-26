@@ -39,13 +39,17 @@ class _Rest:
     def __init__(self):
         self.calls = 0
 
-    async def list_states(self):
+    async def get_state(self, entity_id):
         self.calls += 1
-        return [{"entity_id": "light.lamp"}]
+        if entity_id != "light.lamp":
+            raise LookupError(entity_id)
+        return {"entity_id": entity_id, "state": "on"}
 
 
 def _request(messages, context=None, tools=TOOLS):
-    tool_objs = [SimpleNamespace(name=n) for n in sorted(tools)]
+    tool_objs = []
+    for name in sorted(tools):
+        tool_objs.append(SimpleNamespace(name=name))
     return SimpleNamespace(messages=messages, tools=tool_objs,
                            runtime=SimpleNamespace(context=context))
 
@@ -116,15 +120,23 @@ async def test_tool_missing_after_subsetting_falls_through():
 
 
 @pytest.mark.asyncio
-async def test_state_list_is_cached_and_failure_falls_through():
+async def test_lookups_run_only_after_the_cheap_gates():
     rest = _Rest()
     mw = PreFetchMiddleware(rest=rest)
-    await mw.decide("What is light.lamp?", TOOLS)
-    await mw.decide("What is light.lamp?", TOOLS)
+    assert await mw.decide("turn on light.lamp", TOOLS) is None  # a command
+    assert await mw.decide("Show me the history of light.lamp today?", TOOLS) is None
+    assert rest.calls == 0
+    assert (await mw.decide("Is light.desk on?", TOOLS)) is None  # HA does not have it
     assert rest.calls == 1
 
-    class _Broken:
-        async def list_states(self):
-            raise RuntimeError("down")
 
-    assert await PreFetchMiddleware(rest=_Broken()).decide("What is light.lamp?", TOOLS) is None
+@pytest.mark.asyncio
+async def test_room_question_without_a_ready_socket_is_not_guessed():
+    mw = PreFetchMiddleware(rest=_Rest(), ws=SimpleNamespace(connected=False))
+    assert await mw.decide("What devices are in the bedroom?", TOOLS) is None
+
+
+def test_synthetic_call_id_fits_openai_limit():
+    from app.agent.middleware.prefetch_middleware import PreFetch, synthetic_read_call
+    call = synthetic_read_call(PreFetch("get_weather", {}, "keyword"))
+    assert len(call.tool_calls[0]["id"]) <= 40
