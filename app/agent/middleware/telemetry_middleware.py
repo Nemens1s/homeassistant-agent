@@ -95,6 +95,8 @@ class TelemetryMiddleware(AgentMiddleware):
                 _safe_set(span, C.GEN_AI_RESPONSE_MODEL, lambda: ai_msg.response_metadata.get("model_name"))
                 is_fast_path = bool(ai_msg.response_metadata.get("fast_path", False))
                 _safe_set(span, C.GOSLING_FAST_PATH, lambda: is_fast_path)
+                is_templated = bool(ai_msg.response_metadata.get("templated_reply", False))
+                _safe_set(span, C.GOSLING_TEMPLATED_REPLY, lambda: is_templated)
                 # Propagate a synthetic hit to the root span via contextvar (step 1 only).
                 if is_fast_path and current_step.get() == 1:
                     first_step_path.set(synthetic_path(ai_msg.response_metadata.get("model_name")))
@@ -131,6 +133,8 @@ class TelemetryMiddleware(AgentMiddleware):
                 _safe_set(span, C.GEN_AI_RESPONSE_MODEL, lambda: ai_msg.response_metadata.get("model_name"))
                 is_fast_path = bool(ai_msg.response_metadata.get("fast_path", False))
                 _safe_set(span, C.GOSLING_FAST_PATH, lambda: is_fast_path)
+                is_templated = bool(ai_msg.response_metadata.get("templated_reply", False))
+                _safe_set(span, C.GOSLING_TEMPLATED_REPLY, lambda: is_templated)
                 if is_fast_path and current_step.get() == 1:
                     first_step_path.set(synthetic_path(ai_msg.response_metadata.get("model_name")))
                 _safe_set_thinking_content(span, ai_msg)

@@ -204,10 +204,10 @@ def test_v1_to_v2_migration_creates_views(tmp_path):
         finally:
             store_mod._MIGRATIONS = original_migrations
 
-    # Now open again with full SCHEMA_VERSION=2 — migration to v2 should apply.
+    # Now open again with the full schema — the later migrations should apply.
     conn_v2 = open_store(str(tmp_path / "t.sqlite"))
     v2 = conn_v2.execute("SELECT version FROM schema_version").fetchone()[0]
-    assert v2 == 2
+    assert v2 == store_mod.SCHEMA_VERSION
 
     # All three views should exist.
     views = {

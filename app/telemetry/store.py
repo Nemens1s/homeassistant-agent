@@ -11,7 +11,7 @@ import sqlite3
 
 from app.telemetry.conventions import ACTION_MATCH_MODEL
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Each entry is a SQL script to apply when upgrading to that schema version.
 # Index 0 = migration to version 1, index 1 = migration to version 2, etc.
@@ -260,6 +260,65 @@ FROM requests r
 LEFT JOIN thinking_stats ts ON ts.request_id = r.request_id
 LEFT JOIN tool_stats tl ON tl.request_id = r.request_id;
 """,
+    # Migration 3: model calls answered by the action-reply template (no LLM);
+    # tool_offer_stats must not count them as offers.
+    """
+ALTER TABLE model_calls ADD COLUMN templated_reply INTEGER NOT NULL DEFAULT 0;
+
+DROP VIEW IF EXISTS tool_offer_stats;
+
+CREATE VIEW tool_offer_stats AS
+WITH offered_counts AS (
+    -- Count how many real (non-fast-path, non-templated) model_calls
+    -- offered each tool.
+    -- We join requests to get toolset_hash, then expand tools_offered JSON.
+    SELECT
+        r.toolset_hash,
+        tool_name.value                             AS tool,
+        COUNT(*)                                    AS times_offered
+    FROM model_calls mc
+    JOIN requests r ON r.request_id = mc.request_id
+    JOIN json_each(mc.tools_offered) AS tool_name
+    WHERE mc.fast_path = 0
+      AND mc.templated_reply = 0
+      AND r.toolset_hash IS NOT NULL
+    GROUP BY r.toolset_hash, tool_name.value
+),
+chosen_counts AS (
+    SELECT
+        r.toolset_hash,
+        tc.tool,
+        COUNT(*)                                    AS times_chosen,
+        SUM(CASE WHEN tc.status = 'error' THEN 1 ELSE 0 END)
+                                                    AS times_error,
+        SUM(CASE WHEN tc.error_code = 'repeated_call' THEN 1 ELSE 0 END)
+                                                    AS times_repeated_call
+    FROM tool_calls tc
+    JOIN requests r ON r.request_id = tc.request_id
+    WHERE r.toolset_hash IS NOT NULL
+    GROUP BY r.toolset_hash, tc.tool
+)
+SELECT
+    oc.toolset_hash,
+    oc.tool,
+    oc.times_offered,
+    COALESCE(cc.times_chosen, 0)                    AS times_chosen,
+    CASE WHEN oc.times_offered > 0
+         THEN CAST(COALESCE(cc.times_chosen, 0) AS REAL) / oc.times_offered
+         ELSE NULL
+    END                                             AS chosen_ratio,
+    CASE WHEN COALESCE(cc.times_chosen, 0) > 0
+         THEN CAST(COALESCE(cc.times_error, 0) AS REAL) / cc.times_chosen
+         ELSE NULL
+    END                                             AS error_rate,
+    CASE WHEN COALESCE(cc.times_chosen, 0) > 0
+         THEN CAST(COALESCE(cc.times_repeated_call, 0) AS REAL) / cc.times_chosen
+         ELSE NULL
+    END                                             AS repeated_call_rate
+FROM offered_counts oc
+LEFT JOIN chosen_counts cc
+    ON cc.toolset_hash = oc.toolset_hash AND cc.tool = oc.tool;
+""",
 ]
 
 
@@ -460,7 +519,7 @@ def recent_requests(
     def _model_calls(request_id: str) -> list[dict]:
         rows = conn.execute(
             "SELECT step, model, fast_path, tools_offered, thinking_text, "
-            "       content_text, duration_ms "
+            "       content_text, duration_ms, templated_reply "
             "FROM model_calls WHERE request_id = ? ORDER BY step",
             (request_id,),
         ).fetchall()
@@ -474,6 +533,7 @@ def recent_requests(
                 "thinking_text": row[4],
                 "content_text": row[5],
                 "duration_ms": row[6],
+                "templated_reply": bool(row[7]),
             })
         return result
 

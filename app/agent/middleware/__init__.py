@@ -9,7 +9,7 @@ from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddl
 from app.agent.middleware.request_context_middleware import RequestContextMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware
 from app.agent.middleware.action_match_middleware import ActionMatchMiddleware
-from app.agent.middleware.fast_path_middleware import FastPathMiddleware
+from app.agent.middleware.fast_path_middleware import ActionReplyMiddleware, FastPathMiddleware
 from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
 from app.config import Settings
 from app.tools.adapter import LoopGuard
@@ -58,6 +58,11 @@ def build_middleware(
             health=fast_path_health,
             ws=ws,
         ))
+    # The fast path's depth: templates the reply after the model's own single
+    # successful trigger_action, skipping the second model call. English-only
+    # cues, so only when the language layer guarantees English text.
+    if settings.max_tier >= 2 and settings.language_layer_enabled:
+        middleware.append(ActionReplyMiddleware())
     if settings.watched_entities and rest is not None:
         # Innermost: it appends the home_context block to the user's text for
         # the LLM only. ToolSubset routing and the fast-path classifier, both

@@ -102,6 +102,9 @@ GOSLING_TTFT_MS = "gosling.ttft_ms"
 # True for synthetic fast-path responses
 GOSLING_FAST_PATH = "gosling.fast_path"
 
+# True when the reply after an agent-path trigger_action was templated (no LLM)
+GOSLING_TEMPLATED_REPLY = "gosling.templated_reply"
+
 # 1-based step index within the request
 GOSLING_STEP = "gosling.step"
 

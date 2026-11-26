@@ -9,7 +9,8 @@ class FakeRest:
     def __init__(self):
         self.calls = []
         self.state = {"entity_id": "automation.ai_night", "state": "on",
-                      "attributes": {"last_triggered": "2026-07-13T22:00:00+00:00"},
+                      "attributes": {"last_triggered": "2026-07-13T22:00:00+00:00",
+                                     "friendly_name": "AI Action: Night"},
                       "last_changed": ""}
 
     async def call_service(self, domain, service, entity_id=None, data=None):
@@ -45,6 +46,7 @@ async def test_trigger_action_happy_path():
     assert result.status == "ok"
     assert rest.calls == [("automation", "trigger", "automation.ai_night", None)]
     assert result.data["last_triggered"] == "2026-07-13T22:00:00+00:00"
+    assert result.data["name"] == "AI Action: Night"
 
 
 async def test_trigger_action_rejects_non_automation_entity():

@@ -17,6 +17,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.llm_health import is_fast_path_outage
 from app.agent.run_scope import scope_from_running_graph
+from app.degraded.formatters import display_action_name
 from app.ha.websocket import ws_is_ready
 from app.agent.middleware.tool_subset_middleware import latest_human_text
 from app.telemetry import conventions
@@ -41,14 +42,25 @@ def has_deferral_cue(text: str) -> bool:
     return bool(_DEFERRAL_CUE.search(text or ""))
 
 
-def _reply_from_envelope(raw: str, name: str, params: dict | None = None) -> str:
-    """Build the templated confirmation. `name` must be a human-readable label
-    (the menu item's friendly name), never a raw HA entity/service id — raw ids
-    in this text get shown to the user, sent to TTS and fed through translation,
-    where a Latin-script id can also skew language detection of the whole reply."""
+def _parse_envelope(raw) -> dict | None:
+    """A tool result's envelope as a dict, or None when it isn't one."""
     try:
         env = json.loads(raw)
     except (ValueError, TypeError):
+        return None
+    if not isinstance(env, dict):
+        return None
+    return env
+
+
+def _reply_from_envelope(raw, name: str, params: dict | None = None) -> str:
+    """Build the templated confirmation. `name` must be a human-readable label
+    (the menu item's friendly name), never a raw HA entity/service id — raw ids
+    in this text get shown to the user, sent to TTS and fed through translation,
+    where a Latin-script id can also skew language detection of the whole reply.
+    `raw` is the tool result's content, or an envelope already parsed."""
+    env = raw if isinstance(raw, dict) else _parse_envelope(raw)
+    if env is None:
         return "Sorry, I couldn't run that automation."
     if env.get("status") == "ok":
         label = name or "that"
@@ -83,7 +95,8 @@ def templated_reply(messages: list) -> AIMessage:
     except (IndexError, KeyError, AttributeError, TypeError):
         params = {}
         name = ""
-    return AIMessage(content=_reply_from_envelope(last.content, name, params))
+    return AIMessage(content=_reply_from_envelope(last.content, name, params),
+                     response_metadata={"templated_reply": True})
 
 
 def synthetic_trigger_call(prefix: str, model_name: str, entity_id: str,
@@ -291,3 +304,85 @@ class FastPathMiddleware(AgentMiddleware):
                         name: str = "") -> AIMessage:
         return synthetic_trigger_call(FASTPATH_PREFIX, self._backend.name, entity_id,
                                       arguments, name)
+
+
+# A compound request ("lights on and close the blinds", "lights on. Is the
+# door locked?") may need a second action or an answer, so the model must see
+# the first result. Errs toward the model.
+_COORDINATION_CUE = re.compile(
+    r"\band\b|\bthen\b|\balso\b|\bafter that\b|[,.;?!&+/\n]",
+    re.IGNORECASE,
+)
+
+# "close all the blinds" may take one call per room. Templated only when the
+# call itself covers everything (a param value of "all").
+_SCOPE_CUE = re.compile(
+    r"\b(all|both|every|everything|everywhere|upstairs|downstairs|whole house)\b",
+    re.IGNORECASE,
+)
+
+
+def has_coordination_cue(text: str) -> bool:
+    return bool(_COORDINATION_CUE.search((text or "").strip().rstrip(".!")))
+
+
+def _covers_everything(params: dict) -> bool:
+    for value in params.values():
+        if isinstance(value, str) and value.lower() == "all":
+            return True
+    return False
+
+
+class ActionReplyMiddleware(AgentMiddleware):
+    """The step after the model's own single trigger_action call that came back
+    ok: the templated confirmation instead of a second model call. Sits just
+    inside the fast path (which templates its own synthetic calls) and reuses
+    its wording; installed with or without the fast path. Errors, multi-call
+    steps, compound, "all" or deferred requests and event runs
+    (`fast_path: False`) still go to the model.
+
+    Only with the language layer on: then the agent only ever sees English,
+    so the English cues are sound. Off, a request in any language reaches the
+    agent and its joining words ("ja", "und") would go unseen.
+
+    The model's params are NOT echoed: unlike the fast path's menu-constrained
+    arguments they are open-ended and may hold raw ids, which must not reach
+    TTS or translation. The name comes from trigger_action's ok envelope."""
+
+    async def awrap_model_call(self, request, handler):
+        messages = request.messages
+        envelope = self._templatable_envelope(request, messages)
+        if envelope is None:
+            return await handler(request)
+        data = envelope.get("data") or {}
+        name = display_action_name(data.get("name") or "", data.get("entity_id") or "")
+        return AIMessage(
+            content=_reply_from_envelope(envelope, name),
+            response_metadata={"templated_reply": True},
+        )
+
+    def _templatable_envelope(self, request, messages: list) -> dict | None:
+        """The trigger_action ok envelope when this step can be templated, else None."""
+        if len(messages) < 2:
+            return None
+        last = messages[-1]
+        prev = messages[-2]
+        if not isinstance(last, ToolMessage):
+            return None
+        if not isinstance(prev, AIMessage) or len(prev.tool_calls or []) != 1:
+            return None
+        call = prev.tool_calls[0]
+        if call.get("name") != "trigger_action" or call.get("id") != last.tool_call_id:
+            return None
+        envelope = _parse_envelope(last.content)
+        if envelope is None or envelope.get("status") != "ok":
+            return None
+        if opted_out(request):
+            return None
+        text = latest_human_text(messages)
+        if has_coordination_cue(text) or has_deferral_cue(text):
+            return None
+        params = (call.get("args") or {}).get("params") or {}
+        if _SCOPE_CUE.search(text) and not _covers_everything(params):
+            return None
+        return envelope

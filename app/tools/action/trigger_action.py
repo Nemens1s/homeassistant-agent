@@ -32,10 +32,12 @@ async def handler(params: Params, ctx) -> ToolResult:
         await ctx.rest.call_service("script", object_id, data=params.params)
 
     state = await ctx.rest.get_state(entity_id)
+    attributes = state.get("attributes", {})
     return ToolResult.ok({
         "entity_id": entity_id,
+        "name": attributes.get("friendly_name", ""),
         "triggered": True,
-        "last_triggered": state.get("attributes", {}).get("last_triggered"),
+        "last_triggered": attributes.get("last_triggered"),
     })
 
 

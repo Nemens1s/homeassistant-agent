@@ -150,7 +150,7 @@ class _ActionRest:
         return []
 
 
-def _dying_agent(monkeypatch, first_response):
+def _dying_agent(monkeypatch, first_response, language_layer=False):
     """A real graph whose model answers *first_response* once, then the LLM
     server goes away."""
     import httpx
@@ -172,7 +172,7 @@ def _dying_agent(monkeypatch, first_response):
 
     calls = []
     registry._reset_for_tests()
-    settings = Settings(_env_file=None, allow_actions=True)
+    settings = Settings(_env_file=None, allow_actions=True, language_layer_enabled=language_layer)
     rest = _ActionRest()
     model = DiesAfterFirst(responses=[first_response])
     monkeypatch.setattr(factory_mod, "build_llm", lambda s: model)
@@ -200,6 +200,24 @@ async def test_ran_action_this_turn_true_after_trigger_then_outage(monkeypatch):
     await _run_until_outage(agent, "t-act", "open the garage door")
     assert rest.calls == [("script", "ai_open_garage_door")]
     assert await ran_action_this_turn(agent, "t-act") is True
+    registry._reset_for_tests()
+
+
+async def test_ran_action_this_turn_true_after_templated_reply(monkeypatch):
+    """A lone successful trigger is answered by the template: the turn ends
+    without a second model call and still counts as having run an action."""
+    from app.agent.history import ran_action_this_turn
+    from app.tools import registry
+
+    call = {"name": "trigger_action", "args": {"entity_id": "script.ai_open_garage_door"}, "id": "c1"}
+    agent, rest = _dying_agent(monkeypatch, AIMessage(content="", tool_calls=[call]),
+                               language_layer=True)
+    config = {"configurable": {"thread_id": "t-tpl"}, "recursion_limit": 15}
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "open the garage door"}]}, config=config)
+    assert result["messages"][-1].content.startswith("Done — triggered")
+    assert rest.calls == [("script", "ai_open_garage_door")]
+    assert await ran_action_this_turn(agent, "t-tpl") is True
     registry._reset_for_tests()
 
 

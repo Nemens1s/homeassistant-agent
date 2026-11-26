@@ -218,6 +218,7 @@ class SqliteSpanExporter(SpanExporter):
         ts_start = _ts(span.start_time)
         duration = _duration_ms(span.start_time, span.end_time) if span.end_time else None
         fast_path_val = _attr(span, c.GOSLING_FAST_PATH)
+        templated_val = _attr(span, c.GOSLING_TEMPLATED_REPLY)
 
         self._conn.execute(
             """
@@ -225,12 +226,14 @@ class SqliteSpanExporter(SpanExporter):
                 span_id, request_id, step, ts_start, duration_ms,
                 model, fast_path, tools_offered, messages_count,
                 input_tokens, output_tokens,
-                thinking_text, content_text, tool_calls, finish_reason
+                thinking_text, content_text, tool_calls, finish_reason,
+                templated_reply
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?,
-                ?, ?, ?, ?
+                ?, ?, ?, ?,
+                ?
             )
             """,
             (
@@ -250,6 +253,7 @@ class SqliteSpanExporter(SpanExporter):
                 _attr(span, c.GOSLING_CONTENT_TEXT),
                 _attr(span, c.GOSLING_TOOL_CALLS),
                 _attr(span, c.GEN_AI_RESPONSE_FINISH_REASONS),
+                _bool_to_int(templated_val) if templated_val is not None else 0,
             ),
         )
         self._conn.commit()

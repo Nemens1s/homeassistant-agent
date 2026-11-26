@@ -140,6 +140,7 @@ function renderRequestDetail(row) {
   for (const mc of row.model_calls || []) {
     let line = 'step ' + mc.step + ' · ' + (mc.model || '?');
     if (mc.fast_path) line += ' [fast_path]';
+    if (mc.templated_reply) line += ' [templated]';
     if (mc.duration_ms !== null && mc.duration_ms !== undefined) line += ' · ' + Math.round(mc.duration_ms) + 'ms';
     if (mc.thinking_text) line += '\n  think: ' + mc.thinking_text;
     if (mc.content_text) line += '\n  reply: ' + mc.content_text;
