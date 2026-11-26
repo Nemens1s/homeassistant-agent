@@ -46,21 +46,60 @@ _BASE_PROMPT = (
 # descriptions state only what each tool does and is not for (by intent); the
 # cross-tool routing lives here, in one place that sees the whole taxonomy and
 # cannot drift as tools are renamed. Kept terse — it rides on every call.
-_TOOL_ROUTING = (
-    "\n\nCHOOSING A TOOL:\n"
-    "- A name/keyword you must resolve to an entity → search_entities to get the "
-    "entity_id; if the exact entity_id is already given, get_entity_state directly.\n"
-    "- 'What's in <room>' / 'what devices are in <room>' / 'what do I have' → "
-    "list_devices (device-level; pass area= for one room). get_areas ONLY for the "
-    "list of room names or the whole-home map. Never enumerate individual entities "
-    "for a whole room.\n"
-    "- The entities/sensors of ONE named device → list_entities(device=). "
-    "Filtered fleets ('which lights are on') → list_entities with domain/state.\n"
-    "- Battery questions → get_battery_status (already covers every device; no search first).\n"
-    "- 'What happened' / 'did automation X fire' across the house → get_activity; "
-    "'did device X run?' / state timeline of ONE entity over time → get_history.\n"
-    "- Automations (enabled? triggers? config?) → get_automations."
+_TOOL_ROUTING_HEADER = "\n\nCHOOSING A TOOL:\n"
+
+# (tools the line names, line). A line is emitted only when every tool it names
+# is on this build's menu, so a small model is never routed to a schema it
+# cannot see. Lines naming no tool always stay. Every phrase quoted here must
+# trigger the tool it points at in tool_router._KEYWORDS (or the tool is CORE);
+# tests/test_tool_router.py enforces that.
+_TOOL_ROUTING: tuple[tuple[frozenset[str], str], ...] = (
+    (
+        frozenset({"search_entities", "get_entity_state"}),
+        "- A name/keyword you must resolve to an entity → search_entities to get the "
+        "entity_id; if the exact entity_id is already given, get_entity_state directly.",
+    ),
+    (
+        frozenset({"list_devices", "get_areas"}),
+        "- 'What's in <room>' / 'what devices are in <room>' / 'what do I have' → "
+        "list_devices (device-level; pass area= for one room). get_areas ONLY for the "
+        "list of room names or the whole-home map. Never enumerate individual entities "
+        "for a whole room.",
+    ),
+    (
+        frozenset({"list_entities"}),
+        "- The entities/sensors of ONE named device → list_entities(device=). "
+        "Filtered fleets ('which lights are on') → list_entities with domain/state.",
+    ),
+    (
+        frozenset({"get_battery_status"}),
+        "- Battery questions → get_battery_status (already covers every device; no search first).",
+    ),
+    (
+        frozenset({"get_activity", "get_history"}),
+        "- 'What happened' / 'did automation X fire' across the house → get_activity; "
+        "'did device X run?' / state timeline of ONE entity over time → get_history.",
+    ),
+    (
+        frozenset({"get_automations"}),
+        "- Automations (enabled? triggers? config?) → get_automations.",
+    ),
 )
+
+
+def _tool_routing(enabled: set[str] | frozenset[str] | None) -> str:
+    """The CHOOSING A TOOL block for this build's tool set (None = every tool).
+    Built once per agent build, never per message: the prompt must stay
+    byte-identical between calls for llama.cpp's prefix cache."""
+    lines = []
+    for names, line in _TOOL_ROUTING:
+        if enabled is not None and not names <= enabled:
+            continue
+        lines.append(line)
+    if not lines:
+        return ""
+    return _TOOL_ROUTING_HEADER + "\n".join(lines)
+
 
 _MEMORY_NOTES = (
     "\n\nDOING THINGS LATER: you cannot create automations, and you never need to. "
@@ -77,7 +116,11 @@ _MEMORY_NOTES = (
 )
 
 
-def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
+def build_system_prompt(
+    settings: Settings, skills_dir: Path, enabled: set[str] | frozenset[str] | None = None,
+) -> str:
+    # enabled: names of the tools on the menu; routing lines naming a tool not
+    # in it are dropped. None keeps every line.
     # CHOOSING A TOOL is appended last (just before HOUSEHOLD INSTRUCTIONS),
     # not right after the base prompt: with the base shortened to drop the
     # action/scheduling sentences (moved into the conditional blocks below),
@@ -119,7 +162,7 @@ def build_system_prompt(settings: Settings, skills_dir: Path) -> str:
         )
     if settings.watched_entities or settings.clock_entity:
         prompt += _MEMORY_NOTES
-    prompt += _TOOL_ROUTING
+    prompt += _tool_routing(enabled)
     extra = settings.extra_instructions.strip()
     if extra:
         prompt += "\n\nHOUSEHOLD INSTRUCTIONS:\n" + extra
@@ -180,7 +223,10 @@ def build_agent(
     llm = build_llm(settings)
     guard = LoopGuard()
     tools = build_tools(ctx, settings.max_tier, guard=guard, enabled=enabled)
-    base_prompt = build_system_prompt(settings, ctx.skills_dir)
+    tool_names = set()
+    for tool in tools:
+        tool_names.add(tool.name)
+    base_prompt = build_system_prompt(settings, ctx.skills_dir, tool_names)
     budget = max(1024, settings.num_ctx - settings.num_predict - _RESPONSE_AND_SCHEMA_MARGIN)
 
     telemetry_tracer = None

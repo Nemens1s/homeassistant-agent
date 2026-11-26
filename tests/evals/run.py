@@ -373,7 +373,10 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     enabled = await registry.resolve_enabled(ctx)
     tools = build_tools(ctx, max_tier=max_tier, enabled=enabled)
     llm = build_llm(settings)
-    system = SystemMessage(build_system_prompt(settings, ctx.skills_dir))
+    tool_names = set()
+    for tool in tools:
+        tool_names.add(tool.name)
+    system = SystemMessage(build_system_prompt(settings, ctx.skills_dir, tool_names))
     output: dict = {
         "model": settings.llm_model,
         "provider": settings.llm_provider,

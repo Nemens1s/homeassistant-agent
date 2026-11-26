@@ -50,7 +50,8 @@ async def health(request: Request) -> dict:
 @router.get("/api/prompt")
 async def get_prompt(request: Request) -> dict:
     state = request.app.state
-    return {"prompt": build_system_prompt(state.settings, state.ctx.skills_dir)}
+    enabled = getattr(state, "enabled_tools", None)
+    return {"prompt": build_system_prompt(state.settings, state.ctx.skills_dir, enabled)}
 
 
 @router.get("/api/history")

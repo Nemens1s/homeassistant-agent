@@ -102,3 +102,37 @@ def test_deferred_request_offers_note_tools():
 def test_event_run_offers_notify_user():
     selected = select_tool_names(ALL_TOOLS, "[EVENT] vacuum.x changed docked → cleaning.")
     assert "notify_user" in selected
+
+
+# Which tool each quoted example in factory._TOOL_ROUTING points at. A new quoted
+# phrase must be added here, so the invariant can't silently go unchecked.
+ROUTING_PHRASE_TARGETS = {
+    "What's in <room>": "list_devices",
+    "what devices are in <room>": "list_devices",
+    "what do I have": "list_devices",
+    "which lights are on": "list_entities",
+    "What happened": "get_activity",
+    "did automation X fire": "get_activity",
+    "did device X run?": "get_history",
+}
+
+
+def _concrete(phrase: str) -> str:
+    return phrase.replace("<room>", "the kitchen").replace(" X ", " porch ")
+
+
+def test_every_quoted_routing_phrase_triggers_its_tool():
+    import re
+
+    from app.agent.factory import _TOOL_ROUTING
+
+    found = set()
+    for names, line in _TOOL_ROUTING:
+        for phrase in re.findall(r"(?:^|[\s(])'(.+?)'(?=[\s).,;]|$)", line):
+            found.add(phrase)
+            assert phrase in ROUTING_PHRASE_TARGETS, f"unmapped routing phrase {phrase!r}"
+            tool = ROUTING_PHRASE_TARGETS[phrase]
+            assert tool in names, f"{phrase!r} points at {tool}, not named on its line"
+            selected = select_tool_names(ALL_TOOLS, _concrete(phrase))
+            assert tool in selected, f"{phrase!r} does not offer {tool}"
+    assert found == set(ROUTING_PHRASE_TARGETS)

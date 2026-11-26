@@ -9,6 +9,11 @@ Design constraint: subsetting decides *availability*, never *choice*. It must ne
 hide a tool the model legitimately needs, so the general query tools
 (search/list/state) stay in CORE as a fallback — a missed keyword degrades to a
 slightly slower path, never a dead end. When in doubt it exposes more, not less.
+
+Invariant: every phrase quoted in factory._TOOL_ROUTING must trigger the tool it
+points at (or that tool is in CORE_TOOLS). The system prompt is fixed per build,
+so the routing block cannot follow the per-message subset; instead the keywords
+here must cover its examples. tests/test_tool_router.py checks this.
 """
 
 from __future__ import annotations

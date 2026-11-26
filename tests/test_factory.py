@@ -368,3 +368,28 @@ def test_request_context_is_just_before_current_time():
     s = Settings(_env_file=None, enable_tool_subsetting=False, watched_entities=["vacuum.x"])
     names = [type(m).__name__ for m in build_middleware(s, LoopGuard(), "prompt", 1024, rest=object())]
     assert names[-3:] == ["WatchedEntitiesMiddleware", "RequestContextMiddleware", "CurrentTimeMiddleware"]
+
+
+_FIXTURE = __import__("pathlib").Path(__file__).parent / "fixtures" / "system_prompt_all_tools.txt"
+
+
+def test_prompt_with_every_tool_is_byte_identical_to_fixture(tmp_path):
+    expected = _FIXTURE.read_text()
+    assert build_system_prompt(Settings(_env_file=None), tmp_path) == expected
+    from app.agent.factory import _TOOL_ROUTING
+    every = set()
+    for names, _line in _TOOL_ROUTING:
+        every |= names
+    assert build_system_prompt(Settings(_env_file=None), tmp_path, every) == expected
+
+
+def test_prompt_drops_routing_line_for_missing_tool(tmp_path):
+    from app.agent.factory import _TOOL_ROUTING
+    enabled = set()
+    for names, _line in _TOOL_ROUTING:
+        enabled |= names
+    enabled.discard("get_battery_status")
+    prompt = build_system_prompt(Settings(_env_file=None), tmp_path, enabled)
+    assert "Battery questions" not in prompt
+    assert "get_battery_status" not in prompt
+    assert "→ get_automations." in prompt
