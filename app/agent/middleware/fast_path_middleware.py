@@ -26,7 +26,7 @@ from app.tools.helpers.request_context import names_a_room, room_terms
 
 log = logging.getLogger("fast_path")
 
-FASTPATH_PREFIX = "fastpath-"
+FASTPATH_PREFIX = conventions.FASTPATH_PREFIX
 
 # A request about the future ("once the vacuum starts, stop it") must reach the
 # LLM, which saves a note — classifying it would run the action right now.

@@ -1,0 +1,118 @@
+# Model-free eval of the deterministic tiers, run by pytest
+# (tests/test_deterministic_evals.py), so a regex or keyword change is caught
+# without a live LLM. Each row: a prompt and the expected pre-fetch
+# (`prefetch: null` = none). The fixture home has the areas Bedroom, Kitchen
+# and Living Room, the entity_ids under `known`, and every tool enabled unless
+# `disabled` lists some.
+- prompt: "What is the state of light.living_room_lamp?"
+  prefetch: {tool: get_entity_state, args: {entity_id: light.living_room_lamp}, rule: entity_id}
+- prompt: "Is sensor.unknown_thing on?"
+  prefetch: null
+- prompt: "Compare light.living_room_lamp with sensor.kitchen_temperature"
+  prefetch: null
+- prompt: "what's in the bedroom"
+  prefetch: {tool: list_devices, args: {area: Bedroom}, rule: room}
+- prompt: "What devices are in the living room?"
+  prefetch: {tool: list_devices, args: {area: Living Room}, rule: room}
+- prompt: "what rooms do I have"
+  prefetch: {tool: get_areas, args: {}, rule: room}
+- prompt: "turn on the lights in the kitchen"
+  prefetch: null
+- prompt: "is anyone home?"
+  prefetch: {tool: get_person_locations, args: {}, rule: keyword}
+- prompt: "What's the weather like?"
+  prefetch: {tool: get_weather, args: {}, rule: keyword}
+- prompt: "Which batteries are low?"
+  prefetch: {tool: get_battery_status, args: {}, rule: keyword}
+- prompt: "is it raining and is anyone home?"
+  prefetch: null
+- prompt: "remind me when the vacuum finishes"
+  prefetch: null
+- prompt: "Is the vacuum running?"
+  prefetch: {tool: get_vacuum_state, args: {}, rule: keyword}
+- prompt: "Is the vacuum running?"
+  disabled: [get_vacuum_state]
+  prefetch: null
+- prompt: "goodnight"
+  prefetch: null
+# From the 2026-11-26 eval: a specialised tool's keyword or a command
+# beats the plain state/room read.
+- prompt: "Show me the temperature history of light.living_room_lamp today."
+  prefetch: null
+- prompt: "Run light.living_room_lamp"
+  prefetch: null
+- prompt: "What happened in the house in the last hour?"
+  prefetch: null
+- prompt: "What room is the Roborock currently cleaning?"
+  prefetch: {tool: get_vacuum_state, args: {}, rule: keyword}
+# From the 2026-11-26 code review: keywords inside entity_ids or words,
+# polite requests, state questions about a room, ambiguous rooms.
+- prompt: "What is sensor.outside_temperature?"
+  prefetch: {tool: get_entity_state, args: {entity_id: sensor.outside_temperature}, rule: entity_id}
+- prompt: "Is binary_sensor.bedroom_window open?"
+  prefetch: {tool: get_entity_state, args: {entity_id: binary_sensor.bedroom_window}, rule: entity_id}
+- prompt: "Is sensor.unknown_battery on?"
+  prefetch: null
+- prompt: "Are the windows open?"
+  prefetch: null
+- prompt: "Is the outside light on?"
+  prefetch: null
+- prompt: "Is the drain sensor wet?"
+  prefetch: null
+- prompt: "Is the home alarm armed?"
+  prefetch: null
+- prompt: "Can you stop the vacuum?"
+  prefetch: null
+- prompt: "Could you clean the kitchen?"
+  prefetch: null
+- prompt: "What's the temperature in the kitchen?"
+  prefetch: null
+- prompt: "Is the light on in the kitchen?"
+  prefetch: null
+- prompt: "what's in the master bedroom"
+  prefetch: {tool: list_devices, args: {area: Master Bedroom}, rule: room}
+- prompt: "what devices do I have?"
+  prefetch: {tool: list_devices, args: {}, rule: room}
+- prompt: "What's scheduled?"
+  prefetch: {tool: list_scheduled, args: {}, rule: keyword}
+- prompt: "What actions can you run?"
+  prefetch: {tool: list_actions, args: {}, rule: keyword}
+- prompt: "Which reminders are pending?"
+  prefetch: null
+- prompt: "Is it windy?"
+  prefetch: {tool: get_weather, args: {}, rule: keyword}
+# From the second review: STT question marks on commands, non-rooms,
+# "here", prefix room names, subsetting, entity_ids with deferral words.
+- prompt: "Start the vacuum?"
+  prefetch: null
+- prompt: "Turn off the lights in all rooms?"
+  prefetch: null
+- prompt: "Turn off light.living_room_lamp?"
+  prefetch: null
+- prompt: "What's in the fridge?"
+  prefetch: null
+- prompt: "what's in my shopping list?"
+  prefetch: null
+- prompt: "what devices are in this room?"
+  request_area: Kitchen
+  prefetch: {tool: list_devices, args: {area: Kitchen}, rule: room}
+- prompt: "what devices are in this room?"
+  prefetch: null
+- prompt: "what's in the hallway"
+  prefetch: null
+- prompt: "what's in the hall?"
+  prefetch: {tool: list_devices, args: {area: Hall}, rule: room}
+- prompt: "Is the Roborock docked?"
+  prefetch: {tool: get_vacuum_state, args: {}, rule: keyword}
+- prompt: "Is the remote low on power?"
+  prefetch: {tool: get_battery_status, args: {}, rule: keyword}
+- prompt: "Who is here?"
+  prefetch: {tool: get_person_locations, args: {}, rule: keyword}
+- prompt: "Which devices do I have?"
+  prefetch: {tool: list_devices, args: {}, rule: room}
+- prompt: "What's the weather today?"
+  prefetch: {tool: get_weather, args: {}, rule: keyword}
+- prompt: "Any errors today?"
+  prefetch: {tool: get_error_log, args: {}, rule: keyword}
+- prompt: "What is sensor.reminders_count?"
+  prefetch: null  # not in the fixture home

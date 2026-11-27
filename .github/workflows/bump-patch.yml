@@ -17,10 +17,31 @@ jobs:
         with:
           ref: main
           token: ${{ secrets.BUMP_VERSION_PAT }}
+          fetch-depth: 0
+
+      # A PR that sets the version itself (a minor or major release) keeps
+      # it: compare pyproject.toml's version line at the PR's head with the
+      # point it branched from. Works for merge, squash and rebase merges,
+      # and a merge landing right after can't hide it.
+      - name: Check for a hand-set version
+        id: manual
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch origin "$HEAD_SHA"
+          fork=$(git merge-base "$HEAD_SHA" "${{ github.event.pull_request.base.sha }}")
+          before=$(git show "$fork:pyproject.toml" | grep -m1 '^version = ')
+          after=$(git show "$HEAD_SHA:pyproject.toml" | grep -m1 '^version = ')
+          if [ "$before" != "$after" ]; then
+            echo "Version set by the PR ($after); skipping the bump."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: astral-sh/setup-uv@v5
+        if: steps.manual.outputs.skip != 'true'
 
       - name: Bump patch version
+        if: steps.manual.outputs.skip != 'true'
         id: bump
         run: |
           NEW=$(python3 - <<'EOF'
@@ -47,8 +68,10 @@ jobs:
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
 
       - run: uv lock
+        if: steps.manual.outputs.skip != 'true'
 
       - name: Commit and push
+        if: steps.manual.outputs.skip != 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

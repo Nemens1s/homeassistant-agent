@@ -72,12 +72,21 @@ GOSLING_INPUT_TEXT = "gosling.input.text"
 # Final reply text
 GOSLING_OUTPUT_TEXT = "gosling.output.text"
 
-# fast_path | action_match | agent — which tier answered the first step
+# fast_path | action_match | prefetch | agent — which tier answered the first step
 GOSLING_PATH = "gosling.path"
 
 # Model name of the strict action matcher's synthetic responses; how
 # model_calls rows tell an action-match hit from a fast-path hit
 ACTION_MATCH_MODEL = "action_match"
+
+# Model name of the pre-fetch tier's synthetic read calls (same role)
+PREFETCH_MODEL = "prefetch"
+
+# tool_call id prefixes of the synthetic tiers' calls; tool_offer_stats
+# excludes them from what the model "chose"
+FASTPATH_PREFIX = "fastpath-"
+ACTION_MATCH_PREFIX = "actionmatch-"
+PREFETCH_PREFIX = "prefetch-"
 
 # ok | recursion_limit | error | cancelled
 GOSLING_OUTCOME = "gosling.outcome"
@@ -149,6 +158,15 @@ GOSLING_FP_SKIP_REASON = "gosling.fast_path.skip_reason"
 # overridden | kept | unsupported — the request's area vs the classifier's
 # `room` argument; set only when the correction step ran
 GOSLING_FP_ROOM_OVERRIDE = "gosling.fast_path.room_override"
+
+# --- pre-fetch (set on the first-step chat span; OTLP export only, the
+# SQLite store keeps the path via model_calls.model = PREFETCH_MODEL) ---
+
+# The read tool run before the first model call
+GOSLING_PREFETCH_TOOL = "gosling.prefetch.tool"
+
+# Which rule chose it: entity_id | room | keyword
+GOSLING_PREFETCH_RULE = "gosling.prefetch.rule"
 
 # --- execute_tool span ---
 

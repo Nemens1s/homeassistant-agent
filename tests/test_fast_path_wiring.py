@@ -27,8 +27,9 @@ def test_fastpath_added_when_provided_and_tier2():
     mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()))
     assert "FastPathMiddleware" in _types(mws)
     # outermost-first: with no watched entities FastPath sits just outside
-    # RequestContext, then CurrentTime, which is always innermost
-    assert isinstance(mws[-3], FastPathMiddleware)
+    # PreFetch, then RequestContext, then CurrentTime, which is always innermost
+    assert isinstance(mws[-4], FastPathMiddleware)
+    assert type(mws[-3]).__name__ == "PreFetchMiddleware"
     assert type(mws[-2]).__name__ == "RequestContextMiddleware"
     assert isinstance(mws[-1], CurrentTimeMiddleware)
     assert "ActionReplyMiddleware" not in _types(mws)  # language layer off
@@ -123,3 +124,18 @@ async def test_fastpath_classifies_raw_text_without_watched_entities_block():
     await handler(_Req(messages=[HumanMessage("turn off concorde")]))
 
     assert backend.messages == ["turn off concorde"]
+
+
+def test_prefetch_sits_inside_fastpath_and_outside_watched_entities():
+    s = Settings(_env_file=None, allow_actions=True, enable_tool_subsetting=False,
+                 watched_entities=["light.a"])
+    mws = build_middleware(s, LoopGuard(), "p", 1024, fast_path=(FakeBackend(), _Menu()),
+                           rest=object())
+    names = _types(mws)
+    assert names.index("FastPathMiddleware") < names.index("PreFetchMiddleware")
+    assert names.index("PreFetchMiddleware") < names.index("WatchedEntitiesMiddleware")
+
+
+def test_prefetch_off_by_setting():
+    s = Settings(_env_file=None, prefetch_enabled=False)
+    assert "PreFetchMiddleware" not in _types(build_middleware(s, LoopGuard(), "p", 1024))

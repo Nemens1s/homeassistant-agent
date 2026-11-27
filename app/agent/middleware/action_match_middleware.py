@@ -34,7 +34,7 @@ from app.telemetry import conventions
 
 log = logging.getLogger("action_match")
 
-ACTION_MATCH_PREFIX = "actionmatch-"
+ACTION_MATCH_PREFIX = conventions.ACTION_MATCH_PREFIX
 # The "model" of the synthetic response; telemetry counts the path by it.
 ACTION_MATCH_MODEL = conventions.ACTION_MATCH_MODEL
 

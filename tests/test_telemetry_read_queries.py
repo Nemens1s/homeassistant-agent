@@ -67,6 +67,23 @@ def test_action_match_hit_is_its_own_path(tmp_path):
     assert recent_requests(conn, limit=10)["rows"][0]["path"] == "action_match"
 
 
+
+def test_prefetch_hit_is_its_own_path(tmp_path):
+    conn = open_store(str(tmp_path / "t.sqlite"))
+    conn.execute(
+        "INSERT INTO requests (request_id, ts_start, channel, input_text, path, outcome) "
+        "VALUES ('r1', '2026-09-17T00:00:00Z','ui','is anyone home?','agent','ok')",
+    )
+    conn.execute(
+        "INSERT INTO model_calls (span_id, request_id, ts_start, step, model, fast_path, tools_offered) "
+        "VALUES ('r1-s0', 'r1', '2026-09-17T00:00:00Z', 0, 'prefetch', 1, '[]')",
+    )
+    conn.commit()
+    s = summary(conn, days=3650)
+    assert s["requests_by_path"] == {"prefetch": 1}
+    assert s["fast_path_hit_rate"] == 0.0
+    assert recent_requests(conn, limit=10)["rows"][0]["path"] == "prefetch"
+
 # ---------------------------------------------------------------------------
 # TDD anchor: summary counts requests by path
 # ---------------------------------------------------------------------------

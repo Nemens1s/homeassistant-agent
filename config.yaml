@@ -1,5 +1,5 @@
 name: "Agent Gosling"
-version: "0.4.44"
+version: "0.5.0"
 slug: agent_gosling
 description: "Chat agent over Home Assistant state, powered by a local model (any OpenAI-compatible cloud endpoint optional)"
 url: "https://github.com/Nemens1s/homeassistant-agent"
@@ -57,6 +57,7 @@ schema:
   max_rows: "int(5,500)?"
   max_history_messages: "int(0,10000)?"
   enable_tool_subsetting: "bool?"
+  prefetch_enabled: "bool?"
   fast_path_enabled: "bool?"
   fast_path_confidence_threshold: "float(0,1)?"
   fast_path_url: "str?"

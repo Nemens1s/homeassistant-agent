@@ -119,3 +119,37 @@ def names_a_room(text: str, terms: list[str]) -> bool:
         if re.search(pattern, text):
             return True
     return False
+
+
+def named_area(text: str, areas: list[dict]) -> dict | None:
+    """The one area the utterance names, strictly: whole words only, and a
+    name inside a longer one counts as the longer ("master bedroom" is not
+    also "bedroom"). None when no area or more than one is named. Unlike
+    names_a_room this errs toward no: its callers act on the answer."""
+    text = _normalise(text or "")
+    matches = []  # (start, end, area)
+    for area in areas:
+        for term in room_terms([area], []):
+            words = []
+            for word in term.split():
+                words.append(re.escape(word))
+            pattern = r"\b" + r"\s*".join(words) + r"\b"
+            for found in re.finditer(pattern, text):
+                matches.append((found.start(), found.end(), area))
+    kept = []
+    for start, end, area in matches:
+        inside_longer = False
+        for other_start, other_end, _ in matches:
+            longer = (other_end - other_start) > (end - start)
+            if longer and other_start <= start and end <= other_end:
+                inside_longer = True
+                break
+        if not inside_longer:
+            kept.append(area)
+    distinct = []
+    for area in kept:
+        if area not in distinct:
+            distinct.append(area)
+    if len(distinct) != 1:
+        return None
+    return distinct[0]

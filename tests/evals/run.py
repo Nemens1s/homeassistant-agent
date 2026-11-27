@@ -16,11 +16,12 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
-from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.utils.json import parse_partial_json
 
 from app.agent.factory import build_agent, build_system_prompt, tool_names
 from app.agent.middleware.current_time_middleware import current_time_line
+from app.agent.middleware.prefetch_middleware import PreFetchMiddleware, synthetic_read_call
 from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
 from app.agent.llm import build_llm
 from app.agent.tool_router import select_tools
@@ -265,6 +266,13 @@ async def _agent_trace(settings, ctx: ToolContext, enabled, prompt: str) -> list
                     trace.append({k: v for k, v in current.items() if v})
                 current = {}
                 pending = {}
+                # A synthetic step (pre-fetch, fast path) arrives whole, not
+                # streamed; its call is the run's first tool call.
+                if isinstance(token, AIMessage) and token.tool_calls:
+                    calls = []
+                    for call in token.tool_calls:
+                        calls.append({"name": call["name"], "args": call["args"]})
+                    trace.append({"calls": calls})
                 if isinstance(token, ToolMessage):
                     raw = token.content
                     trace.append({"tool_result": raw if isinstance(raw, str) else json.dumps(raw)})
@@ -382,6 +390,7 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
         # verbose runs grade the whole run (reached) and keep the first-call
         # grade as `direct`; plain runs only see the first call.
         "grading": "reached" if verbose else "first_call",
+        "prefetch": settings.prefetch_enabled,
         "cases": {},
     }
     if sampling_overrides:
@@ -391,6 +400,9 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     # Plain runs call the model directly, so add what production's middleware
     # would: the watched-entities block, then the time (see app/agent/middleware).
     home_context = WatchedEntitiesMiddleware(ctx.rest, watched)
+    # Plain runs mirror the pre-fetch too: when it fires, its call is the
+    # first tool call and the model is not asked.
+    prefetch = PreFetchMiddleware(ctx.rest, ctx.ws) if settings.prefetch_enabled else None
 
     cases = yaml.safe_load(CASES_FILE.read_text())
     passed = 0
@@ -399,7 +411,8 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     run = 0
     subset = settings.enable_tool_subsetting
     print(f"model: {settings.llm_model} via {settings.llm_provider} "
-          f"(tool_subsetting={'on' if subset else 'off'})\n")
+          f"(tool_subsetting={'on' if subset else 'off'}, "
+          f"prefetch={'on' if prefetch else 'off'})\n")
     t0 = time.monotonic()
     for case in cases:
         print("-" * 20)
@@ -440,7 +453,13 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
                 user_turn += "\n\n" + block
             user_turn += "\n\n" + current_time_line()
             start = time.monotonic()
-            msg = await bound.ainvoke([system, HumanMessage(user_turn)])
+            decision = None
+            if prefetch is not None:
+                decision = await prefetch.decide(case["prompt"], tool_names(case_tools))
+            if decision is not None:
+                msg = synthetic_read_call(decision)
+            else:
+                msg = await bound.ainvoke([system, HumanMessage(user_turn)])
             duration = time.monotonic() - start
             ok, reason = check(case, msg.tool_calls, watched=watched)
             passed += ok
