@@ -9,7 +9,12 @@ from langchain.agents.middleware import AgentMiddleware
 class WatchedEntitiesMiddleware(AgentMiddleware):
     """Puts the user's watched entities (id, name, state) on the latest user turn
     for this model call only, so the model skips search round-trips. The
-    checkpointed messages are never changed."""
+    checkpointed messages are never changed.
+
+    Only the async path attaches the block: the REST client is async, and
+    every caller (HTTP endpoints, the CLI's astream, the event runner) runs
+    the agent async. A sync invoke gets no <home_context>; the eval runner
+    calls context_block() itself for its plain (direct model) runs."""
 
     def __init__(self, rest, entity_ids, cap: int = 30, ttl_s: float = 20.0):
         super().__init__()
@@ -68,4 +73,5 @@ class WatchedEntitiesMiddleware(AgentMiddleware):
         return await handler(prepared)
 
     def wrap_model_call(self, request, handler):
+        # Deliberate pass-through; see the class docstring.
         return handler(request)

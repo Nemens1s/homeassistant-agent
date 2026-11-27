@@ -18,7 +18,7 @@ from langgraph.errors import GraphRecursionError
 from opentelemetry import trace
 from pydantic import BaseModel
 
-from app.agent.history import close_dangling_turn, ran_action_this_turn
+from app.agent.history import close_dangling_turn, close_stopped_turn, ran_action_this_turn
 from app.agent.llm_health import is_llm_outage
 from app.agent.middleware.telemetry_middleware import first_step_path
 from app.agent.run_scope import RequestFacts, facts_configurable, scope_configurable
@@ -255,6 +255,7 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
             )
 
         except GraphRecursionError:
+            await close_stopped_turn(state.agent, req.thread_id)
             _set_span(span, **{C.GOSLING_OUTCOME: "recursion_limit", C.GOSLING_PATH: "agent"})
             return ChatResponse(
                 reply=_recursion_message(state.settings.recursion_limit),

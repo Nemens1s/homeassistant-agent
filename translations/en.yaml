@@ -166,6 +166,11 @@ configuration:
     description: >-
       Conversations nobody has written to for this long are deleted once a
       day. 0 keeps everything.
+  audit_retention_days:
+    name: Action audit retention (days)
+    description: >-
+      Rows of the action audit log older than this are deleted once a day.
+      Default 365. 0 keeps everything.
   watched_entities:
     name: Watched entities
     description: >-

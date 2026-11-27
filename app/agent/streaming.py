@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.errors import GraphRecursionError
 
+from app.agent.history import close_stopped_turn
 from app.agent.llm_health import is_llm_outage
 
 
@@ -118,6 +119,7 @@ async def stream_events(
                 yield {"type": "tool_result", "name": msg.name or "", "status": status}
 
     except GraphRecursionError:
+        await close_stopped_turn(agent, thread_id)
         yield {
             "type": "error",
             "message": (

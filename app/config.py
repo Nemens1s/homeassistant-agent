@@ -111,7 +111,9 @@ class Settings(BaseSettings):
     # called. Translation happens only here, never inside the agent graph.
     language_layer_enabled: bool = False
     lang_mt_url: str = "http://localhost:10100"
-    languages: list[str] = ["en", "ru", "et"]
+    # Same default as config.yaml: the household list is set explicitly
+    # (add-on options or .env). This is the only place to add a language.
+    languages: list[str] = ["en"]
     default_language: str = "en"
     min_confidence: float = 0.5   # below this, fall back to the thread prior
     lang_mt_timeout_s: float = 3.0
@@ -125,6 +127,8 @@ class Settings(BaseSettings):
     # Labelled telemetry requests are always kept.
     telemetry_retention_days: int = Field(0, ge=0)
     thread_retention_days: int = Field(0, ge=0)
+    # Rows of the action audit DB (audit_db_path); 0 keeps everything.
+    audit_retention_days: int = Field(365, ge=0)
 
     # Event-triggered memory notes (spec 2026-10-04). The agent saves one-shot
     # notes; the harness fires them when a watched entity changes state or the

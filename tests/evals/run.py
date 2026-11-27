@@ -399,6 +399,8 @@ async def _run_cases(settings, ctx, max_tier, verbose, save_results,
     watched = settings.watched_entities
     # Plain runs call the model directly, so add what production's middleware
     # would: the watched-entities block, then the time (see app/agent/middleware).
+    # WatchedEntitiesMiddleware attaches its block on the async path only, so
+    # it is fetched here explicitly with context_block().
     home_context = WatchedEntitiesMiddleware(ctx.rest, watched)
     # Plain runs mirror the pre-fetch too: when it fires, its call is the
     # first tool call and the model is not asked.

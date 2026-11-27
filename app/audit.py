@@ -1,8 +1,9 @@
-"""Persistent action audit: append-only SQLite rows for tier-2 tool calls.
+"""Persistent action audit: SQLite rows for tier-2 tool calls.
 Stdout logging remains the live view; this survives addon restarts so
 "what did the agent do last Tuesday" has an answer. A failing audit write
 is logged and swallowed — the action already happened and the envelope
-must still reach the model."""
+must still reach the model. Rows older than `audit_retention_days` are
+deleted daily by app/retention.py."""
 
 from __future__ import annotations
 
@@ -61,6 +62,11 @@ class AuditSink:
             " params_json, status, error_code, duration_ms)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
         self._conn.commit()
+
+    @property
+    def connection(self) -> sqlite3.Connection | None:
+        """The audit DB, for the daily prune; None when auditing is off."""
+        return self._conn
 
     def close(self) -> None:
         if self._conn is not None:

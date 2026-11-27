@@ -16,6 +16,7 @@ from langgraph.errors import GraphRecursionError
 
 from app.agent.checkpointer import open_checkpointer
 from app.agent.factory import build_agent
+from app.agent.history import close_stopped_turn
 from app.agent.llm_probe import resolve_llm_settings
 from app.audit import AuditSink
 from app.constants import WRITE_DOMAINS
@@ -241,6 +242,7 @@ async def main(save_conversations: bool = False) -> None:
                         conv_file.write(f"{_ts()} Agent: {''.join(visible)}\n")
                         conv_file.flush()
             except GraphRecursionError:
+                await close_stopped_turn(agent, "cli")
                 _cli_outcome = "recursion_limit"
                 msg = f"[stopped: hit the {settings.recursion_limit}-step limit without finishing]"
                 print(f"\n{msg}", end="")

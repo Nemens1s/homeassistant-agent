@@ -19,6 +19,13 @@ STATES = [
     {"entity_id": "sensor.kitchen_power", "state": "150",
      "attributes": {"friendly_name": "Kitchen Power"},
      "last_changed": "2026-07-13T10:00:00+00:00"},
+    {"entity_id": "weather.home", "state": "sunny",
+     "attributes": {
+         "friendly_name": "Home",
+         "forecast": [{"temperature": t, "condition": "sunny"} for t in range(24)],
+         **{f"extra_{i}": i for i in range(15)},
+     },
+     "last_changed": "2026-07-13T10:00:00+00:00"},
 ]
 
 
@@ -75,6 +82,17 @@ async def test_get_entity_state():
     assert result.data["attributes"]["brightness"] == 200
     assert result.data["entity_id"] == "light.kitchen"
     assert result.data["last_changed"] == "2026-07-13T10:00:00+00:00"
+    assert "attributes_truncated" not in result.data
+
+
+async def test_get_entity_state_caps_weather_attributes():
+    defn = registry.get("get_entity_state")
+    result = await defn.handler(defn.params_model(entity_id="weather.home"), _ctx())
+    attributes = result.data["attributes"]
+    assert result.data["attributes_truncated"] is True
+    assert attributes["friendly_name"] == "Home"
+    assert attributes["forecast"] == "<24 items>"
+    assert len(attributes) == 1 + 12
 
 
 async def test_list_entities_domain_filter():

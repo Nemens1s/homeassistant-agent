@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from app.ha.rest import RestClient
+from app.ha.rest import SCRIPT_CONFIG_TTL_S, RestClient
 
 
 def _client(handler):
@@ -167,4 +167,27 @@ async def test_call_service_entity_id_still_works():
         allowed_write_domains=("automation",),
     )
     await client.call_service("automation", "trigger", "automation.ai_x")
+    await client.aclose()
+
+
+async def test_get_script_config_is_cached_within_ttl():
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"alias": "x"})
+
+    client = _client(handler)
+    await client.get_script_config("ai_action_lights_on")
+    await client.get_script_config("ai_action_lights_on")
+    assert len(calls) == 1
+
+    await client.get_script_config("ai_action_other")
+    assert len(calls) == 2
+
+    # Past the TTL the config is fetched again.
+    stamp, config = client._script_configs["ai_action_lights_on"]
+    client._script_configs["ai_action_lights_on"] = (stamp - SCRIPT_CONFIG_TTL_S - 1, config)
+    await client.get_script_config("ai_action_lights_on")
+    assert len(calls) == 3
     await client.aclose()

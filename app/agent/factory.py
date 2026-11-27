@@ -4,10 +4,14 @@ to the latest user turn on every call)."""
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
 from langchain.agents import create_agent
+from langchain_core.messages import SystemMessage
+from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from app.agent.memory import BoundedMemorySaver
 
 from app.agent.llm import build_llm
@@ -24,8 +28,12 @@ from app.tools.context import ToolContext
 
 log = logging.getLogger("agent.factory")
 
-# Reserve room for the model's own output and for tool schemas + prompt.
-_RESPONSE_AND_SCHEMA_MARGIN = 2048
+# Chat-template framing (role tokens, tool-call wrappers) the measured
+# prompt + schemas do not include.
+_TEMPLATE_ALLOWANCE = 200
+# The history budget never goes below this; when it has to, the server
+# truncates the context (logged as a warning at build time).
+_MIN_HISTORY_BUDGET = 1024
 
 _ACTION_ROWS_TTL_S = 60  # how long the EXACT-MATCH action list is cached
 
@@ -234,6 +242,28 @@ def _action_rows_provider(ctx: ToolContext, tools) -> ActionRowsProvider | None:
     return ActionRowsProvider(menu_provider)
 
 
+def history_budget(settings: Settings, base_prompt: str, tools) -> int:
+    """Tokens left for the trimmed history: the context window minus the
+    reply (num_predict) minus what rides on every call and the trimmer never
+    sees (system prompt + tool schemas), counted the way the trimmer counts."""
+    schemas = []
+    for tool in tools:
+        schemas.append(convert_to_openai_tool(tool))
+    fixed_text = base_prompt + "\n" + json.dumps(schemas, separators=(",", ":"))
+    measured = count_tokens_approximately([SystemMessage(content=fixed_text)])
+    measured += _TEMPLATE_ALLOWANCE
+    budget = settings.num_ctx - settings.num_predict - measured
+    log.info("context: num_ctx=%d num_predict=%d prompt_and_schemas=%d history_budget=%d",
+             settings.num_ctx, settings.num_predict, measured, budget)
+    if budget < _MIN_HISTORY_BUDGET:
+        log.warning(
+            "context: num_ctx=%d is too small for num_predict=%d plus %d tokens of prompt "
+            "and tool schemas; history budget floored at %d, the server will truncate",
+            settings.num_ctx, settings.num_predict, measured, _MIN_HISTORY_BUDGET)
+        budget = _MIN_HISTORY_BUDGET
+    return budget
+
+
 def build_agent(
     settings: Settings, ctx: ToolContext, checkpointer=None, fast_path=None,
     telemetry=None, enabled=None, fast_path_health=None,
@@ -256,7 +286,7 @@ def build_agent(
     guard = LoopGuard()
     tools = build_tools(ctx, settings.max_tier, guard=guard, enabled=enabled)
     base_prompt = build_system_prompt(settings, ctx.skills_dir, tool_names(tools))
-    budget = max(1024, settings.num_ctx - settings.num_predict - _RESPONSE_AND_SCHEMA_MARGIN)
+    budget = history_budget(settings, base_prompt, tools)
 
     telemetry_tracer = None
     telemetry_store_conn = None

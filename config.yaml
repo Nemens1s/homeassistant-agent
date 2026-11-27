@@ -74,6 +74,7 @@ schema:
   telemetry_enabled: "bool?"
   telemetry_retention_days: "int(0,3650)?"
   thread_retention_days: "int(0,3650)?"
+  audit_retention_days: "int(0,3650)?"
   watched_entities: ["str"]
   clock_entity: "str"
   event_confirmations_enabled: "bool"
