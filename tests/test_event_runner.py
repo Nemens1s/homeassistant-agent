@@ -314,3 +314,25 @@ async def test_ai_action_alias_prefix_is_stripped_from_the_name(store):
     await runner.run(STATE_TRIGGER, [note])
     assert _notifications(rest) == ["Done: Stop Vacuum."]
     assert _outcome(store, note.id) == ("done", "Stop Vacuum ✓")
+
+
+async def test_step_limit_closes_the_events_thread(store, monkeypatch):
+    from langgraph.errors import GraphRecursionError
+
+    from app.events import runner as runner_mod
+
+    class Loops:
+        async def ainvoke(self, payload, config=None, context=None):
+            raise GraphRecursionError("limit")
+
+    closed = []
+
+    async def fake_close(agent, thread_id):
+        closed.append(thread_id)
+
+    monkeypatch.setattr(runner_mod, "close_stopped_turn", fake_close)
+    note = _add(store, instruction="Something vague.")
+    runner, _ = _runner(store, FakeRest(), agent=Loops())
+    await runner.run(STATE_TRIGGER, [note])
+    assert closed == [EVENTS_THREAD_ID]
+    assert _outcome(store, note.id) == ("failed", "stopped at the step limit")

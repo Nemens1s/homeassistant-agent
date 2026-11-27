@@ -35,7 +35,7 @@ this path.
    | `event_confirmations_enabled` | `true` | Send a confirmation when a fired note acts |
    | `person_name_map` | `[]` | Rename people for the agent |
    | `language_layer_enabled` | `false` | Accept non-English messages via lang-mt |
-   | `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them |
+   | `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them. This is the only place a language is added |
 
    The base system prompt is code-owned; `extra_instructions` is appended after it
    under a "HOUSEHOLD INSTRUCTIONS" heading. The full assembled prompt is viewable
@@ -47,7 +47,8 @@ this path.
    `person_name_exclude`, the language-layer tuning knobs
    (`lang_mt_url`/`default_language`/`min_confidence`/`lang_mt_timeout_s`),
    `telemetry_enabled`, `telemetry_retention_days`, `thread_retention_days`
-   (daily pruning, off by default; set a number of days to enable), and the note-scheduling knobs
+   (daily pruning, off by default; set a number of days to enable),
+   `audit_retention_days` (action audit rows, default 365 days, 0 keeps all), and the note-scheduling knobs
    (`memory_note_default_ttl_hours`, `memory_note_max_ttl_hours`,
    `time_note_grace_minutes`) — has a code default and stays hidden from the
    Configuration tab until you add it explicitly. `checkpoint_db_path`,
@@ -77,9 +78,10 @@ this path.
 Update (Supervisor rebuilds the image). App data (`/data`, which will
 holds `audit.db`, `checkpoints.sqlite` and `telemetry.sqlite`) survives
 updates and is included in HA backups (except telemetry, see
-`backup_exclude`). Nothing is pruned by default; set
+`backup_exclude`). Telemetry and threads are not pruned by default; set
 `telemetry_retention_days` / `thread_retention_days` to delete old telemetry
-and idle conversations daily.
+and idle conversations daily. Action audit rows older than
+`audit_retention_days` (default 365) are deleted daily.
 
 ## 2. Standalone docker build (CI / smoke-testing the image)
 

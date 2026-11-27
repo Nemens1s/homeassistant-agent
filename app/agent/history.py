@@ -22,6 +22,11 @@ log = logging.getLogger("agent.history")
 # the thread never holds two user messages in a row. Hidden from the UI.
 UNANSWERED_MARKER = "(not answered: language model unavailable)"
 
+# Closes a turn the agent stopped at its step limit (GraphRecursionError).
+# Hidden from the UI like UNANSWERED_MARKER.
+STEP_LIMIT_MARKER = "(not answered: stopped at the step limit)"
+_HIDDEN_MARKERS = (UNANSWERED_MARKER, STEP_LIMIT_MARKER)
+
 
 async def close_dangling_turn(agent, thread_id: str) -> None:
     """If the thread ends with a user message (its model call failed),
@@ -36,6 +41,35 @@ async def close_dangling_turn(agent, thread_id: str) -> None:
             )
     except Exception:
         log.warning("could not close dangling turn for thread %s", thread_id, exc_info=True)
+
+
+async def close_stopped_turn(agent, thread_id: str) -> None:
+    """After a recursion stop, leave the thread on a final AI reply: answer
+    each unanswered tool call with an `aborted` envelope (a dangling tool call
+    is rejected by some chat templates on the next turn), then append the
+    marker. Best-effort; never raises."""
+    from app.tools.base import ToolResult
+
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        snapshot = await agent.aget_state(config)
+        messages = (snapshot.values or {}).get("messages", [])
+        if not messages:
+            return
+        last = messages[-1]
+        if isinstance(last, AIMessage) and not last.tool_calls:
+            return  # the turn already ended on a reply
+        closing = []
+        if isinstance(last, AIMessage):
+            envelope = ToolResult.error("aborted", "stopped: step limit").to_json()
+            for call in last.tool_calls:
+                closing.append(ToolMessage(
+                    content=envelope, tool_call_id=call["id"], name=call["name"],
+                ))
+        closing.append(AIMessage(content=STEP_LIMIT_MARKER))
+        await agent.aupdate_state(config, {"messages": closing}, as_node="model")
+    except Exception:
+        log.warning("could not close stopped turn for thread %s", thread_id, exc_info=True)
 
 
 def _is_action_tool(name: str | None) -> bool:
@@ -80,7 +114,7 @@ def display_transcript(messages) -> list[dict]:
             if text.strip():
                 turns.append({"role": "user", "text": text})
         elif isinstance(message, AIMessage):
-            if message.content == UNANSWERED_MARKER:
+            if message.content in _HIDDEN_MARKERS:
                 continue
             _, text = split_thinking(message)
             if text.strip():

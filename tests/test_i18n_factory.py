@@ -8,7 +8,7 @@ from app.i18n.adapter import LanguageAdapter, NoopLanguageAdapter
 def test_language_layer_defaults_are_off_and_safe():
     s = Settings(_env_file=None)
     assert s.language_layer_enabled is False
-    assert s.languages == ["en", "ru", "et"]
+    assert s.languages == ["en"]
     assert s.default_language == "en"
     assert s.min_confidence == 0.5
     assert s.lang_mt_timeout_s == 3.0
@@ -43,3 +43,10 @@ def test_a_missing_glossary_does_not_block_startup(tmp_path):
     )
     adapter = build_language_adapter(s)
     assert isinstance(adapter, LanguageAdapter)
+
+
+def test_enabled_layer_with_only_english_warns(caplog):
+    s = Settings(_env_file=None, language_layer_enabled=True, glossary_path="/nonexistent")
+    with caplog.at_level("WARNING", logger="agent.i18n"):
+        build_language_adapter(s)
+    assert "nothing will be translated" in caplog.text

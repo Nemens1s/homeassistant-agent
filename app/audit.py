@@ -1,15 +1,16 @@
-"""Persistent action audit: append-only SQLite rows for tier-2 tool calls.
+"""Persistent action audit: SQLite rows for tier-2 tool calls.
 Stdout logging remains the live view; this survives addon restarts so
 "what did the agent do last Tuesday" has an answer. A failing audit write
 is logged and swallowed — the action already happened and the envelope
-must still reach the model."""
+must still reach the model. Rows older than `audit_retention_days` are
+deleted daily by app/retention.py."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 log = logging.getLogger("agent.audit")
 
@@ -61,6 +62,20 @@ class AuditSink:
             " params_json, status, error_code, duration_ms)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
         self._conn.commit()
+
+    async def prune(self, days: int, now: datetime) -> int:
+        """Delete rows older than `days` (0 keeps all). Shares the write lock
+        and worker thread with record(): one connection, never interleaved."""
+        if self._conn is None or days <= 0:
+            return 0
+        cutoff = (now - timedelta(days=days)).isoformat(timespec="seconds")
+        async with self._lock:
+            return await asyncio.to_thread(self._delete_before, cutoff)
+
+    def _delete_before(self, cutoff: str) -> int:
+        cur = self._conn.execute("DELETE FROM actions WHERE ts < ?", (cutoff,))
+        self._conn.commit()
+        return cur.rowcount
 
     def close(self) -> None:
         if self._conn is not None:

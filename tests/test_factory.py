@@ -5,10 +5,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from app.agent.middleware.context_window_middleware import ContextWindowMiddleware, trim_history
 from app.agent.middleware.current_time_middleware import CurrentTimeMiddleware, with_current_time
-from app.agent.factory import build_agent, build_system_prompt
+from app.agent.factory import build_agent, build_system_prompt, history_budget
 from app.agent.middleware.loop_guard_reset_middleware import LoopGuardResetMiddleware
 from app.agent.middleware.tool_subset_middleware import ToolSubsetMiddleware, latest_human_text
-from app.tools.adapter import LoopGuard
+from app.tools.adapter import LoopGuard, build_tools
 from app.config import Settings
 from app.tools import registry
 from app.tools.context import ToolContext
@@ -433,3 +433,43 @@ def test_action_and_note_blocks_follow_enabled_tools(tmp_path):
     prompt = build_system_prompt(_all_blocks_settings(), tmp_path, enabled)
     assert "ACTIONS (to do NOW)" not in prompt
     assert "DOING THINGS LATER" not in prompt
+
+
+def _read_tools():
+    registry._reset_for_tests()
+    settings = Settings(_env_file=None, allow_actions=False)
+    ctx = ToolContext(settings=settings, rest=None, ws=None)
+    registry.load_all()
+    tools = build_tools(ctx, settings.max_tier)
+    registry._reset_for_tests()
+    return tools
+
+
+def test_history_budget_shrinks_with_longer_prompt(tmp_path):
+    tools = _read_tools()
+    settings = Settings(_env_file=None, num_ctx=16384, num_predict=512)
+    short = history_budget(settings, build_system_prompt(settings, tmp_path), tools)
+    long_settings = Settings(_env_file=None, num_ctx=16384, num_predict=512,
+                             extra_instructions="Always be polite. " * 300)
+    long = history_budget(long_settings, build_system_prompt(long_settings, tmp_path), tools)
+    assert long < short < 16384 - 512
+
+
+def test_history_budget_floors_and_warns_on_tiny_context(tmp_path, caplog):
+    tools = _read_tools()
+    settings = Settings(_env_file=None, num_ctx=2048, num_predict=1024)
+    with caplog.at_level("INFO", logger="agent.factory"):
+        budget = history_budget(settings, build_system_prompt(settings, tmp_path), tools)
+    assert budget == 1024
+    assert "history budget floored at 1024" in caplog.text
+
+
+def test_history_budget_reserves_room_for_watched_entities(tmp_path):
+    tools = _read_tools()
+    plain = Settings(_env_file=None, num_ctx=16384)
+    watched_ids = []
+    for i in range(10):
+        watched_ids.append(f"sensor.s{i}")
+    watched = Settings(_env_file=None, num_ctx=16384, watched_entities=watched_ids)
+    prompt = build_system_prompt(plain, tmp_path)
+    assert history_budget(watched, prompt, tools) < history_budget(plain, prompt, tools)

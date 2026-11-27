@@ -36,6 +36,11 @@ def build_language_adapter(settings):
     if len(glossary) == 0:
         log.warning("lang: no glossary entries loaded from %s", settings.glossary_path)
 
+    if len(settings.languages) < 2:
+        log.warning(
+            "lang: layer enabled but languages=%s — nothing will be translated; "
+            "list the household's languages in `languages`", settings.languages)
+
     client = LangMTClient(settings.lang_mt_url, timeout_s=settings.lang_mt_timeout_s)
     log.info(
         "lang: layer enabled — mt=%s languages=%s glossary=%d entries",

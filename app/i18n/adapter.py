@@ -11,6 +11,7 @@ Every failure is fail-open: the agent still answers, in English.
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from app.i18n.client import LangMTClient, LangMTError
@@ -18,6 +19,10 @@ from app.i18n.glossary import Glossary
 from app.telemetry import conventions as C
 
 log = logging.getLogger("agent.i18n")
+
+# Every new UI conversation is a new thread; keep the language of the most
+# recently used threads only (least recently used is dropped first).
+_MAX_PRIORS = 500
 
 
 @dataclass
@@ -85,7 +90,13 @@ class LanguageAdapter:
         self._languages = list(languages)
         self._default_language = default_language
         self._min_confidence = min_confidence
-        self._priors: dict[str, str] = {}
+        self._priors: OrderedDict[str, str] = OrderedDict()
+
+    def _remember_prior(self, thread_id: str, language: str) -> None:
+        self._priors[thread_id] = language
+        self._priors.move_to_end(thread_id)
+        while len(self._priors) > _MAX_PRIORS:
+            self._priors.popitem(last=False)
 
     def _span(self, name: str):
         """Child span for one MT hop; the timings are what Grafana plots."""
@@ -112,6 +123,8 @@ class LanguageAdapter:
     async def _inbound(self, text: str, thread_id: str) -> Inbound:
         protected = self._glossary.protect(text)
         prior = self._priors.get(thread_id)
+        if prior is not None:
+            self._priors.move_to_end(thread_id)
 
         try:
             result = await self._client.translate(
@@ -154,7 +167,7 @@ class LanguageAdapter:
         else:
             english = self._glossary.restore(english, protected, "en")
 
-        self._priors[thread_id] = language
+        self._remember_prior(thread_id, language)
 
         return Inbound(
             english_text=english,

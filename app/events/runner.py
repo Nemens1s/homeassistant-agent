@@ -18,6 +18,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from langgraph.errors import GraphRecursionError
+
+from app.agent.history import close_stopped_turn
 from app.agent.run_scope import scope_configurable
 from app.tools import registry
 from app.tools.adapter import LoopGuard, to_structured_tool
@@ -171,6 +174,12 @@ class EventRunner:
                 },
                 context={"fast_path": False},
             )
+        except GraphRecursionError:
+            await close_stopped_turn(self._get_agent(), EVENTS_THREAD_ID)
+            log.warning("events: agent run hit the step limit tasks=%s", note_ids)
+            for note_id in note_ids:
+                self._ctx.notes.record_outcome(note_id, "failed", "stopped at the step limit")
+            return
         except Exception:
             log.exception("events: agent run failed tasks=%s", note_ids)
             for note_id in note_ids:

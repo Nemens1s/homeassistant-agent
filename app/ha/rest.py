@@ -8,7 +8,14 @@ effectively read-only.
 
 from __future__ import annotations
 
+import time
+
 import httpx
+
+# How long a script's config is reused. list_actions, check_action and the
+# fast-path menu each read every ai_* script's config per turn; the menu
+# already accepts this much staleness.
+SCRIPT_CONFIG_TTL_S = 60.0
 
 
 class RestClient:
@@ -21,6 +28,7 @@ class RestClient:
         allowed_write_domains: tuple[str, ...] = (),
     ):
         self._allowed_write_domains = allowed_write_domains
+        self._script_configs: dict[str, tuple[float, dict]] = {}
         self._client = httpx.AsyncClient(
             base_url=base_url,
             headers={
@@ -77,7 +85,14 @@ class RestClient:
         return await self._get_json(f"/api/config/automation/config/{automation_id}")
 
     async def get_script_config(self, object_id: str) -> dict:
-        return await self._get_json(f"/api/config/script/config/{object_id}")
+        """Cached for SCRIPT_CONFIG_TTL_S per object_id (like
+        WebSocketClient.request_cached); failures are not cached."""
+        hit = self._script_configs.get(object_id)
+        if hit is not None and time.monotonic() - hit[0] < SCRIPT_CONFIG_TTL_S:
+            return hit[1]
+        config = await self._get_json(f"/api/config/script/config/{object_id}")
+        self._script_configs[object_id] = (time.monotonic(), config)
+        return config
 
     async def call_service(
         self, domain: str, service: str, entity_id: str | None = None,

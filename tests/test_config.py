@@ -230,3 +230,9 @@ def test_paths_come_from_env_when_absent_from_options(tmp_path, monkeypatch, env
     monkeypatch.setattr("app.config.OPTIONS_FILE", opts)
     monkeypatch.setenv(env_var, "/data/some-path")
     assert getattr(load_settings(), field) == "/data/some-path"
+
+
+def test_languages_default_matches_addon_default():
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    assert Settings.model_fields["languages"].default == ["en"]
+    assert Settings.model_fields["languages"].default == cfg["options"]["languages"]

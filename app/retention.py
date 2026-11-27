@@ -1,4 +1,4 @@
-"""Retention for the two local databases that otherwise grow forever.
+"""Retention for the local databases that otherwise grow forever.
 
 - Telemetry: every request stores its full input and output text. Requests
   older than `telemetry_retention_days` are deleted with their model calls,
@@ -8,6 +8,8 @@
   durable checkpointer keeps all of them. A thread nobody wrote to for
   `thread_retention_days` is deleted with its checkpoints and its native-text
   overlay rows.
+- Action audit: one row per ACTION-tier call, deleted after
+  `audit_retention_days` (default 365).
 
 Thread activity is read from the checkpoints table itself, so every writer
 (chat, events, CLI) counts without having to report in: once a day the job
@@ -127,12 +129,14 @@ async def prune_threads(checkpointer, activity: ThreadActivity, overlay, days: i
 
 
 class RetentionJob:
-    """Runs both prunes once a day. Either half may be absent (telemetry off,
-    in-memory checkpointer)."""
+    """Runs every prune once a day. Any part may be absent (telemetry off,
+    in-memory checkpointer, no audit DB)."""
 
     def __init__(self, settings, telemetry_conn=None, checkpointer=None,
-                 activity: ThreadActivity | None = None, overlay=None) -> None:
+                 activity: ThreadActivity | None = None, overlay=None,
+                 audit=None) -> None:
         self._settings = settings
+        self._audit = audit
         self._telemetry_conn = telemetry_conn
         self._checkpointer = checkpointer
         self._activity = activity
@@ -158,6 +162,13 @@ class RetentionJob:
                     log.info("retention: removed %d idle conversation threads", removed)
             except Exception:
                 log.warning("retention: thread prune failed", exc_info=True)
+        if self._audit is not None:
+            try:
+                removed = await self._audit.prune(self._settings.audit_retention_days, now)
+                if removed:
+                    log.info("retention: removed %d old audit rows", removed)
+            except Exception:
+                log.warning("retention: audit prune failed", exc_info=True)
 
     async def _loop(self) -> None:
         await asyncio.sleep(_FIRST_RUN_DELAY_S)

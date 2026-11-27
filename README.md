@@ -44,9 +44,9 @@ options" below).
 | `event_confirmations_enabled` | `true` | Send a confirmation message when a fired note acts |
 | `person_name_map` | `[]` | Rename people for the agent (`ha_name` → `name`) |
 | `language_layer_enabled` | `false` | Accept non-English messages via the lang-mt translation service |
-| `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them |
+| `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them. This is the only place a language is added |
 
-Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
+Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite; rows older than `audit_retention_days`, default 365, are pruned daily) and gated behind `ai_actions_switch`.
 
 ### Advanced options
 
@@ -60,7 +60,7 @@ Everything else (LLM sampling knobs like `temperature`/`top_p`/`num_ctx`,
 `max_history_messages`, `enable_tool_subsetting`, the `fast_path_*` keys,
 `person_name_exclude`, the `lang_mt_*`/`default_language`/`min_confidence`
 language-layer tuning, `telemetry_enabled`, the `telemetry_retention_days`/
-`thread_retention_days` pruning windows, and the `memory_note_*`/
+`thread_retention_days`/`audit_retention_days` pruning windows, and the `memory_note_*`/
 `time_note_grace_minutes` note-scheduling knobs) stays in the add-on schema
 with a code default and is hidden from the Configuration tab until you add
 it yourself. `checkpoint_db_path`, `telemetry_db_path`, and `glossary_path`

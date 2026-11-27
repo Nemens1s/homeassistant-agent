@@ -1,4 +1,7 @@
+import json
 from types import SimpleNamespace
+
+import pytest
 
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -6,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.agent.history import display_transcript
 from app.config import Settings
 from app.main import create_app
+from app.tools import registry
 
 
 def _settings():
@@ -285,3 +289,66 @@ async def test_ran_action_this_turn_never_raises():
 
     assert await ran_action_this_turn(Broken(), "t") is False
     assert await ran_action_this_turn(object(), "t") is False
+
+
+async def _stopped_agent(monkeypatch, limit):
+    """A real graph whose model calls a tool on every step, run until the
+    step limit stops it."""
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langgraph.errors import GraphRecursionError
+
+    from app.agent import factory as factory_mod
+    from app.tools.context import ToolContext
+
+    class AlwaysCallsTool(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    class Rest:
+        async def get_state(self, entity_id):
+            return {"entity_id": entity_id, "state": "on", "attributes": {}}
+
+        async def list_states(self):
+            return []
+
+    responses = []
+    for i in range(10):
+        call = {"name": "get_entity_state", "args": {"entity_id": f"light.x{i}"}, "id": f"c{i}"}
+        responses.append(AIMessage(content="", tool_calls=[call]))
+    registry._reset_for_tests()
+    settings = Settings(_env_file=None, prefetch_enabled=False)
+    model = AlwaysCallsTool(responses=responses)
+    monkeypatch.setattr(factory_mod, "build_llm", lambda s: model)
+    agent = factory_mod.build_agent(settings, ToolContext(settings=settings, rest=Rest(), ws=None))
+    config = {"configurable": {"thread_id": "t-stop"}, "recursion_limit": limit}
+    with pytest.raises(GraphRecursionError):
+        await agent.ainvoke({"messages": [{"role": "user", "content": "check"}]}, config=config)
+    return agent, config
+
+
+@pytest.fixture()
+def clean_registry():
+    yield
+    registry._reset_for_tests()
+
+
+@pytest.mark.parametrize("limit", [1, 2, 3, 4])
+async def test_close_stopped_turn_leaves_no_dangling_tool_call(monkeypatch, limit, clean_registry):
+    from app.agent.history import STEP_LIMIT_MARKER, close_stopped_turn
+
+    agent, config = await _stopped_agent(monkeypatch, limit)
+    await close_stopped_turn(agent, "t-stop")
+    await close_stopped_turn(agent, "t-stop")  # idempotent
+    messages = (await agent.aget_state(config)).values["messages"]
+
+    answered = set()
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            answered.add(message.tool_call_id)
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or []:
+            assert call["id"] in answered
+    assert messages[-1].content == STEP_LIMIT_MARKER
+    assert display_transcript(messages) == [{"role": "user", "text": "check"}]
+    if limit == 2:
+        assert json.loads(messages[-2].content)["error"]["code"] == "aborted"

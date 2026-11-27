@@ -266,7 +266,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await listener.start()
                 app.state.event_listener = listener
 
-                # Daily pruning of old telemetry and idle threads. Threads are
+                # Daily pruning of old telemetry, idle threads and audit rows. Threads are
                 # only pruned when they are durable (checkpoint_db_path set).
                 activity = None
                 if run_cfg.checkpoint_db_path:
@@ -276,7 +276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         log.warning("retention: thread activity unavailable", exc_info=True)
                 retention = RetentionJob(
                     run_cfg, telemetry_conn=snapshot_conn, checkpointer=checkpointer,
-                    activity=activity, overlay=overlay,
+                    activity=activity, overlay=overlay, audit=audit,
                 )
                 retention.start()
 

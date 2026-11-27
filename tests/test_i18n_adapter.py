@@ -237,3 +237,20 @@ async def test_noop_adapter_language_helpers():
     noop = NoopLanguageAdapter()
     assert await noop.to_english("Позвони") == ("Позвони", "en")
     assert await noop.from_english("Done.", "ru") == "Done."
+
+
+async def test_thread_priors_are_bounded(glossary, monkeypatch):
+    monkeypatch.setattr("app.i18n.adapter._MAX_PRIORS", 3)
+    responses = []
+    for _ in range(6):
+        responses.append(MT("hello", src="ru"))
+    client = FakeMT(responses)
+    adapter = _adapter(client, glossary)
+
+    for i in range(4):  # one more thread than the cap
+        await adapter.inbound("привет", thread_id=f"t{i}")
+    await adapter.inbound("привет", thread_id="t0")
+    await adapter.inbound("привет", thread_id="t3")
+
+    assert client.calls[4]["prior"] is None  # t0 was the oldest: evicted
+    assert client.calls[5]["prior"] == "ru"
