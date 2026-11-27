@@ -123,6 +123,8 @@ class LanguageAdapter:
     async def _inbound(self, text: str, thread_id: str) -> Inbound:
         protected = self._glossary.protect(text)
         prior = self._priors.get(thread_id)
+        if prior is not None:
+            self._priors.move_to_end(thread_id)
 
         try:
             result = await self._client.translate(

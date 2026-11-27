@@ -65,16 +65,6 @@ def prune_telemetry(conn: sqlite3.Connection, days: int, now: datetime) -> int:
     return cur.rowcount
 
 
-def prune_audit(conn: sqlite3.Connection, days: int, now: datetime) -> int:
-    """Delete audit rows older than `days`. Returns how many."""
-    if days <= 0:
-        return 0
-    cutoff = (now - timedelta(days=days)).isoformat(timespec="seconds")
-    cur = conn.execute("DELETE FROM actions WHERE ts < ?", (cutoff,))
-    conn.commit()
-    return cur.rowcount
-
-
 class ThreadActivity:
     """When each checkpointed thread last changed. Lives in the checkpoint DB."""
 
@@ -144,9 +134,9 @@ class RetentionJob:
 
     def __init__(self, settings, telemetry_conn=None, checkpointer=None,
                  activity: ThreadActivity | None = None, overlay=None,
-                 audit_conn=None) -> None:
+                 audit=None) -> None:
         self._settings = settings
-        self._audit_conn = audit_conn
+        self._audit = audit
         self._telemetry_conn = telemetry_conn
         self._checkpointer = checkpointer
         self._activity = activity
@@ -172,10 +162,9 @@ class RetentionJob:
                     log.info("retention: removed %d idle conversation threads", removed)
             except Exception:
                 log.warning("retention: thread prune failed", exc_info=True)
-        if self._audit_conn is not None:
+        if self._audit is not None:
             try:
-                removed = prune_audit(
-                    self._audit_conn, self._settings.audit_retention_days, now)
+                removed = await self._audit.prune(self._settings.audit_retention_days, now)
                 if removed:
                     log.info("retention: removed %d old audit rows", removed)
             except Exception:

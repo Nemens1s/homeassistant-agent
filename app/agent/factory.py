@@ -34,6 +34,12 @@ _TEMPLATE_ALLOWANCE = 200
 # The history budget never goes below this; when it has to, the server
 # truncates the context (logged as a warning at build time).
 _MIN_HISTORY_BUDGET = 1024
+# Per-call additions the trimmer never sees: the current-time and
+# request-context lines, plus the <home_context> block per watched entity
+# (only attached while there are at most WATCHED_ENTITIES_CAP of them).
+_PER_CALL_LINES_ALLOWANCE = 60
+_PER_WATCHED_ENTITY_TOKENS = 20
+WATCHED_ENTITIES_CAP = 30
 
 _ACTION_ROWS_TTL_S = 60  # how long the EXACT-MATCH action list is cached
 
@@ -245,13 +251,17 @@ def _action_rows_provider(ctx: ToolContext, tools) -> ActionRowsProvider | None:
 def history_budget(settings: Settings, base_prompt: str, tools) -> int:
     """Tokens left for the trimmed history: the context window minus the
     reply (num_predict) minus what rides on every call and the trimmer never
-    sees (system prompt + tool schemas), counted the way the trimmer counts."""
+    sees (system prompt + tool schemas, counted the way the trimmer counts,
+    plus allowances for the per-call lines and the watched-entities block)."""
     schemas = []
     for tool in tools:
         schemas.append(convert_to_openai_tool(tool))
     fixed_text = base_prompt + "\n" + json.dumps(schemas, separators=(",", ":"))
     measured = count_tokens_approximately([SystemMessage(content=fixed_text)])
-    measured += _TEMPLATE_ALLOWANCE
+    measured += _TEMPLATE_ALLOWANCE + _PER_CALL_LINES_ALLOWANCE
+    watched = len(settings.watched_entities)
+    if 0 < watched <= WATCHED_ENTITIES_CAP:
+        measured += watched * _PER_WATCHED_ENTITY_TOKENS
     budget = settings.num_ctx - settings.num_predict - measured
     log.info("context: num_ctx=%d num_predict=%d prompt_and_schemas=%d history_budget=%d",
              settings.num_ctx, settings.num_predict, measured, budget)

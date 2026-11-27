@@ -43,3 +43,10 @@ def test_a_missing_glossary_does_not_block_startup(tmp_path):
     )
     adapter = build_language_adapter(s)
     assert isinstance(adapter, LanguageAdapter)
+
+
+def test_enabled_layer_with_only_english_warns(caplog):
+    s = Settings(_env_file=None, language_layer_enabled=True, glossary_path="/nonexistent")
+    with caplog.at_level("WARNING", logger="agent.i18n"):
+        build_language_adapter(s)
+    assert "nothing will be translated" in caplog.text

@@ -298,7 +298,6 @@ async def _stopped_agent(monkeypatch, limit):
     from langgraph.errors import GraphRecursionError
 
     from app.agent import factory as factory_mod
-    from app.tools import registry
     from app.tools.context import ToolContext
 
     class AlwaysCallsTool(FakeMessagesListChatModel):
@@ -327,8 +326,14 @@ async def _stopped_agent(monkeypatch, limit):
     return agent, config
 
 
+@pytest.fixture()
+def clean_registry():
+    yield
+    registry._reset_for_tests()
+
+
 @pytest.mark.parametrize("limit", [1, 2, 3, 4])
-async def test_close_stopped_turn_leaves_no_dangling_tool_call(monkeypatch, limit):
+async def test_close_stopped_turn_leaves_no_dangling_tool_call(monkeypatch, limit, clean_registry):
     from app.agent.history import STEP_LIMIT_MARKER, close_stopped_turn
 
     agent, config = await _stopped_agent(monkeypatch, limit)
@@ -347,4 +352,3 @@ async def test_close_stopped_turn_leaves_no_dangling_tool_call(monkeypatch, limi
     assert display_transcript(messages) == [{"role": "user", "text": "check"}]
     if limit == 2:
         assert json.loads(messages[-2].content)["error"]["code"] == "aborted"
-    registry._reset_for_tests()

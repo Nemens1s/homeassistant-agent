@@ -5,6 +5,13 @@ from app.config import Settings
 from app.tools import registry
 from app.tools.context import ToolContext
 
+_FORECAST = []
+for _hour in range(24):
+    _FORECAST.append({"temperature": _hour, "condition": "sunny"})
+_EXTRAS = {}
+for _i in range(8):
+    _EXTRAS[f"extra_{_i}"] = _i
+
 STATES = [
     {"entity_id": "light.kitchen", "state": "on",
      "attributes": {"friendly_name": "Kitchen Light", "brightness": 200},
@@ -22,8 +29,8 @@ STATES = [
     {"entity_id": "weather.home", "state": "sunny",
      "attributes": {
          "friendly_name": "Home",
-         "forecast": [{"temperature": t, "condition": "sunny"} for t in range(24)],
-         **{f"extra_{i}": i for i in range(15)},
+         "forecast": _FORECAST,
+         **_EXTRAS,
      },
      "last_changed": "2026-07-13T10:00:00+00:00"},
 ]
@@ -92,7 +99,18 @@ async def test_get_entity_state_caps_weather_attributes():
     assert result.data["attributes_truncated"] is True
     assert attributes["friendly_name"] == "Home"
     assert attributes["forecast"] == "<24 items>"
-    assert len(attributes) == 1 + 12
+    assert len(attributes) == 1 + 9
+
+
+def test_cap_drops_attributes_past_twelve():
+    from app.tools.read.get_entity_state import cap_attributes
+
+    attributes = {}
+    for i in range(20):
+        attributes[f"a{i}"] = i
+    capped, truncated = cap_attributes(attributes)
+    assert truncated is True
+    assert len(capped) == 12
 
 
 async def test_list_entities_domain_filter():
@@ -239,3 +257,37 @@ async def test_list_entities_domain_enum_exposed_in_schema():
     # pydantic renders Literal as an enum (possibly via allOf/$ref); flatten to check.
     dumped = str(domain_field) + str(schema.get("$defs", ""))
     assert "light" in dumped and "climate" in dumped
+
+
+def test_cap_puts_live_values_before_capability_lists():
+    from app.tools.read.get_entity_state import cap_attributes
+
+    attributes = {
+        "hvac_modes": ["off", "heat", "cool", "auto", "dry", "fan_only"],
+        "fan_modes": ["low", "mid", "high"],
+        "preset_modes": ["eco", "comfort", "away", "boost", "sleep", "home"],
+        "min_temp": 7, "max_temp": 35, "target_temp_step": 0.5,
+        "min_humidity": 30, "max_humidity": 99,
+        "current_temperature": 21, "temperature": 22,
+        "current_humidity": 40, "humidity": 45,
+        "fan_mode": "low", "hvac_action": "heating", "preset_mode": "comfort",
+        "friendly_name": "Living room",
+    }
+    capped, truncated = cap_attributes(attributes)
+    assert truncated is True
+    assert capped["hvac_action"] == "heating"
+    assert capped["preset_mode"] == "comfort"
+    assert capped["fan_mode"] == "low"
+
+
+def test_cap_keeps_select_options_and_group_members_in_full():
+    from app.tools.read.get_entity_state import cap_attributes
+
+    options = ["home", "away", "night", "vacation", "guest", "party", "eco"]
+    members = []
+    for i in range(8):
+        members.append(f"light.l{i}")
+    capped, truncated = cap_attributes({"options": options, "entity_id": members})
+    assert capped["options"] == options
+    assert capped["entity_id"] == members
+    assert truncated is False

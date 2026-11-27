@@ -9,7 +9,7 @@ from app.audit import AuditSink
 from app.config import Settings
 from app.i18n.store import LangOverlay
 from app.retention import (
-    RetentionJob, ThreadActivity, prune_audit, prune_telemetry, prune_threads,
+    RetentionJob, ThreadActivity, prune_telemetry, prune_threads,
 )
 from app.telemetry.store import insert_label, open_store
 
@@ -125,9 +125,9 @@ def test_retention_is_off_by_default():
     assert settings.thread_retention_days == 0
 
 
-def _audit_rows(tmp_path):
+def _audit_sink(tmp_path):
     sink = AuditSink(str(tmp_path / "audit.db"))
-    conn = sink.connection
+    conn = sink._conn
     for name, age in (("old", 400), ("recent", 10)):
         ts = (NOW - timedelta(days=age)).isoformat(timespec="seconds")
         conn.execute(
@@ -135,27 +135,30 @@ def _audit_rows(tmp_path):
             (ts, name),
         )
     conn.commit()
-    return conn
+    return sink
 
 
-def _tools(conn):
-    return [row[0] for row in conn.execute("SELECT tool FROM actions ORDER BY tool")]
+def _tools(sink):
+    names = []
+    for (tool,) in sink._conn.execute("SELECT tool FROM actions ORDER BY tool"):
+        names.append(tool)
+    return names
 
 
-def test_prune_audit_drops_rows_older_than_cutoff(tmp_path):
-    conn = _audit_rows(tmp_path)
-    assert prune_audit(conn, days=365, now=NOW) == 1
-    assert _tools(conn) == ["recent"]
+async def test_audit_prune_drops_rows_older_than_cutoff(tmp_path):
+    sink = _audit_sink(tmp_path)
+    assert await sink.prune(days=365, now=NOW) == 1
+    assert _tools(sink) == ["recent"]
 
 
-def test_prune_audit_zero_days_keeps_everything(tmp_path):
-    conn = _audit_rows(tmp_path)
-    assert prune_audit(conn, days=0, now=NOW) == 0
-    assert _tools(conn) == ["old", "recent"]
+async def test_audit_prune_zero_days_keeps_everything(tmp_path):
+    sink = _audit_sink(tmp_path)
+    assert await sink.prune(days=0, now=NOW) == 0
+    assert _tools(sink) == ["old", "recent"]
 
 
 async def test_retention_job_prunes_audit_with_default_days(tmp_path):
-    conn = _audit_rows(tmp_path)
-    job = RetentionJob(Settings(_env_file=None), audit_conn=conn)
+    sink = _audit_sink(tmp_path)
+    job = RetentionJob(Settings(_env_file=None), audit=sink)
     await job.run_once(now=NOW)
-    assert _tools(conn) == ["recent"]
+    assert _tools(sink) == ["recent"]

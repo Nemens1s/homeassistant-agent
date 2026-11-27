@@ -46,7 +46,7 @@ options" below).
 | `language_layer_enabled` | `false` | Accept non-English messages via the lang-mt translation service |
 | `languages` | `[en]` | Languages detection may choose between; add `et`/`ru` etc. to enable them. This is the only place a language is added |
 
-Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite, append-only) and gated behind `ai_actions_switch`.
+Setting `allow_actions: true` unlocks `trigger_action` and `notify_user`, letting the agent fire `automation.ai_*` / `script.ai_*` and send notifications. All action-tier calls are logged to `/data/audit.db` (SQLite; rows older than `audit_retention_days`, default 365, are pruned daily) and gated behind `ai_actions_switch`.
 
 ### Advanced options
 

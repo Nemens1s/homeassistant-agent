@@ -14,6 +14,10 @@ class Params(BaseModel):
 _KEPT_ATTRIBUTES = ("friendly_name", "unit_of_measurement", "device_class")
 _MAX_EXTRA_ATTRIBUTES = 12
 _MAX_LIST_ITEMS = 5
+# Lists the model may need in full (select options, group members, sources),
+# kept up to this length.
+_FULL_LIST_KEYS = ("options", "entity_id", "source_list", "effect_list")
+_MAX_FULL_LIST_ITEMS = 50
 
 
 def _is_nested(value: dict) -> bool:
@@ -23,9 +27,13 @@ def _is_nested(value: dict) -> bool:
     return False
 
 
-def _compact(value):
+def _compact(key: str, value):
     """A long list or a nested dict (e.g. a weather forecast) becomes a
     placeholder; returns (value, was_replaced)."""
+    if isinstance(value, list) and key in _FULL_LIST_KEYS:
+        if len(value) > _MAX_FULL_LIST_ITEMS:
+            return f"<{len(value)} items>", True
+        return value, False
     if isinstance(value, list) and len(value) > _MAX_LIST_ITEMS:
         return f"<{len(value)} items>", True
     if isinstance(value, dict) and _is_nested(value):
@@ -40,14 +48,24 @@ def cap_attributes(attributes: dict) -> tuple[dict, bool]:
     for key in _KEPT_ATTRIBUTES:
         if key in attributes:
             capped[key] = attributes[key]
-    extra = 0
+    # HA lists capabilities (hvac_modes, fan_modes, ...) before live values
+    # (hvac_action, preset_mode, ...); live values are scalars, so they get
+    # the slots first and lists/dicts take whatever is left.
+    scalars = []
+    containers = []
     for key, value in attributes.items():
         if key in capped:
             continue
+        if isinstance(value, (list, dict)):
+            containers.append(key)
+        else:
+            scalars.append(key)
+    extra = 0
+    for key in scalars + containers:
         if extra >= _MAX_EXTRA_ATTRIBUTES:
             truncated = True
             break
-        value, replaced = _compact(value)
+        value, replaced = _compact(key, attributes[key])
         if replaced:
             truncated = True
         capped[key] = value

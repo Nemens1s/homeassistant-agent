@@ -242,7 +242,7 @@ async def main(save_conversations: bool = False) -> None:
                         conv_file.write(f"{_ts()} Agent: {''.join(visible)}\n")
                         conv_file.flush()
             except GraphRecursionError:
-                await close_stopped_turn(agent, "cli")
+                await close_stopped_turn(agent, config["configurable"]["thread_id"])
                 _cli_outcome = "recursion_limit"
                 msg = f"[stopped: hit the {settings.recursion_limit}-step limit without finishing]"
                 print(f"\n{msg}", end="")

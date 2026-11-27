@@ -276,7 +276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         log.warning("retention: thread activity unavailable", exc_info=True)
                 retention = RetentionJob(
                     run_cfg, telemetry_conn=snapshot_conn, checkpointer=checkpointer,
-                    activity=activity, overlay=overlay, audit_conn=audit.connection,
+                    activity=activity, overlay=overlay, audit=audit,
                 )
                 retention.start()
 

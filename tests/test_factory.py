@@ -248,7 +248,7 @@ def test_tool_subset_middleware_trims_to_message():
 
 def test_tool_subsetting_flag_toggles_middleware():
     from app.agent.factory import build_middleware
-    from app.tools.adapter import LoopGuard, build_tools
+    from app.tools.adapter import LoopGuard
 
     def mws(enabled):
         s = Settings(_env_file=None, enable_tool_subsetting=enabled)
@@ -261,7 +261,7 @@ def test_tool_subsetting_flag_toggles_middleware():
 def test_watched_entities_middleware_placed_after_tool_subset():
     from app.agent.factory import build_middleware
     from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
-    from app.tools.adapter import LoopGuard, build_tools
+    from app.tools.adapter import LoopGuard
 
     s = Settings(_env_file=None, enable_tool_subsetting=True, watched_entities=["vacuum.x"])
     middleware = build_middleware(s, LoopGuard(), "prompt", 1024, rest=object())
@@ -281,7 +281,7 @@ def test_watched_entities_middleware_placed_after_tool_subset():
 def test_watched_entities_middleware_absent_without_rest_or_ids():
     from app.agent.factory import build_middleware
     from app.agent.middleware.watched_entities_middleware import WatchedEntitiesMiddleware
-    from app.tools.adapter import LoopGuard, build_tools
+    from app.tools.adapter import LoopGuard
 
     s_no_ids = Settings(_env_file=None, watched_entities=[])
     s_no_rest = Settings(_env_file=None, watched_entities=["vacuum.x"])
@@ -364,7 +364,7 @@ def test_save_note_descriptions_explain_they_run_later():
 
 def test_request_context_is_just_before_current_time():
     from app.agent.factory import build_middleware
-    from app.tools.adapter import LoopGuard, build_tools
+    from app.tools.adapter import LoopGuard
 
     s = Settings(_env_file=None, enable_tool_subsetting=False, watched_entities=["vacuum.x"])
     names = [type(m).__name__ for m in build_middleware(s, LoopGuard(), "prompt", 1024, rest=object())]
@@ -462,3 +462,14 @@ def test_history_budget_floors_and_warns_on_tiny_context(tmp_path, caplog):
         budget = history_budget(settings, build_system_prompt(settings, tmp_path), tools)
     assert budget == 1024
     assert "history budget floored at 1024" in caplog.text
+
+
+def test_history_budget_reserves_room_for_watched_entities(tmp_path):
+    tools = _read_tools()
+    plain = Settings(_env_file=None, num_ctx=16384)
+    watched_ids = []
+    for i in range(10):
+        watched_ids.append(f"sensor.s{i}")
+    watched = Settings(_env_file=None, num_ctx=16384, watched_entities=watched_ids)
+    prompt = build_system_prompt(plain, tmp_path)
+    assert history_budget(watched, prompt, tools) < history_budget(plain, prompt, tools)

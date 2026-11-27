@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 log = logging.getLogger("agent.audit")
 
@@ -63,10 +63,19 @@ class AuditSink:
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
         self._conn.commit()
 
-    @property
-    def connection(self) -> sqlite3.Connection | None:
-        """The audit DB, for the daily prune; None when auditing is off."""
-        return self._conn
+    async def prune(self, days: int, now: datetime) -> int:
+        """Delete rows older than `days` (0 keeps all). Shares the write lock
+        and worker thread with record(): one connection, never interleaved."""
+        if self._conn is None or days <= 0:
+            return 0
+        cutoff = (now - timedelta(days=days)).isoformat(timespec="seconds")
+        async with self._lock:
+            return await asyncio.to_thread(self._delete_before, cutoff)
+
+    def _delete_before(self, cutoff: str) -> int:
+        cur = self._conn.execute("DELETE FROM actions WHERE ts < ?", (cutoff,))
+        self._conn.commit()
+        return cur.rowcount
 
     def close(self) -> None:
         if self._conn is not None:
